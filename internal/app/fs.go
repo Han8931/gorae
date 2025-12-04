@@ -18,11 +18,18 @@ func (m *Model) loadEntries() {
 		return
 	}
 
-	// hide dotfiles
+	// hide dotfiles and non-PDF files (but keep directories)
 	filtered := make([]fs.DirEntry, 0, len(ents))
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
+		}
+
+		if !e.IsDir() {
+			name := strings.ToLower(e.Name())
+			if !strings.HasSuffix(name, ".pdf") {
+				continue
+			}
 		}
 		filtered = append(filtered, e)
 	}
