@@ -251,16 +251,24 @@ func (m Model) renderMetaPopup() string {
 		popupLines = append(popupLines, fmt.Sprintf("%s%s: %s", prefix, fieldLabel, value))
 	}
 
-	popupLines = append(popupLines,
-		"",
-		fmt.Sprintf("Edit %s:", label),
-		m.input.View(),
-		"",
-		"Tab       → next field",
-		"Shift+Tab → previous field",
-		"Enter     → next/save",
-		"Esc       → cancel",
-	)
+	if m.state == stateEditMeta {
+		popupLines = append(popupLines,
+			"",
+			fmt.Sprintf("Edit %s:", label),
+			m.input.View(),
+			"",
+			"Tab       → next field",
+			"Shift+Tab → previous field",
+			"Enter     → next/save",
+			"Esc       → cancel",
+		)
+	} else {
+		popupLines = append(popupLines,
+			"",
+			"Press 'e' again to edit metadata.",
+			"Press Esc to cancel.",
+		)
+	}
 
 	return renderPopupBox("Metadata Editor", popupLines, m.width)
 }
@@ -386,7 +394,7 @@ func (m Model) View() string {
 		fmt.Fprintf(&b, "\nCreate directory: %s\n", m.input.View())
 	} else if m.state == stateRename {
 		fmt.Fprintf(&b, "\nRename: %s\n", m.input.View())
-	} else if m.state == stateEditMeta {
+	} else if m.state == stateEditMeta || m.state == stateMetaPreview {
 		b.WriteString("\n")
 		b.WriteString(m.renderMetaPopup())
 		b.WriteString("\n")

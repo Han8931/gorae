@@ -157,6 +157,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ===========================
 		//  EDIT METADATA MODE
 		// ===========================
+		if m.state == stateMetaPreview {
+			switch key {
+			case "e":
+				m.state = stateEditMeta
+				m.metaFieldIndex = 0
+				m.loadMetaFieldIntoInput()
+				m.input.Focus()
+				m.status = metaEditStatus(m.metaFieldIndex)
+				return m, nil
+			case "esc":
+				m.state = stateNormal
+				m.metaEditingPath = ""
+				m.status = "Metadata edit cancelled"
+				return m, nil
+			}
+			return m, nil
+		}
+
 		if m.state == stateEditMeta {
 			var cmd tea.Cmd
 			if key != "tab" && key != "shift+tab" {
@@ -488,12 +506,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// if !strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
-			// 	m.status = "Only PDF metadata is supported"
-			// 	return m, nil
-			// }
-
-			m.state = stateEditMeta
+			m.state = stateMetaPreview
 			m.metaEditingPath = full
 
 			// load existing metadata if present
@@ -508,8 +521,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.metaDraft = draft
 			m.metaFieldIndex = 0
-			m.loadMetaFieldIntoInput()
-			m.status = metaEditStatus(m.metaFieldIndex)
+			m.input.SetValue("")
+			m.input.Blur()
+			m.status = "Metadata preview: press 'e' again to edit (Esc to cancel)"
 			return m, nil
 
 		}

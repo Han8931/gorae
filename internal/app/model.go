@@ -18,6 +18,7 @@ const (
 	stateNewDir
 	stateConfirmDelete
 	stateRename
+	stateMetaPreview
 	stateEditMeta
 )
 
