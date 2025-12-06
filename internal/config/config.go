@@ -9,9 +9,13 @@ import (
 )
 
 type Config struct {
-	WatchDir string `json:"watch_dir"`
-	MetaDir  string `json:"meta_dir"`
+	WatchDir   string `json:"watch_dir"`
+	MetaDir    string `json:"meta_dir"`
+	RecentDir  string `json:"recent_dir,omitempty"`
+	RecentDays int    `json:"recent_days,omitempty"`
 }
+
+const defaultRecentDays = 30
 
 func defaultConfigPath() (string, error) {
 	cfgHome := os.Getenv("XDG_CONFIG_HOME")
@@ -68,6 +72,9 @@ func LoadOrInit() (*Config, error) {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return nil, err
 		}
+		if err := cfg.ensureDefaults(); err != nil {
+			return nil, err
+		}
 		return &cfg, nil
 	}
 
@@ -81,7 +88,8 @@ func LoadOrInit() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{WatchDir: watch, MetaDir: meta}
+	recent := filepath.Join(watch, "_recent")
+	cfg := &Config{WatchDir: watch, MetaDir: meta, RecentDir: recent, RecentDays: defaultRecentDays}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
 	fmt.Printf("Edit %s to change these paths.\n", path)
@@ -90,6 +98,9 @@ func LoadOrInit() (*Config, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(cfg.MetaDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(cfg.RecentDir, 0o755); err != nil {
 		return nil, err
 	}
 
@@ -102,5 +113,35 @@ func LoadOrInit() (*Config, error) {
 	}
 
 	fmt.Println("Config saved to", path)
+	if err := cfg.ensureDefaults(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+func (c *Config) ensureDefaults() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if strings.TrimSpace(c.WatchDir) == "" {
+		w, err := defaultWatchDir()
+		if err != nil {
+			return err
+		}
+		c.WatchDir = w
+	}
+	if strings.TrimSpace(c.MetaDir) == "" {
+		m, err := defaultMetaDir()
+		if err != nil {
+			return err
+		}
+		c.MetaDir = m
+	}
+	if strings.TrimSpace(c.RecentDir) == "" {
+		c.RecentDir = filepath.Join(c.WatchDir, "_recent")
+	}
+	if c.RecentDays <= 0 {
+		c.RecentDays = defaultRecentDays
+	}
+	return nil
 }

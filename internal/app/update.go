@@ -699,6 +699,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
 			"  Metadata   : e preview/edit metadata, :arxiv <id> [files...] fetch from arXiv",
+			"  Recent     : :recent rebuilds the Recent directory",
 			"  Config     : :config shows/edits the config file",
 			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
@@ -714,6 +715,12 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 	case "clear":
 		m.clearCommandOutput()
 		m.setStatus("Command output cleared")
+	case "recent":
+		if err := m.maybeSyncRecentDir(true); err != nil {
+			m.setStatus("Recent sync failed: " + err.Error())
+		} else {
+			m.setStatus("Recent directory updated")
+		}
 	case "config":
 		return m.handleConfigCommand(args)
 	case "arxiv":

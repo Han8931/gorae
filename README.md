@@ -22,3 +22,6 @@ sudo pacman -S noto-fonts-emoji
 sudo apt install fonts-noto-color-emoji
 ```
 
+TODO
+- Recently added
+- Reading now

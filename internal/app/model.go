@@ -13,6 +13,7 @@ import (
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pdf-tui/internal/config"
 	"pdf-tui/internal/meta"
 )
 
@@ -45,15 +46,19 @@ type Model struct {
 	cursor  int
 	err     error
 
-	selected      map[string]bool
-	cut           []string
-	status        string
-	statusAt      time.Time
-	sticky        bool
-	commandOutput []string
-	entryTitles   map[string]string
-	sortMode      sortMode
-	awaitingSort  bool
+	selected       map[string]bool
+	cut            []string
+	status         string
+	statusAt       time.Time
+	sticky         bool
+	commandOutput  []string
+	entryTitles    map[string]string
+	sortMode       sortMode
+	awaitingSort   bool
+	recentDir      string
+	recentMaxAge   time.Duration
+	recentSyncInt  time.Duration
+	lastRecentSync time.Time
 
 	viewportStart  int
 	viewportHeight int
@@ -155,7 +160,8 @@ func (m *Model) updateCurrentMetadata(path string, isDir bool) {
 	m.currentMeta = md
 }
 
-func NewModel(root string, store *meta.Store) Model {
+func NewModel(cfg *config.Config, store *meta.Store) Model {
+	root := cfg.WatchDir
 	ti := textinput.New()
 	ti.Placeholder = ""
 	ti.CharLimit = 200
@@ -171,6 +177,18 @@ func NewModel(root string, store *meta.Store) Model {
 		meta:           store,
 		sortMode:       sortByName,
 		entryTitles:    make(map[string]string),
+		recentDir:      strings.TrimSpace(cfg.RecentDir),
+		recentMaxAge:   time.Duration(cfg.RecentDays) * 24 * time.Hour,
+		recentSyncInt:  defaultRecentSyncInterval,
+	}
+	if m.recentSyncInt <= 0 {
+		m.recentSyncInt = defaultRecentSyncInterval
+	}
+	if m.recentDir != "" && !filepath.IsAbs(m.recentDir) {
+		m.recentDir = filepath.Join(root, m.recentDir)
+	}
+	if err := m.maybeSyncRecentDir(true); err != nil {
+		m.setStatus("Recent sync failed: " + err.Error())
 	}
 	m.loadEntries()
 	m.updateTextPreview()

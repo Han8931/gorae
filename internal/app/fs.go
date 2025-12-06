@@ -12,6 +12,9 @@ import (
 )
 
 func (m *Model) loadEntries() {
+	if err := m.maybeSyncRecentDir(false); err != nil {
+		m.setStatus("Recent sync failed: " + err.Error())
+	}
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
 	if err != nil {
