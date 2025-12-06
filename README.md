@@ -23,4 +23,18 @@ sudo apt install fonts-noto-color-emoji
 ```
 
 TODO
+- Basic editor setting (Vim/Nano...)
+- Note / Memo
+- Tagging
 - Screen renew or update key or auto
+- logo command
+- arxiv command with selections
+- UI improvement
+- Search function
+- Yank bibtex / line style
+- Bookmark / Favorite
+- Page count
+
+AI features:
+- AI tag
+- 
