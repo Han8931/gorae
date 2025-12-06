@@ -1,0 +1,24 @@
+# Binaries
+/gorae
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build/test artifacts
+*.test
+*.out
+coverage.*
+
+# Go build cache
+.gocache/
+
+# Editor/OS noise
+*.swp
+*.swo
+.DS_Store
+
+# User config or metadata that should stay local
+config.json
+
