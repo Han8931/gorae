@@ -13,11 +13,12 @@ import (
 )
 
 type Metadata struct {
-	Path   string
-	Title  string
-	Author string
-	Venue  string
-	Year   string
+	Path     string
+	Title    string
+	Author   string
+	Venue    string
+	Year     string
+	Abstract string
 }
 
 type Store struct {
@@ -49,21 +50,35 @@ CREATE TABLE IF NOT EXISTS metadata (
   title  TEXT,
   author TEXT,
   venue  TEXT,
-  year   TEXT
+  year   TEXT,
+  abstract TEXT
 );
 `)
+	if err != nil {
+		return err
+	}
+	return s.ensureAbstractColumn()
+}
+
+func (s *Store) ensureAbstractColumn() error {
+	_, err := s.db.Exec(`ALTER TABLE metadata ADD COLUMN abstract TEXT`)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return nil
+		}
+	}
 	return err
 }
 
 func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT path, title, author, venue, year FROM metadata WHERE path = ?`,
+		`SELECT path, title, author, venue, year, abstract FROM metadata WHERE path = ?`,
 		path,
 	)
 
 	m := Metadata{}
-	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year); err {
+	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Abstract); err {
 	case sql.ErrNoRows:
 		return nil, nil
 	case nil:
@@ -75,15 +90,16 @@ func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 
 func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO metadata (path, title, author, venue, year)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO metadata (path, title, author, venue, year, abstract)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
-  title  = excluded.title,
-  author = excluded.author,
-  venue  = excluded.venue,
-  year   = excluded.year
+  title    = excluded.title,
+  author   = excluded.author,
+  venue    = excluded.venue,
+  year     = excluded.year,
+  abstract = excluded.abstract
 `,
-		m.Path, m.Title, m.Author, m.Venue, m.Year,
+		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Abstract,
 	)
 	return err
 }

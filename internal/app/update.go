@@ -10,8 +10,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pdf-tui/internal/config"
 	"pdf-tui/internal/meta"
 )
+
+type configEditFinishedMsg struct {
+	err error
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -23,6 +28,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.width = msg.Width
 		m.ensureCursorVisible()
+		return m, nil
+
+	case configEditFinishedMsg:
+		if msg.err != nil {
+			m.setStatus("Config edit failed: " + msg.err.Error())
+		} else {
+			m.setStatus("Config edit finished")
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -523,7 +536,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			m.state = stateNewDir
 			m.input.SetValue("")
-			m.input.CursorEnd() 
+			m.input.CursorEnd()
 			m.input.Focus()
 			m.setPersistentStatus("New directory: type name and press Enter")
 
@@ -625,7 +638,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
 			"  Metadata   : e preview/edit metadata",
-			"  Commands   : :h help, :pwd show directory, :clear hide this pane, :q quit",
+			"  Config     : :config shows/edits the config file",
+			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
 		}
 		m.setCommandOutput(help)
 		m.setPersistentStatus("Help displayed (use :clear to hide)")
@@ -639,6 +653,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 	case "clear":
 		m.clearCommandOutput()
 		m.setStatus("Command output cleared")
+	case "config":
+		return m.handleConfigCommand(args)
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit
@@ -650,4 +666,47 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+func (m *Model) handleConfigCommand(args []string) tea.Cmd {
+	if len(args) == 0 {
+		path, err := config.Path()
+		if err != nil {
+			m.setStatus("Failed to resolve config path: " + err.Error())
+			return nil
+		}
+		lines := []string{
+			"Config file:",
+			"  " + path,
+			"Use :config edit to open it in your $EDITOR.",
+		}
+		m.setCommandOutput(lines)
+		m.setPersistentStatus("Config path displayed (use :clear to hide)")
+		return nil
+	}
+
+	sub := strings.ToLower(args[0])
+	switch sub {
+	case "edit":
+		path, err := config.Path()
+		if err != nil {
+			m.setStatus("Failed to resolve config path: " + err.Error())
+			return nil
+		}
+		editor := strings.TrimSpace(os.Getenv("EDITOR"))
+		if editor == "" {
+			editor = "vi"
+		}
+		cmd := exec.Command(editor, path)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		m.setPersistentStatus(fmt.Sprintf("Editing config with %s (exit editor to return)", editor))
+		return tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return configEditFinishedMsg{err: err}
+		})
+	default:
+		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
+		return nil
+	}
 }

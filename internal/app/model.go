@@ -57,7 +57,7 @@ type Model struct {
 
 	meta            *meta.Store   // <── sqlite store
 	metaEditingPath string        // path of file being edited
-	metaFieldIndex  int           // 0:title,1:author,2:venue,3:year
+	metaFieldIndex  int           // 0:title,1:author,2:venue,3:year,4:abstract
 	metaDraft       meta.Metadata // draft being edited
 
 	previewText []string
@@ -72,6 +72,7 @@ var metaFieldLabels = []string{
 	"Author",
 	"Journal/Conference",
 	"Year",
+	"Abstract",
 }
 
 func metaFieldLabel(index int) string {
@@ -95,6 +96,8 @@ func metadataFieldValue(data meta.Metadata, index int) string {
 		return data.Venue
 	case 3:
 		return data.Year
+	case 4:
+		return data.Abstract
 	default:
 		return ""
 	}
@@ -110,6 +113,8 @@ func setMetadataFieldValue(data *meta.Metadata, index int, value string) {
 		data.Venue = value
 	case 3:
 		data.Year = value
+	case 4:
+		data.Abstract = value
 	}
 }
 
@@ -166,7 +171,7 @@ func NewModel(root string, store *meta.Store) Model {
 // }
 
 func (m Model) Init() tea.Cmd {
-    return textinput.Blink
+	return textinput.Blink
 }
 
 func (m *Model) setStatus(msg string) {
