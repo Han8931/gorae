@@ -27,7 +27,9 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - Press `e` to preview metadata, `e` again to edit inline, or `v` to open the structured fields in your configured editor.
 - Press `n` while in the metadata popup to open the note for the current file in your editor (notes are stored as Markdown files in `notes_dir`).
 - Press `y` on any PDF to copy a BibTeX entry for it to your clipboard (fields come from the stored metadata when available). The BibTeX always includes `published` and `url` keys, plus `doi` when present.
+- Press `R` on any directory to rename it
 - Press `f` to toggle Favorite on the current/selected files, `t` to toggle To-read, and `u` to open a prompt that clears one or both flags.
+- A reading-state icon appears before the year in the file list: `○` (Unread), `▶` (Reading), `✓` (Read). Press `r` to cycle the state (Unread → Reading → Read) on the current/selected files; the default for new entries is Unread.
 - Metadata fields include Title, Author, Year, Published, URL, DOI, Tag, and Abstract. Notes are stored separately.
 - In the metadata popup use ↑/↓ or PgUp/PgDn to scroll through long content.
 - Fetch fresh arXiv metadata with `:arxiv <arxiv-id> [files...]`; to avoid typing long filenames, select files beforehand (space or `v`) and run `:arxiv -v <arxiv-id>` to apply the ID to the selection. If you omit the ID entirely (e.g. `:arxiv -v`) the app first tries to extract IDs from each filename (e.g. `2101.12345v2` or `math.GT/0309136`); any files without detectable IDs fall back to an interactive prompt. arXiv imports populate title, authors, year, abstract, and DOI when available.
@@ -37,7 +39,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - Press `:` to enter command mode and run `:search <query>` to scan PDFs under the current directory. Matches are shown in the dedicated search view with highlighted snippets.
 - Shortcut: press `/` in the main view to open the search prompt directly (no colon needed); type queries plus optional `-t`/`-a`/`-c`/`-y` flags and press Enter to run.
 - After a search finishes the UI switches to a dedicated results view: use `j`/`k` (or the arrow keys) to move the selection, `PgUp`/`PgDn` to page, `Enter` to open the highlighted PDF, and `Esc` or `q` to return to the file browser.
-- Quick filters: press `F` to show favorites or `T` to show to-read items at any time; the interface switches to the search results view so you can browse and exit with `Esc`/`q`.
+- Quick filters: press `F` to show favorites, `T` to show to-read items, or `g` followed by `r`/`u`/`d` to view Reading/Unread/Read files; the interface switches to the search results view so you can browse and exit with `Esc`/`q`.
 - Use flags to customize the lookup:
   - `-mode title|author|year|content` (default `content`) or short forms `-t`, `-a`, `-y`, `-c`
   - `-case` for case-sensitive search
@@ -46,7 +48,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
 
 TODO
-- Check whether read / unread
+- In the `recently_opened` directory. I wish there is no duplicates. Also, I wish the list is sorted by the order of time of user opening them. 
 - Cursor position after going back to the parent dir
 - UI improvement
 - logo command
@@ -69,3 +71,5 @@ AI features:
 
 [Pictures](https://www.khan.co.kr/article/202007080300025)
 The world's earliest known depictions of whale hunting are found in the Bangudae Petroglyphs in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
+
+## Acknowledgement

@@ -151,6 +151,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
+		if m.awaitingQuickFilter {
+			m.awaitingQuickFilter = false
+			if handled, cmd := m.handleQuickFilterPrefix(key); handled {
+				return m, cmd
+			}
+		}
+
 		if m.state == stateSearchResults {
 			if handled, cmd := m.handleSearchResultsKey(key); handled {
 				return m, cmd
@@ -660,6 +667,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "g":
 			m.cursor = 0
 			m.ensureCursorVisible()
+			if len(m.entries) > 0 {
+				m.updateTextPreview()
+			}
+			m.awaitingQuickFilter = true
+			m.setStatus("Filter: g r reading, g u unread, g d read (press other key to cancel)")
 
 		case "G":
 			if n := len(m.entries); n > 0 {
@@ -741,6 +753,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "T":
 			return m, m.showQuickFilter(quickFilterToRead)
+
+		case "r":
+			m.cycleReadingState()
+			return m, nil
 
 		case " ":
 			if len(m.entries) == 0 {
@@ -842,7 +858,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus(fmt.Sprintf("Delete %d items? (y/N)", len(targets)))
 			}
 
-		case "r":
+		case "R":
 			if len(m.entries) == 0 {
 				m.setStatus("Nothing to rename")
 				return m, nil
@@ -907,6 +923,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					draft = *existing
 				}
 			}
+			draft.ReadingState = normalizeReadingStateValue(draft.ReadingState)
 			m.metaDraft = draft
 			m.metaFieldIndex = 0
 			m.metaPopupOffset = 0
@@ -1157,6 +1174,7 @@ type metadataEditorFile struct {
 	DOI       string `json:"doi"`
 	Abstract  string `json:"abstract"`
 	Tag       string `json:"tag"`
+	State     string `json:"reading_state,omitempty"`
 }
 
 func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
@@ -1169,6 +1187,7 @@ func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
 		DOI:       md.DOI,
 		Abstract:  md.Abstract,
 		Tag:       md.Tag,
+		State:     md.ReadingState,
 	}
 }
 
@@ -1193,15 +1212,16 @@ func parseMetadataEditorData(raw []byte, path string) (meta.Metadata, error) {
 		return meta.Metadata{}, fmt.Errorf("parse JSON: %w", err)
 	}
 	md := meta.Metadata{
-		Path:      path,
-		Title:     strings.TrimSpace(data.Title),
-		Author:    strings.TrimSpace(data.Author),
-		Year:      strings.TrimSpace(data.Year),
-		Published: strings.TrimSpace(data.Published),
-		URL:       strings.TrimSpace(data.URL),
-		DOI:       strings.TrimSpace(data.DOI),
-		Abstract:  strings.TrimSpace(data.Abstract),
-		Tag:       strings.TrimSpace(data.Tag),
+		Path:         path,
+		Title:        strings.TrimSpace(data.Title),
+		Author:       strings.TrimSpace(data.Author),
+		Year:         strings.TrimSpace(data.Year),
+		Published:    strings.TrimSpace(data.Published),
+		URL:          strings.TrimSpace(data.URL),
+		DOI:          strings.TrimSpace(data.DOI),
+		Abstract:     strings.TrimSpace(data.Abstract),
+		Tag:          strings.TrimSpace(data.Tag),
+		ReadingState: normalizeReadingStateValue(data.State),
 	}
 	return md, nil
 }
@@ -1356,9 +1376,9 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"Command Help:",
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
-			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit, v edit in editor, n edit note, y copy BibTeX, f favorite, t to-read, u unmark, :arxiv [-v] <id>",
-			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits; F favorites, T to-read quick filter",
+			"  Files      : a mkdir, R rename dir, D delete",
+			"  Metadata   : e preview/edit, v edit in editor, n edit note, y copy BibTeX, f favorite, t to-read, r cycle read state, u unmark, :arxiv [-v] <id>",
+			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits; F favorites, T to-read, g r/u/d show reading filters",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config edits config, :config show displays info, :config editor <cmd> sets editor",
@@ -1418,6 +1438,20 @@ func (m *Model) handleConfigCommand(args []string) tea.Cmd {
 	default:
 		m.setStatus(fmt.Sprintf("Unknown config command: %s", sub))
 		return nil
+	}
+}
+
+func (m *Model) handleQuickFilterPrefix(key string) (bool, tea.Cmd) {
+	lower := strings.ToLower(strings.TrimSpace(key))
+	switch lower {
+	case "r":
+		return true, m.showQuickFilter(quickFilterReading)
+	case "u":
+		return true, m.showQuickFilter(quickFilterUnread)
+	case "d":
+		return true, m.showQuickFilter(quickFilterRead)
+	default:
+		return false, nil
 	}
 }
 

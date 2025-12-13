@@ -51,6 +51,9 @@ const (
 	quickFilterNone quickFilterMode = iota
 	quickFilterFavorites
 	quickFilterToRead
+	quickFilterUnread
+	quickFilterReading
+	quickFilterRead
 )
 
 func (q quickFilterMode) label() string {
@@ -59,6 +62,12 @@ func (q quickFilterMode) label() string {
 		return "Favorites"
 	case quickFilterToRead:
 		return "To-read"
+	case quickFilterUnread:
+		return "Unread"
+	case quickFilterReading:
+		return "Reading"
+	case quickFilterRead:
+		return "Read"
 	default:
 		return ""
 	}
@@ -70,6 +79,12 @@ func (q quickFilterMode) labelLower() string {
 		return "favorites"
 	case quickFilterToRead:
 		return "to-read"
+	case quickFilterUnread:
+		return "unread"
+	case quickFilterReading:
+		return "reading"
+	case quickFilterRead:
+		return "read"
 	default:
 		return ""
 	}
@@ -94,6 +109,7 @@ type Model struct {
 	entryTitles           map[string]string
 	sortMode              sortMode
 	awaitingSort          bool
+	awaitingQuickFilter   bool
 	recentlyAddedDir      string
 	recentlyAddedMaxAge   time.Duration
 	recentlyAddedSyncInt  time.Duration

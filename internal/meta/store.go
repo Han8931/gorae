@@ -13,18 +13,21 @@ import (
 )
 
 type Metadata struct {
-	Path      string
-	Title     string
-	Author    string
-	Year      string
-	Published string
-	URL       string
-	DOI       string
-	Abstract  string
-	Tag       string
-	Favorite  bool
-	ToRead    bool
+	Path         string
+	Title        string
+	Author       string
+	Year         string
+	Published    string
+	URL          string
+	DOI          string
+	Abstract     string
+	Tag          string
+	Favorite     bool
+	ToRead       bool
+	ReadingState string
 }
+
+const defaultReadingState = "unread"
 
 type Store struct {
 	db *sql.DB
@@ -60,6 +63,7 @@ CREATE TABLE IF NOT EXISTS metadata (
   doi    TEXT,
   abstract TEXT,
   tag TEXT,
+  reading_state TEXT,
   favorite INTEGER DEFAULT 0,
   to_read INTEGER DEFAULT 0
 );
@@ -71,6 +75,9 @@ CREATE TABLE IF NOT EXISTS metadata (
 		return err
 	}
 	if err := s.ensureColumn("to_read", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("reading_state", "TEXT"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("published", "TEXT"); err != nil {
@@ -110,8 +117,9 @@ func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 		        IFNULL(published, ''),
 		        IFNULL(url, ''),
 		        IFNULL(doi, ''),
-		        IFNULL(abstract, ''),
+                IFNULL(abstract, ''),
 		        IFNULL(tag, ''),
+		        COALESCE(reading_state, ''),
 		        COALESCE(favorite, 0),
 		        COALESCE(to_read, 0)
 		   FROM metadata WHERE path = ?`,
@@ -138,9 +146,10 @@ func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
 	if m.ToRead {
 		toRead = 1
 	}
+	state := normalizeReadingState(m.ReadingState)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO metadata (path, title, author, year, published, url, doi, abstract, tag, favorite, to_read)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO metadata (path, title, author, year, published, url, doi, abstract, tag, reading_state, favorite, to_read)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
   title    = excluded.title,
   author   = excluded.author,
@@ -150,10 +159,11 @@ ON CONFLICT(path) DO UPDATE SET
   doi      = excluded.doi,
   abstract = excluded.abstract,
   tag      = excluded.tag,
+  reading_state = excluded.reading_state,
   favorite = excluded.favorite,
   to_read  = excluded.to_read
 `,
-		m.Path, m.Title, m.Author, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag, favorite, toRead,
+		m.Path, m.Title, m.Author, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag, state, favorite, toRead,
 	)
 	return err
 }
@@ -175,12 +185,14 @@ func scanMetadataRow(scanner rowScanner) (Metadata, error) {
 		&md.DOI,
 		&md.Abstract,
 		&md.Tag,
+		&md.ReadingState,
 		&favorite,
 		&toRead,
 	)
 	if err != nil {
 		return Metadata{}, err
 	}
+	md.ReadingState = normalizeReadingState(md.ReadingState)
 	md.Favorite = favorite != 0
 	md.ToRead = toRead != 0
 	return md, nil
@@ -197,11 +209,12 @@ SELECT path,
        IFNULL(doi, ''),
        IFNULL(abstract, ''),
        IFNULL(tag, ''),
+       IFNULL(reading_state, ''),
        COALESCE(favorite, 0),
        COALESCE(to_read, 0)
   FROM metadata
  WHERE COALESCE(%s, 0) = 1
- ORDER BY LOWER(title), path
+ORDER BY LOWER(title), path
 `, column)
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -229,6 +242,54 @@ func (s *Store) ListFavorites(ctx context.Context) ([]Metadata, error) {
 
 func (s *Store) ListToRead(ctx context.Context) ([]Metadata, error) {
 	return s.listByFlag(ctx, "to_read")
+}
+
+func (s *Store) ListByReadingState(ctx context.Context, state string) ([]Metadata, error) {
+	state = normalizeReadingState(state)
+	query := `
+SELECT path,
+       title,
+       author,
+       year,
+       IFNULL(published, ''),
+       IFNULL(url, ''),
+       IFNULL(doi, ''),
+       IFNULL(abstract, ''),
+       IFNULL(tag, ''),
+       IFNULL(reading_state, ''),
+       COALESCE(favorite, 0),
+       COALESCE(to_read, 0)
+  FROM metadata
+ WHERE LOWER(IFNULL(reading_state, '')) = LOWER(?)
+ ORDER BY LOWER(title), path`
+	rows, err := s.db.QueryContext(ctx, query, state)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	results := make([]Metadata, 0)
+	for rows.Next() {
+		md, err := scanMetadataRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, md)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func normalizeReadingState(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "reading":
+		return "reading"
+	case "read":
+		return "read"
+	default:
+		return defaultReadingState
+	}
 }
 
 func (s *Store) Close() error {

@@ -89,9 +89,10 @@ func (m *Model) loadMetadataRecord(ctx context.Context, path string) (meta.Metad
 		return meta.Metadata{}, err
 	}
 	if existing != nil {
+		existing.ReadingState = normalizeReadingStateValue(existing.ReadingState)
 		return *existing, nil
 	}
-	return meta.Metadata{Path: path}, nil
+	return meta.Metadata{Path: path, ReadingState: readingStateUnread}, nil
 }
 
 func (m *Model) refreshMetadataCache(path string, md meta.Metadata) {
@@ -99,6 +100,54 @@ func (m *Model) refreshMetadataCache(path string, md meta.Metadata) {
 		updated := md
 		m.currentMeta = &updated
 	}
+}
+
+func (m *Model) cycleReadingState() {
+	if m.meta == nil {
+		m.setStatus("Metadata store not available")
+		return
+	}
+	targets := m.selectionOrCurrent()
+	paths := m.canonicalFilePaths(targets)
+	if len(paths) == 0 {
+		m.setStatus("No files selected")
+		return
+	}
+	ctx := context.Background()
+	countByState := make(map[string]int, 3)
+	refreshPreview := false
+	for _, path := range paths {
+		md, err := m.loadMetadataRecord(ctx, path)
+		if err != nil {
+			m.setStatus("Failed to load metadata: " + err.Error())
+			return
+		}
+		md.ReadingState = nextReadingState(md.ReadingState)
+		countByState[md.ReadingState]++
+		if err := m.meta.Upsert(ctx, &md); err != nil {
+			m.setStatus("Failed to save metadata: " + err.Error())
+			return
+		}
+		m.refreshMetadataCache(path, md)
+		if path == m.currentEntryPath() {
+			refreshPreview = true
+		}
+	}
+	m.refreshEntryTitles()
+	if refreshPreview {
+		m.updateTextPreview()
+	}
+	summary := make([]string, 0, len(countByState))
+	for _, state := range []string{readingStateUnread, readingStateReading, readingStateRead} {
+		if count := countByState[state]; count > 0 {
+			summary = append(summary, fmt.Sprintf("%s: %d", readingStateLabel(state), count))
+		}
+	}
+	if len(summary) == 0 {
+		m.setStatus("Reading state unchanged")
+		return
+	}
+	m.setStatus("Reading state -> " + strings.Join(summary, ", "))
 }
 
 func (m *Model) canonicalFilePaths(paths []string) []string {
@@ -217,6 +266,12 @@ func (m *Model) showQuickFilter(mode quickFilterMode) tea.Cmd {
 		list, err = m.meta.ListFavorites(ctx)
 	case quickFilterToRead:
 		list, err = m.meta.ListToRead(ctx)
+	case quickFilterUnread:
+		list, err = m.meta.ListByReadingState(ctx, readingStateUnread)
+	case quickFilterReading:
+		list, err = m.meta.ListByReadingState(ctx, readingStateReading)
+	case quickFilterRead:
+		list, err = m.meta.ListByReadingState(ctx, readingStateRead)
 	default:
 		return nil
 	}
@@ -278,6 +333,7 @@ func metadataSnippets(md meta.Metadata) []string {
 	if len(status) > 0 {
 		lines = append(lines, "Status: "+strings.Join(status, ", "))
 	}
+	lines = append(lines, "Reading: "+readingStateLabel(md.ReadingState))
 	if len(lines) == 0 {
 		lines = append(lines, "(no metadata)")
 	}
@@ -293,4 +349,54 @@ func quickFilterSummary(mode quickFilterMode, count int) string {
 		return fmt.Sprintf("%s: no files", label)
 	}
 	return fmt.Sprintf("%s: %d file(s)", label, count)
+}
+
+const (
+	readingStateUnread  = "unread"
+	readingStateReading = "reading"
+	readingStateRead    = "read"
+)
+
+func normalizeReadingStateValue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case readingStateReading:
+		return readingStateReading
+	case readingStateRead:
+		return readingStateRead
+	default:
+		return readingStateUnread
+	}
+}
+
+func readingStateIcon(value string) string {
+	switch normalizeReadingStateValue(value) {
+	case readingStateReading:
+		return "▶"
+	case readingStateRead:
+		return "✓"
+	default:
+		return "○"
+	}
+}
+
+func readingStateLabel(value string) string {
+	switch normalizeReadingStateValue(value) {
+	case readingStateReading:
+		return "Reading"
+	case readingStateRead:
+		return "Read"
+	default:
+		return "Unread"
+	}
+}
+
+func nextReadingState(value string) string {
+	switch normalizeReadingStateValue(value) {
+	case readingStateUnread:
+		return readingStateReading
+	case readingStateReading:
+		return readingStateRead
+	default:
+		return readingStateUnread
+	}
 }

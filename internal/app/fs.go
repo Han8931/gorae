@@ -145,7 +145,7 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 			continue
 		}
 		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		m.entryTitles[full] = fmt.Sprintf("[-][%s]", name)
+		m.entryTitles[full] = fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
 	}
 }
 
@@ -164,14 +164,15 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	}
 	name := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	if m.meta == nil {
-		return fmt.Sprintf("[-][%s]", name)
+		return fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
 	}
 
 	path := canonicalPath(fullPath)
 	md, err := m.meta.Get(ctx, path)
 	if err != nil || md == nil {
-		return fmt.Sprintf("[-][%s]", name)
+		return fmt.Sprintf("[%s][-][%s]", readingStateIcon(""), name)
 	}
+	stateIcon := readingStateIcon(md.ReadingState)
 	title := strings.TrimSpace(md.Title)
 	if title == "" {
 		title = name
@@ -180,7 +181,7 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	if year == "" {
 		year = "-"
 	}
-	return fmt.Sprintf("[%s][%s]", year, title)
+	return fmt.Sprintf("[%s][%s][%s]", stateIcon, year, title)
 }
 
 func (m *Model) resortEntries() {
@@ -231,6 +232,7 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 					data.title = t
 				}
 				data.year = strings.TrimSpace(md.Year)
+				data.state = normalizeReadingStateValue(md.ReadingState)
 			}
 		}
 		sortInfo[full] = data
@@ -314,6 +316,7 @@ func parseYearValue(year string) int {
 type entrySortInfo struct {
 	title string
 	year  string
+	state string
 }
 
 func (e entrySortInfo) display() string {
@@ -321,9 +324,10 @@ func (e entrySortInfo) display() string {
 	if title == "" {
 		title = "-"
 	}
+	status := readingStateIcon(e.state)
 	year := strings.TrimSpace(e.year)
 	if year == "" {
 		year = "-"
 	}
-	return fmt.Sprintf("[%s][%s]", year, title)
+	return fmt.Sprintf("[%s][%s][%s]", status, year, title)
 }

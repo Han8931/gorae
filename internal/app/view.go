@@ -721,6 +721,7 @@ func (m Model) metadataPreviewLines(width int) []string {
 	lines = append(lines, "Status:")
 	lines = append(lines, "  Favorite: "+boolLabel(md.Favorite))
 	lines = append(lines, "  To-read : "+boolLabel(md.ToRead))
+	lines = append(lines, "  Reading : "+readingStateLabel(md.ReadingState))
 	lines = append(lines, "")
 	noteWidth := width - 2
 	if noteWidth < 10 {
