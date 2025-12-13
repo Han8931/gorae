@@ -46,6 +46,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
+		m.windowHeight = msg.Height
 		m.viewportHeight = msg.Height - 5
 		if m.viewportHeight < 1 {
 			m.viewportHeight = 1
@@ -53,6 +54,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.ensureCursorVisible()
 		m.clampMetaPopupOffset()
+		if m.state == stateSearchResults {
+			m.ensureSearchResultVisible()
+		}
 		return m, nil
 
 	case configEditFinishedMsg:
@@ -97,11 +101,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case searchResultMsg:
+		if msg.err != nil {
+			m.setStatus("Search failed: " + msg.err.Error())
+			return m, nil
+		}
+		m.clearCommandOutput()
+		m.enterSearchResults(msg)
+		if msg.summary != "" {
+			m.setPersistentStatus(msg.summary + " (Esc/q closes, Enter opens)")
+		} else {
+			m.setStatus("Search finished")
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		key := msg.String()
 
-		if m.state != stateCommand && len(m.commandOutput) > 0 {
+		if m.state == stateSearchResults {
+			if handled, cmd := m.handleSearchResultsKey(key); handled {
+				return m, cmd
+			}
+		}
+
+		if m.state != stateCommand && len(m.commandOutput) > 0 && !m.commandOutputPinned {
 			m.clearCommandOutput()
+		}
+
+		if m.commandOutputPinned && m.state == stateNormal {
+			switch key {
+			case "esc":
+				m.clearCommandOutput()
+				m.setStatus("Command output closed")
+				return m, nil
+			case "j", "down":
+				m.scrollCommandOutput(1)
+				return m, nil
+			case "k", "up":
+				m.scrollCommandOutput(-1)
+				return m, nil
+			case "pgdown", "ctrl+f":
+				m.scrollCommandOutput(m.commandOutputViewHeight())
+				return m, nil
+			case "pgup", "ctrl+b":
+				m.scrollCommandOutput(-m.commandOutputViewHeight())
+				return m, nil
+			}
 		}
 
 		if m.state != stateNormal && m.awaitingSort {
@@ -399,6 +444,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Blur()
 				m.setStatus("Command cancelled")
 				return m, inputCmd
+			default:
+				return m, inputCmd
+			}
+		}
+
+		// ===========================
+		//  SEARCH PROMPT MODE
+		// ===========================
+		if m.state == stateSearchPrompt {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+
+			switch key {
+			case "enter":
+				line := strings.TrimSpace(m.input.Value())
+				m.input.SetValue("")
+				m.input.Blur()
+				m.state = stateNormal
+
+				if line == "" {
+					m.setStatus("Search query cannot be empty")
+					return m, inputCmd
+				}
+
+				tokens, err := splitCommandLine(line)
+				if err != nil {
+					m.setStatus("Search parse failed: " + err.Error())
+					return m, inputCmd
+				}
+				req, err := m.buildSearchRequest(tokens)
+				if err != nil {
+					m.setStatus(err.Error())
+					return m, inputCmd
+				}
+				cmd := m.runSearch(req)
+				return m, tea.Batch(inputCmd, cmd)
+
+			case "esc":
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+				m.setStatus("Search cancelled")
+				return m, inputCmd
+
 			default:
 				return m, inputCmd
 			}
@@ -713,6 +802,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.CursorEnd()
 			m.input.Focus()
 			m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
+			return m, nil
+
+		case "/":
+			m.openSearchPrompt(m.lastSearchQuery)
 			return m, nil
 
 		case "v":
@@ -1132,6 +1225,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
 			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, :arxiv <id> fetch from arXiv",
+			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config shows/edits the config file",
@@ -1159,6 +1253,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		return m.handleConfigCommand(args)
 	case "arxiv":
 		return m.handleArxivCommand(args)
+	case "search":
+		return m.handleSearchCommand(args)
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit
@@ -1287,6 +1383,249 @@ func (m *Model) handleArxivCommand(args []string) tea.Cmd {
 	files = uniquePaths(files)
 	m.setPersistentStatus(fmt.Sprintf("Fetching arXiv %s for %d file(s)...", id, len(files)))
 	return m.fetchArxivMetadata(id, files)
+}
+
+func (m *Model) handleSearchCommand(args []string) tea.Cmd {
+	if len(args) == 0 {
+		m.setStatus("Usage: :search [-mode title|author|year|content] [-case] [-root PATH] <query>")
+		return nil
+	}
+
+	req, err := m.buildSearchRequest(args)
+	if err != nil {
+		m.setStatus(err.Error())
+		return nil
+	}
+	return m.runSearch(req)
+}
+
+func detectPrefixedSearchMode(token string) (searchMode, string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(token))
+	if lower == "" {
+		return "", "", false
+	}
+	candidates := []searchMode{
+		searchModeTitle,
+		searchModeAuthor,
+		searchModeYear,
+		searchModeContent,
+	}
+	for _, candidate := range candidates {
+		prefix := string(candidate) + ":"
+		if strings.HasPrefix(lower, prefix) {
+			trimmed := strings.TrimSpace(token[len(prefix):])
+			return candidate, trimmed, true
+		}
+	}
+	return "", "", false
+}
+
+func (m *Model) openSearchResultAtCursor() {
+	match := m.currentSearchMatch()
+	if match == nil {
+		m.setStatus("No search result selected")
+		return
+	}
+	if err := m.openPDF(match.Path); err != nil {
+		m.setStatus("Failed to open PDF: " + err.Error())
+		return
+	}
+	m.recordRecentlyOpened(match.Path)
+	m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(match.Path)))
+}
+
+func (m *Model) runSearch(req searchRequest) tea.Cmd {
+	m.setPersistentStatus(fmt.Sprintf("%s search for %q...", req.mode.displayName(), req.query))
+	return newSearchCmd(req)
+}
+
+func (m *Model) buildSearchRequest(tokens []string) (searchRequest, error) {
+	root := canonicalPath(m.cwd)
+	if root == "" {
+		root = m.cwd
+	}
+	watchRoot := canonicalPath(m.root)
+	if watchRoot == "" {
+		watchRoot = m.root
+	}
+
+	req := searchRequest{
+		root:          root,
+		mode:          searchModeContent,
+		caseSensitive: false,
+		wrapWidth:     m.width,
+		metaStore:     m.meta,
+	}
+
+	var queryParts []string
+	for i := 0; i < len(tokens); i++ {
+		token := strings.TrimSpace(tokens[i])
+		if token == "" {
+			continue
+		}
+		lower := strings.ToLower(token)
+		switch {
+		case lower == "-mode" || lower == "--mode":
+			if i+1 >= len(tokens) {
+				return searchRequest{}, fmt.Errorf("Missing value for -mode")
+			}
+			i++
+			modeVal := strings.ToLower(strings.TrimSpace(tokens[i]))
+			mode, ok := parseSearchModeValue(modeVal)
+			if !ok {
+				return searchRequest{}, fmt.Errorf("Unknown mode: %s", modeVal)
+			}
+			req.mode = mode
+		case strings.HasPrefix(lower, "-mode=") || strings.HasPrefix(lower, "--mode="):
+			parts := strings.SplitN(token, "=", 2)
+			if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+				return searchRequest{}, fmt.Errorf("Missing value for -mode")
+			}
+			modeVal := strings.ToLower(strings.TrimSpace(parts[1]))
+			mode, ok := parseSearchModeValue(modeVal)
+			if !ok {
+				return searchRequest{}, fmt.Errorf("Unknown mode: %s", modeVal)
+			}
+			req.mode = mode
+		case lower == "-t" || lower == "--title":
+			req.mode = searchModeTitle
+		case lower == "-a" || lower == "--author":
+			req.mode = searchModeAuthor
+		case lower == "-c" || lower == "--content":
+			req.mode = searchModeContent
+		case lower == "-y" || lower == "--year":
+			req.mode = searchModeYear
+		case lower == "-case" || lower == "--case":
+			req.caseSensitive = true
+		case lower == "-root" || lower == "--root":
+			if i+1 >= len(tokens) {
+				return searchRequest{}, fmt.Errorf("Missing value for -root")
+			}
+			i++
+			rootVal := strings.TrimSpace(tokens[i])
+			if err := m.applySearchRoot(&req, rootVal, watchRoot); err != nil {
+				return searchRequest{}, err
+			}
+		case strings.HasPrefix(lower, "-root=") || strings.HasPrefix(lower, "--root="):
+			parts := strings.SplitN(token, "=", 2)
+			if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+				return searchRequest{}, fmt.Errorf("Missing value for -root")
+			}
+			if err := m.applySearchRoot(&req, strings.TrimSpace(parts[1]), watchRoot); err != nil {
+				return searchRequest{}, err
+			}
+		default:
+			if req.mode == searchModeContent && len(queryParts) == 0 {
+				if prefMode, trimmed, ok := detectPrefixedSearchMode(token); ok {
+					req.mode = prefMode
+					if trimmed != "" {
+						queryParts = append(queryParts, trimmed)
+					}
+					continue
+				}
+			}
+			queryParts = append(queryParts, token)
+		}
+	}
+
+	query := strings.TrimSpace(strings.Join(queryParts, " "))
+	if query == "" {
+		return searchRequest{}, fmt.Errorf("Search query cannot be empty")
+	}
+	req.query = query
+	return req, nil
+}
+
+func parseSearchModeValue(value string) (searchMode, bool) {
+	switch searchMode(strings.ToLower(value)) {
+	case searchModeTitle:
+		return searchModeTitle, true
+	case searchModeAuthor:
+		return searchModeAuthor, true
+	case searchModeYear:
+		return searchModeYear, true
+	case searchModeContent:
+		return searchModeContent, true
+	default:
+		return "", false
+	}
+}
+
+func (m *Model) applySearchRoot(req *searchRequest, value string, watchRoot string) error {
+	if value == "" {
+		return fmt.Errorf("Search root cannot be empty")
+	}
+	rootPath := value
+	if !filepath.IsAbs(rootPath) {
+		rootPath = filepath.Join(m.cwd, rootPath)
+	}
+	rootPath = filepath.Clean(rootPath)
+	if resolved := canonicalPath(rootPath); resolved != "" {
+		rootPath = resolved
+	}
+	if watchRoot != "" && !strings.HasPrefix(rootPath, watchRoot) {
+		return fmt.Errorf("Search root must stay within the watched directory")
+	}
+	info, err := os.Stat(rootPath)
+	if err != nil {
+		return fmt.Errorf("Search root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("Search root is not a directory")
+	}
+	req.root = rootPath
+	return nil
+}
+
+func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
+	switch key {
+	case "esc":
+		m.exitSearchResults()
+		m.setStatus("Search results closed")
+		return true, nil
+	case "q", "Q":
+		m.exitSearchResults()
+		m.setStatus("Search results closed")
+		return true, nil
+	case "enter":
+		m.openSearchResultAtCursor()
+		return true, nil
+	case "j", "down":
+		m.moveSearchCursor(1)
+		return true, nil
+	case "k", "up":
+		m.moveSearchCursor(-1)
+		return true, nil
+	case "pgdown", "ctrl+f":
+		m.pageSearchCursor(1)
+		return true, nil
+	case "pgup", "ctrl+b":
+		m.pageSearchCursor(-1)
+		return true, nil
+	case "g":
+		m.searchResultCursor = 0
+		m.ensureSearchResultVisible()
+		return true, nil
+	case "G":
+		if len(m.searchResults) > 0 {
+			m.searchResultCursor = len(m.searchResults) - 1
+			m.ensureSearchResultVisible()
+		}
+		return true, nil
+	case ":":
+		m.clearSearchResults()
+		m.state = stateCommand
+		m.input.SetValue(":")
+		m.input.CursorEnd()
+		m.input.Focus()
+		m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
+		return true, nil
+	case "/":
+		m.openSearchPrompt(m.lastSearchQuery)
+		return true, nil
+	default:
+		return true, nil
+	}
 }
 
 func (m *Model) fetchArxivMetadata(id string, files []string) tea.Cmd {

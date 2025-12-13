@@ -39,6 +39,8 @@ const (
 	stateMetaPreview
 	stateEditMeta
 	stateCommand
+	stateSearchPrompt
+	stateSearchResults
 )
 
 type Model struct {
@@ -55,6 +57,8 @@ type Model struct {
 	statusAt              time.Time
 	sticky                bool
 	commandOutput         []string
+	commandOutputOffset   int
+	commandOutputPinned   bool
 	entryTitles           map[string]string
 	sortMode              sortMode
 	awaitingSort          bool
@@ -69,6 +73,7 @@ type Model struct {
 	viewportStart  int
 	viewportHeight int
 	width          int
+	windowHeight   int
 
 	state        uiState
 	input        textinput.Model
@@ -89,6 +94,14 @@ type Model struct {
 	currentNote     string
 	notesDir        string
 	metaPopupOffset int
+
+	searchResults      []searchMatch
+	searchWarnings     []string
+	searchResultCursor int
+	searchResultOffset int
+	searchSummary      string
+	lastSearchQuery    string
+	lastSearchMode     searchMode
 }
 
 var metaFieldLabels = []string{
@@ -474,10 +487,193 @@ func (m Model) statusMessage(now time.Time) string {
 
 func (m *Model) setCommandOutput(lines []string) {
 	m.commandOutput = append([]string{}, lines...)
+	m.commandOutputOffset = 0
+	m.commandOutputPinned = false
 }
 
 func (m *Model) clearCommandOutput() {
 	m.commandOutput = nil
+	m.commandOutputOffset = 0
+	m.commandOutputPinned = false
+}
+
+func (m *Model) openSearchPrompt(initial string) {
+	m.state = stateSearchPrompt
+	m.input.SetValue(initial)
+	m.input.CursorEnd()
+	m.input.Focus()
+	m.setPersistentStatus("Search: type query (use -t/-a/-c/-y) and press Enter (Esc to cancel)")
+}
+
+func (m *Model) enterSearchResults(msg searchResultMsg) {
+	m.clearSearchResults()
+	m.state = stateSearchResults
+	m.searchResults = append([]searchMatch{}, msg.matches...)
+	m.searchWarnings = append([]string{}, msg.warnings...)
+	m.searchSummary = msg.summary
+	m.lastSearchQuery = msg.req.query
+	m.lastSearchMode = msg.req.mode
+	if m.searchResultCursor >= len(m.searchResults) {
+		m.searchResultCursor = 0
+	}
+	m.searchResultOffset = 0
+	m.ensureSearchResultVisible()
+}
+
+func (m *Model) exitSearchResults() {
+	m.state = stateNormal
+	m.clearSearchResults()
+}
+
+func (m *Model) clearSearchResults() {
+	m.searchResults = nil
+	m.searchWarnings = nil
+	m.searchSummary = ""
+	m.lastSearchQuery = ""
+	m.lastSearchMode = searchModeContent
+	m.searchResultCursor = 0
+	m.searchResultOffset = 0
+}
+
+func (m *Model) currentSearchMatch() *searchMatch {
+	if len(m.searchResults) == 0 {
+		return nil
+	}
+	if m.searchResultCursor < 0 || m.searchResultCursor >= len(m.searchResults) {
+		return nil
+	}
+	return &m.searchResults[m.searchResultCursor]
+}
+
+func (m *Model) searchResultsHeights() (int, int) {
+	height := m.windowHeight
+	if height <= 0 {
+		height = m.viewportHeight + 5
+	}
+	if height <= 0 {
+		height = 20
+	}
+	detail := height / 3
+	if detail < 6 {
+		detail = 6
+	}
+	if detail > height-5 {
+		detail = height - 5
+	}
+	if detail < 3 {
+		detail = 3
+	}
+	list := height - detail - 4
+	if list < 3 {
+		list = 3
+	}
+	return list, detail
+}
+
+func (m *Model) ensureSearchResultVisible() {
+	count := len(m.searchResults)
+	if count == 0 {
+		m.searchResultCursor = 0
+		m.searchResultOffset = 0
+		return
+	}
+	if m.searchResultCursor < 0 {
+		m.searchResultCursor = 0
+	}
+	if m.searchResultCursor >= count {
+		m.searchResultCursor = count - 1
+	}
+	listHeight, _ := m.searchResultsHeights()
+	if m.searchResultCursor < m.searchResultOffset {
+		m.searchResultOffset = m.searchResultCursor
+	}
+	if m.searchResultCursor >= m.searchResultOffset+listHeight {
+		m.searchResultOffset = m.searchResultCursor - listHeight + 1
+	}
+	if m.searchResultOffset < 0 {
+		m.searchResultOffset = 0
+	}
+	maxOffset := count - listHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.searchResultOffset > maxOffset {
+		m.searchResultOffset = maxOffset
+	}
+}
+
+func (m Model) searchResultsListHeight() int {
+	list, _ := m.searchResultsHeights()
+	return list
+}
+
+func (m *Model) moveSearchCursor(delta int) {
+	if len(m.searchResults) == 0 {
+		m.searchResultCursor = 0
+		m.searchResultOffset = 0
+		return
+	}
+	m.searchResultCursor += delta
+	if m.searchResultCursor < 0 {
+		m.searchResultCursor = 0
+	}
+	if m.searchResultCursor >= len(m.searchResults) {
+		m.searchResultCursor = len(m.searchResults) - 1
+	}
+	m.ensureSearchResultVisible()
+}
+
+func (m *Model) pageSearchCursor(direction int) {
+	step := m.searchResultsListHeight()
+	if step < 1 {
+		step = 1
+	}
+	m.moveSearchCursor(direction * step)
+}
+
+func (m *Model) pinCommandOutput() {
+	if len(m.commandOutput) == 0 {
+		m.commandOutputPinned = false
+		m.commandOutputOffset = 0
+		return
+	}
+	m.commandOutputPinned = true
+	m.commandOutputOffset = 0
+}
+
+func (m *Model) scrollCommandOutput(delta int) {
+	if len(m.commandOutput) == 0 {
+		m.commandOutputOffset = 0
+		return
+	}
+	view := m.commandOutputViewHeight()
+	if view <= 0 || len(m.commandOutput) <= view {
+		m.commandOutputOffset = 0
+		return
+	}
+	m.commandOutputOffset += delta
+	if m.commandOutputOffset < 0 {
+		m.commandOutputOffset = 0
+	}
+	maxOffset := len(m.commandOutput) - view
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.commandOutputOffset > maxOffset {
+		m.commandOutputOffset = maxOffset
+	}
+}
+
+func (m *Model) commandOutputViewHeight() int {
+	h := m.windowHeight
+	if h <= 0 {
+		h = m.viewportHeight + 5
+	}
+	view := h - m.viewportHeight - 4
+	if view < 5 {
+		view = 5
+	}
+	return view
 }
 
 func (m *Model) ensureCursorVisible() {

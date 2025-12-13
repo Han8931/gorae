@@ -252,6 +252,14 @@ func trimLinesToWidth(lines []string, width int) []string {
 	return out
 }
 
+func trimLine(s string, width int) string {
+	lines := trimLinesToWidth([]string{s}, width)
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[0]
+}
+
 func wrapTextToWidth(text string, width int) []string {
 	if width <= 0 {
 		return []string{text}
@@ -474,6 +482,9 @@ func runeLen(s string) int {
 }
 
 func (m Model) View() string {
+	if m.state == stateSearchResults {
+		return m.renderSearchResultsView()
+	}
 	var b strings.Builder
 	var overlayLines []string
 
@@ -544,14 +555,123 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	if m.state == stateCommand {
 		fmt.Fprintf(&b, "Command: %s\n", m.input.View())
+	} else if m.state == stateSearchPrompt {
+		fmt.Fprintf(&b, "Search: %s\n", m.input.View())
 	}
 	if len(m.commandOutput) > 0 {
 		lines := m.commandOutput
 		if m.width > 0 {
 			lines = trimLinesToWidth(lines, m.width)
 		}
-		for _, line := range lines {
+		start := 0
+		end := len(lines)
+		if m.commandOutputPinned && len(lines) > 0 {
+			view := m.commandOutputViewHeight()
+			if view > len(lines) {
+				view = len(lines)
+			}
+			maxOffset := len(lines) - view
+			offset := m.commandOutputOffset
+			if offset < 0 {
+				offset = 0
+			}
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if offset > maxOffset {
+				offset = maxOffset
+			}
+			start = offset
+			end = offset + view
+			if end > len(lines) {
+				end = len(lines)
+			}
+		}
+		for _, line := range lines[start:end] {
 			b.WriteString(line + "\n")
+		}
+		if m.commandOutputPinned && len(lines) > 0 {
+			summary := fmt.Sprintf("-- lines %d-%d of %d (j/k scroll, Esc close) --", start+1, end, len(lines))
+			if m.width > 0 {
+				summary = trimLinesToWidth([]string{summary}, m.width)[0]
+			}
+			b.WriteString(summary + "\n")
+		}
+	}
+
+	return b.String()
+}
+
+func (m Model) renderSearchResultsView() string {
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	height := m.windowHeight
+	if height <= 0 {
+		height = m.viewportHeight + 5
+	}
+	if height <= 0 {
+		height = 24
+	}
+	listHeight, detailHeight := m.searchResultsHeights()
+
+	var b strings.Builder
+	modeName := m.lastSearchMode.displayName()
+	if modeName == "" {
+		modeName = "Content"
+	}
+	fmt.Fprintf(&b, "Search results (%s): %q\n", modeName, strings.TrimSpace(m.lastSearchQuery))
+	if summary := strings.TrimSpace(m.searchSummary); summary != "" {
+		b.WriteString(trimLine(summary, width) + "\n")
+	}
+	b.WriteString("Controls: j/k move • PgUp/PgDn page • Enter open • Esc/q close • / search again\n\n")
+
+	if len(m.searchResults) == 0 {
+		b.WriteString("(no matches)\n")
+	} else {
+		start := m.searchResultOffset
+		end := start + listHeight
+		if end > len(m.searchResults) {
+			end = len(m.searchResults)
+		}
+		for i := start; i < end; i++ {
+			match := m.searchResults[i]
+			cursor := "  "
+			if i == m.searchResultCursor {
+				cursor = "➜ "
+			}
+			countInfo := ""
+			if match.Mode == searchModeContent && match.MatchCount > 0 {
+				countInfo = fmt.Sprintf(" (%d)", match.MatchCount)
+			}
+			line := fmt.Sprintf("%s%s%s", cursor, match.Path, countInfo)
+			b.WriteString(trimLine(line, width) + "\n")
+		}
+		b.WriteString(fmt.Sprintf("-- results %d-%d of %d --\n", start+1, end, len(m.searchResults)))
+	}
+
+	b.WriteString(dividerLine(width) + "\n")
+
+	detailLines := m.searchResultDetailLines(detailHeight, width)
+	for _, line := range detailLines {
+		b.WriteString(line + "\n")
+	}
+
+	if len(m.searchWarnings) > 0 {
+		maxWarn := detailHeight / 2
+		if maxWarn < 1 {
+			maxWarn = 1
+		}
+		if maxWarn > len(m.searchWarnings) {
+			maxWarn = len(m.searchWarnings)
+		}
+		b.WriteString("\nWarnings:\n")
+		for i := 0; i < maxWarn; i++ {
+			b.WriteString(trimLine(m.searchWarnings[i], width) + "\n")
+		}
+		if len(m.searchWarnings) > maxWarn {
+			b.WriteString(fmt.Sprintf("... %d more warning(s)\n", len(m.searchWarnings)-maxWarn))
 		}
 	}
 
@@ -706,4 +826,59 @@ func dividerLine(width int) string {
 		width = 40
 	}
 	return strings.Repeat("─", width)
+}
+
+func (m Model) searchResultDetailLines(limit, width int) []string {
+	match := m.currentSearchMatch()
+	if match == nil {
+		lines := []string{
+			"(no selection)",
+			"",
+			"Press Esc to exit the search view.",
+		}
+		return trimLinesToWidth(lines, width)
+	}
+	lines := []string{
+		fmt.Sprintf("File: %s", match.Path),
+		fmt.Sprintf("Matches: %d", match.MatchCount),
+		"",
+	}
+	if match.Mode == searchModeContent {
+		lines = append(lines, "Snippets:")
+		lines = append(lines, formatContentSnippets(match.Snippets)...)
+	} else {
+		lines = append(lines, "Metadata:")
+		for _, snippet := range match.Snippets {
+			lines = append(lines, "  "+snippet)
+		}
+	}
+	lines = trimLinesToWidth(lines, width)
+	if limit > 0 && len(lines) > limit {
+		lines = lines[:limit]
+	}
+	return lines
+}
+
+func formatContentSnippets(snippets []string) []string {
+	if len(snippets) == 0 {
+		return []string{"  (no snippet data)"}
+	}
+	lines := make([]string, 0, len(snippets)*3)
+	for i, snippet := range snippets {
+		parts := strings.Split(snippet, "\n")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			lines = append(lines, "  "+part)
+		}
+		if i < len(snippets)-1 {
+			lines = append(lines, "")
+		}
+	}
+	if len(lines) == 0 {
+		lines = []string{"  (no snippet data)"}
+	}
+	return lines
 }

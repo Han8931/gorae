@@ -37,9 +37,20 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - Metadata fields include Title, Author, Journal/Conference, Year, Tag, and Abstract. Notes are stored separately.
 - In the metadata popup use ↑/↓ or PgUp/PgDn to scroll through long content.
 
+## Search
+
+- Press `:` to enter command mode and run `:search <query>` to scan PDFs under the current directory. Matches are shown in the dedicated search view with highlighted snippets.
+- Shortcut: press `/` in the main view to open the search prompt directly (no colon needed); type queries plus optional `-t`/`-a`/`-c`/`-y` flags and press Enter to run.
+- After a search finishes the UI switches to a dedicated results view: use `j`/`k` (or the arrow keys) to move the selection, `PgUp`/`PgDn` to page, `Enter` to open the highlighted PDF, and `Esc` or `q` to return to the file browser.
+- Use flags to customize the lookup:
+  - `-mode title|author|year|content` (default `content`) or short forms `-t`, `-a`, `-y`, `-c`
+  - `-case` for case-sensitive search
+  - `-root PATH` to override the directory you want to scan (paths must stay within the watched directory; relative paths are resolved from the current directory)
+- Shortcut syntax: start your query with `title:`, `author:`, `year:`, or `content:` to choose the search mode without flags (e.g. `/title:attention`).
+- `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
+
 TODO
 - arxiv command with selections
-- Search function
 - Yank bibtex / line style
 - Bookmark / Favorite
 - Page count
