@@ -108,6 +108,9 @@ type Model struct {
 	commandOutput              []string
 	commandOutputOffset        int
 	commandOutputPinned        bool
+	commandHistory             []string
+	commandHistoryIndex        int
+	commandHistoryBuffer       string
 	entryTitles                map[string]string
 	sortMode                   sortMode
 	awaitingSort               bool

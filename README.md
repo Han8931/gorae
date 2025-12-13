@@ -36,7 +36,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 
 ## Search
 
-- Press `:` to enter command mode and run `:search <query>` to scan PDFs under the current directory. Matches are shown in the dedicated search view with highlighted snippets.
+- Press `:` to enter command mode and run `:search <query>` to scan PDFs under the current directory. Matches are shown in the dedicated search view with highlighted snippets. Press Tab to autocomplete commands or file arguments, and use ↑/↓ to cycle through previous commands.
 - Shortcut: press `/` in the main view to open the search prompt directly (no colon needed); type queries plus optional `-t`/`-a`/`-c`/`-y` flags and press Enter to run.
 - After a search finishes the UI switches to a dedicated results view: use `j`/`k` (or the arrow keys) to move the selection, `PgUp`/`PgDn` to page, `Enter` to open the highlighted PDF, and `Esc` or `q` to return to the file browser.
 - Quick filters: press `F` to show favorites, `T` to show to-read items, or `g` followed by `r`/`u`/`d` to view Reading/Unread/Read files; the interface switches to the search results view so you can browse and exit with `Esc`/`q`.
@@ -50,8 +50,6 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 TODO
 - UI improvement
 - logo command
-- Command autocomplete
-- Command history by up/down arrows
 - Page count
 
 AI features:

@@ -48,7 +48,10 @@ type arxivBatch struct {
 	files []string
 }
 
-const arxivRequestTimeout = 30 * time.Second
+const (
+	arxivRequestTimeout = 30 * time.Second
+	commandHistoryLimit = 200
+)
 
 var (
 	arxivModernIDPattern = regexp.MustCompile(`(?i)(\d{4}\.\d{4,5})(v\d+)?`)
@@ -467,6 +470,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			}
+			if key == "up" {
+				if m.recallPreviousCommand() {
+					return m, nil
+				}
+			}
+			if key == "down" {
+				if m.recallNextCommand() {
+					return m, nil
+				}
+			}
 			var inputCmd tea.Cmd
 			m.input, inputCmd = m.input.Update(msg)
 
@@ -476,12 +489,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.input.Blur()
+				m.rememberCommand(line)
 				cmd := m.runCommand(line)
 				return m, tea.Batch(inputCmd, cmd)
 			case "esc":
 				m.state = stateNormal
 				m.input.SetValue("")
 				m.input.Blur()
+				m.resetCommandHistoryNavigation()
 				m.setStatus("Command cancelled")
 				return m, inputCmd
 			default:
@@ -950,6 +965,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetValue(":")
 			m.input.CursorEnd()
 			m.input.Focus()
+			m.resetCommandHistoryNavigation()
 			m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
 			return m, nil
 
@@ -2012,6 +2028,7 @@ func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 		m.input.SetValue(":")
 		m.input.CursorEnd()
 		m.input.Focus()
+		m.resetCommandHistoryNavigation()
 		m.setPersistentStatus("Command mode (:help for list, Esc to cancel)")
 		return true, nil
 	case "/":
@@ -2130,6 +2147,83 @@ func uniquePaths(paths []string) []string {
 	return out
 }
 
+func (m *Model) resetCommandHistoryNavigation() {
+	m.commandHistoryIndex = len(m.commandHistory)
+	m.commandHistoryBuffer = ""
+}
+
+func (m *Model) rememberCommand(raw string) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return
+	}
+	sansPrefix := strings.TrimSpace(strings.TrimPrefix(trimmed, ":"))
+	if sansPrefix == "" {
+		return
+	}
+	if n := len(m.commandHistory); n > 0 && m.commandHistory[n-1] == trimmed {
+		m.resetCommandHistoryNavigation()
+		return
+	}
+	m.commandHistory = append(m.commandHistory, trimmed)
+	if len(m.commandHistory) > commandHistoryLimit {
+		start := len(m.commandHistory) - commandHistoryLimit
+		m.commandHistory = append([]string{}, m.commandHistory[start:]...)
+	}
+	m.resetCommandHistoryNavigation()
+}
+
+func (m *Model) recallPreviousCommand() bool {
+	if len(m.commandHistory) == 0 {
+		return false
+	}
+	if m.commandHistoryIndex == len(m.commandHistory) {
+		m.commandHistoryBuffer = m.input.Value()
+	}
+	if m.commandHistoryIndex <= 0 {
+		return false
+	}
+	m.commandHistoryIndex--
+	m.input.SetValue(m.commandHistory[m.commandHistoryIndex])
+	m.input.CursorEnd()
+	return true
+}
+
+func (m *Model) recallNextCommand() bool {
+	if len(m.commandHistory) == 0 {
+		return false
+	}
+	if m.commandHistoryIndex >= len(m.commandHistory) {
+		if m.commandHistoryBuffer != "" {
+			m.input.SetValue(m.commandHistoryBuffer)
+			m.input.CursorEnd()
+		}
+		return false
+	}
+	m.commandHistoryIndex++
+	if m.commandHistoryIndex >= len(m.commandHistory) {
+		m.input.SetValue(m.commandHistoryBuffer)
+	} else {
+		m.input.SetValue(m.commandHistory[m.commandHistoryIndex])
+	}
+	m.input.CursorEnd()
+	if m.commandHistoryIndex >= len(m.commandHistory) {
+		m.commandHistoryBuffer = ""
+	}
+	return true
+}
+
+var commandNames = []string{
+	"h", "help",
+	"pwd",
+	"clear",
+	"recent",
+	"config",
+	"arxiv",
+	"search",
+	"q", "quit",
+}
+
 func (m *Model) handleCommandAutocomplete() bool {
 	if m.state != stateCommand {
 		return false
@@ -2140,10 +2234,17 @@ func (m *Model) handleCommandAutocomplete() bool {
 	if cursor != len(runes) {
 		return false
 	}
-	current := string(runes[:cursor])
-	trimmed := strings.TrimRight(current, " \t")
-	if !strings.ContainsAny(trimmed, " \t") {
+	trimmedLen := len(runes)
+	for trimmedLen > 0 && unicode.IsSpace(runes[trimmedLen-1]) {
+		trimmedLen--
+	}
+	if trimmedLen == 0 {
 		return false
+	}
+	trimmed := string(runes[:trimmedLen])
+	hasTrailingWhitespace := trimmedLen != len(runes)
+	if !strings.ContainsAny(trimmed, " \t") && !hasTrailingWhitespace {
+		return m.autocompleteCommandName(trimmed)
 	}
 	lastSep := strings.LastIndexAny(trimmed, " \t")
 	if lastSep == -1 || lastSep == len(trimmed)-1 {
@@ -2179,6 +2280,61 @@ func (m *Model) handleCommandAutocomplete() bool {
 	prefix := trimmed[:lastSep+1]
 	newValue := prefix + lcp
 	if appendSpace {
+		newValue += " "
+	}
+	m.input.SetValue(newValue)
+	m.input.CursorEnd()
+	return true
+}
+
+func (m *Model) autocompleteCommandName(current string) bool {
+	value := strings.TrimSpace(current)
+	prefix := ""
+	token := value
+	if strings.HasPrefix(token, ":") {
+		prefix = ":"
+		token = token[1:]
+	}
+	tokenLower := strings.ToLower(token)
+	matches := make([]string, 0, len(commandNames))
+	for _, name := range commandNames {
+		if strings.HasPrefix(name, tokenLower) {
+			matches = append(matches, name)
+		}
+	}
+	if tokenLower == "" {
+		if len(commandNames) == 0 {
+			return false
+		}
+		lines := []string{"Commands:"}
+		seen := make(map[string]bool, len(commandNames))
+		for _, name := range commandNames {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			lines = append(lines, "  "+name)
+		}
+		m.setCommandOutput(lines)
+		m.setPersistentStatus("Multiple completions (type more letters)")
+		return true
+	}
+	if len(matches) == 0 {
+		m.setStatus("No completions")
+		return true
+	}
+	lcp := longestCommonPrefix(matches)
+	if lcp == tokenLower {
+		lines := []string{"Commands:"}
+		for _, name := range matches {
+			lines = append(lines, "  "+name)
+		}
+		m.setCommandOutput(lines)
+		m.setPersistentStatus("Multiple completions (type more letters)")
+		return true
+	}
+	newValue := prefix + lcp
+	if len(matches) == 1 && lcp == matches[0] {
 		newValue += " "
 	}
 	m.input.SetValue(newValue)
