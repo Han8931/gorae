@@ -163,7 +163,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.commandOutputPinned && m.state == stateNormal {
 			switch key {
-			case "esc":
+			case "esc", "q":
 				m.clearCommandOutput()
 				m.setStatus("Command output closed")
 				return m, nil
@@ -245,7 +245,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus("Directory created")
 				return m, cmd
 
-			case "esc":
+			case "esc", "q":
 				m.state = stateNormal
 				m.setStatus("Cancelled")
 				m.input.SetValue("")
@@ -370,7 +370,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.scrollMetaPopup(step)
 				return m, nil
-			case "esc":
+			case "esc", "q":
 				m.state = stateNormal
 				m.metaEditingPath = ""
 				m.metaPopupOffset = 0
@@ -556,7 +556,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd := m.runArxivFetch(id, []string{target})
 				return m, tea.Batch(inputCmd, cmd)
 
-			case "esc":
+			case "esc", "q":
 				m.pendingArxivActive = ""
 				m.pendingArxivFiles = nil
 				m.state = stateNormal
@@ -883,6 +883,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "/":
 			m.openSearchPrompt(m.lastSearchQuery)
+			return m, nil
+
+		case "y":
+			if err := m.copyBibtexToClipboard(); err != nil {
+				m.setStatus("BibTeX copy failed: " + err.Error())
+			} else {
+				m.setStatus("BibTeX copied to clipboard")
+			}
 			return m, nil
 
 		case "v":
@@ -1301,7 +1309,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, :arxiv [-v] <id> fetch from arXiv (omit <id> to be prompted)",
+			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, y copy BibTeX, :arxiv [-v] <id> fetch from arXiv (omit <id> to be prompted)",
 			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
@@ -1836,14 +1844,14 @@ func (m *Model) applySearchRoot(req *searchRequest, value string, watchRoot stri
 
 func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 	switch key {
-	case "esc":
+	case "esc", "q":
 		m.exitSearchResults()
 		m.setStatus("Search results closed")
 		return true, nil
-	case "q", "Q":
-		m.exitSearchResults()
-		m.setStatus("Search results closed")
-		return true, nil
+	// case "q", "Q":
+	// 	m.exitSearchResults()
+	// 	m.setStatus("Search results closed")
+	// 	return true, nil
 	case "enter":
 		m.openSearchResultAtCursor()
 		return true, nil

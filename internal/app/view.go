@@ -408,7 +408,7 @@ func (m Model) metaPopupContentLines(width int) []string {
 			"Tab       → next field",
 			"Shift+Tab → previous field",
 			"Enter     → next/save",
-			"Esc       → cancel",
+			"Esc or q  → cancel",
 		)
 	} else {
 		popupLines = append(popupLines,
@@ -416,7 +416,7 @@ func (m Model) metaPopupContentLines(width int) []string {
 			"Use ↑/↓ or PgUp/PgDn to scroll fields.",
 			"Press 'e' to edit fields here, 'v' to edit fields in your editor.",
 			"Press 'n' to edit the note in your editor.",
-			"Press Esc to cancel.",
+			"Press 'Esc' or 'q' to cancel.",
 		)
 	}
 

@@ -26,6 +26,7 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 
 - Press `e` to preview metadata, `e` again to edit inline, or `v` to open the structured fields in your configured editor.
 - Press `n` while in the metadata popup to open the note for the current file in your editor (notes are stored as Markdown files in `notes_dir`).
+- Press `y` on any PDF to copy a BibTeX entry for it to your clipboard (fields come from the stored metadata when available).
 - Metadata fields include Title, Author, Journal/Conference, Year, Tag, and Abstract. Notes are stored separately.
 - In the metadata popup use ↑/↓ or PgUp/PgDn to scroll through long content.
 - Fetch fresh arXiv metadata with `:arxiv <arxiv-id> [files...]`; to avoid typing long filenames, select files beforehand (space or `v`) and run `:arxiv -v <arxiv-id>` to apply the ID to the selection. If you omit the ID entirely (e.g. `:arxiv -v`) the app first tries to extract IDs from each filename (e.g. `2101.12345v2` or `math.GT/0309136`); any files without detectable IDs fall back to an interactive prompt.
@@ -44,7 +45,6 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 
 TODO
 - [Text extraction, pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
-- Yank bibtex / line style
 - Bookmark / Favorite
 - Cursor position after going back to the parent dir
 - UI improvement
@@ -67,4 +67,3 @@ AI features:
 
 [Pictures](https://www.khan.co.kr/article/202007080300025)
 The world's earliest known depictions of whale hunting are found in the Bangudae Petroglyphs in South Korea, dating back around 7,000 years (6,000 BC), showcasing detailed scenes of boats and harpoons; however, similar ancient whale art is also found in the White Sea region (Russia/Scandinavia) and Norway, possibly as old, depicting complex hunts and spiritual meanings beyond simple prey, suggesting widespread ancient maritime cultures. 
-
