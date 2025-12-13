@@ -1248,7 +1248,41 @@ func (m *Model) openPDF(path string) error {
 	args := append([]string{}, parts[1:]...)
 	args = append(args, path)
 	cmd := exec.Command(parts[0], args...)
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	m.markReadingStateOnOpen(path)
+	return nil
+}
+
+func (m *Model) markReadingStateOnOpen(path string) {
+	if m.meta == nil {
+		return
+	}
+	canonical := canonicalPath(path)
+	if canonical == "" {
+		return
+	}
+	ctx := context.Background()
+	md, err := m.loadMetadataRecord(ctx, canonical)
+	if err != nil {
+		m.setStatus("Reading state update failed: " + err.Error())
+		return
+	}
+	state := normalizeReadingStateValue(md.ReadingState)
+	if state == readingStateReading || state == readingStateRead {
+		return
+	}
+	md.ReadingState = readingStateReading
+	if err := m.meta.Upsert(ctx, &md); err != nil {
+		m.setStatus("Reading state update failed: " + err.Error())
+		return
+	}
+	m.refreshMetadataCache(canonical, md)
+	if current := canonicalPath(m.currentEntryPath()); current != "" && current == canonical {
+		m.updateTextPreview()
+	}
+	m.refreshEntryTitles()
 }
 
 func splitCommandLine(input string) ([]string, error) {
