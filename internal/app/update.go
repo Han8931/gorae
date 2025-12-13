@@ -1107,22 +1107,26 @@ func (m *Model) launchNoteEditor() tea.Cmd {
 }
 
 type metadataEditorFile struct {
-	Title    string `json:"title"`
-	Author   string `json:"author"`
-	Venue    string `json:"venue"`
-	Year     string `json:"year"`
-	Abstract string `json:"abstract"`
-	Tag      string `json:"tag"`
+	Title     string `json:"title"`
+	Author    string `json:"author"`
+	Year      string `json:"year"`
+	Published string `json:"published"`
+	URL       string `json:"url"`
+	DOI       string `json:"doi"`
+	Abstract  string `json:"abstract"`
+	Tag       string `json:"tag"`
 }
 
 func metadataEditorFileFromMetadata(md meta.Metadata) metadataEditorFile {
 	return metadataEditorFile{
-		Title:    md.Title,
-		Author:   md.Author,
-		Venue:    md.Venue,
-		Year:     md.Year,
-		Abstract: md.Abstract,
-		Tag:      md.Tag,
+		Title:     md.Title,
+		Author:    md.Author,
+		Year:      md.Year,
+		Published: md.Published,
+		URL:       md.URL,
+		DOI:       md.DOI,
+		Abstract:  md.Abstract,
+		Tag:       md.Tag,
 	}
 }
 
@@ -1147,13 +1151,15 @@ func parseMetadataEditorData(raw []byte, path string) (meta.Metadata, error) {
 		return meta.Metadata{}, fmt.Errorf("parse JSON: %w", err)
 	}
 	md := meta.Metadata{
-		Path:     path,
-		Title:    strings.TrimSpace(data.Title),
-		Author:   strings.TrimSpace(data.Author),
-		Venue:    strings.TrimSpace(data.Venue),
-		Year:     strings.TrimSpace(data.Year),
-		Abstract: strings.TrimSpace(data.Abstract),
-		Tag:      strings.TrimSpace(data.Tag),
+		Path:      path,
+		Title:     strings.TrimSpace(data.Title),
+		Author:    strings.TrimSpace(data.Author),
+		Year:      strings.TrimSpace(data.Year),
+		Published: strings.TrimSpace(data.Published),
+		URL:       strings.TrimSpace(data.URL),
+		DOI:       strings.TrimSpace(data.DOI),
+		Abstract:  strings.TrimSpace(data.Abstract),
+		Tag:       strings.TrimSpace(data.Tag),
 	}
 	return md, nil
 }
@@ -1925,6 +1931,9 @@ func (m *Model) fetchArxivMetadata(id string, files []string) tea.Cmd {
 			md.Title = metadata.Title
 			md.Author = authorStr
 			md.Year = yearStr
+			if metadata.DOI != "" {
+				md.DOI = metadata.DOI
+			}
 			md.Abstract = metadata.Abstract
 			if err := store.Upsert(baseCtx, &md); err != nil {
 				return arxivUpdateMsg{err: fmt.Errorf("save metadata for %s: %w", filepath.Base(path), err)}

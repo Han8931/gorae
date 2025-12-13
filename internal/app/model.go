@@ -112,8 +112,10 @@ type Model struct {
 var metaFieldLabels = []string{
 	"Title",
 	"Author",
-	"Journal/Conference",
 	"Year",
+	"Published",
+	"URL",
+	"DOI",
 	"Tag",
 	"Abstract",
 }
@@ -136,12 +138,16 @@ func metadataFieldValue(data meta.Metadata, index int) string {
 	case 1:
 		return data.Author
 	case 2:
-		return data.Venue
-	case 3:
 		return data.Year
+	case 3:
+		return data.Published
 	case 4:
-		return data.Tag
+		return data.URL
 	case 5:
+		return data.DOI
+	case 6:
+		return data.Tag
+	case 7:
 		return data.Abstract
 	default:
 		return ""
@@ -155,12 +161,16 @@ func setMetadataFieldValue(data *meta.Metadata, index int, value string) {
 	case 1:
 		data.Author = value
 	case 2:
-		data.Venue = value
-	case 3:
 		data.Year = value
+	case 3:
+		data.Published = value
 	case 4:
-		data.Tag = value
+		data.URL = value
 	case 5:
+		data.DOI = value
+	case 6:
+		data.Tag = value
+	case 7:
 		data.Abstract = value
 	}
 }

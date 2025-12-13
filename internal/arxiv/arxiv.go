@@ -17,6 +17,7 @@ type Metadata struct {
 	Title    string
 	Authors  []string
 	Year     int
+	DOI      string
 	Abstract string
 }
 
@@ -32,6 +33,7 @@ type entry struct {
 	Published string        `xml:"published"`
 	Authors   []entryAuthor `xml:"author"`
 	Summary   string        `xml:"summary"`
+	DOI       string        `xml:"{http://arxiv.org/schemas/atom}doi"`
 }
 
 type entryAuthor struct {
@@ -93,6 +95,7 @@ func Fetch(ctx context.Context, id string) (*Metadata, error) {
 		Title:    strings.TrimSpace(e.Title),
 		Authors:  authors,
 		Year:     year,
+		DOI:      strings.TrimSpace(e.DOI),
 		Abstract: cleanAbstract(e.Summary),
 	}, nil
 }

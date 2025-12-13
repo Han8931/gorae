@@ -26,10 +26,10 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 
 - Press `e` to preview metadata, `e` again to edit inline, or `v` to open the structured fields in your configured editor.
 - Press `n` while in the metadata popup to open the note for the current file in your editor (notes are stored as Markdown files in `notes_dir`).
-- Press `y` on any PDF to copy a BibTeX entry for it to your clipboard (fields come from the stored metadata when available).
-- Metadata fields include Title, Author, Journal/Conference, Year, Tag, and Abstract. Notes are stored separately.
+- Press `y` on any PDF to copy a BibTeX entry for it to your clipboard (fields come from the stored metadata when available). The BibTeX always includes `published` and `url` keys, plus `doi` when present.
+- Metadata fields include Title, Author, Year, Published, URL, DOI, Tag, and Abstract. Notes are stored separately.
 - In the metadata popup use ↑/↓ or PgUp/PgDn to scroll through long content.
-- Fetch fresh arXiv metadata with `:arxiv <arxiv-id> [files...]`; to avoid typing long filenames, select files beforehand (space or `v`) and run `:arxiv -v <arxiv-id>` to apply the ID to the selection. If you omit the ID entirely (e.g. `:arxiv -v`) the app first tries to extract IDs from each filename (e.g. `2101.12345v2` or `math.GT/0309136`); any files without detectable IDs fall back to an interactive prompt.
+- Fetch fresh arXiv metadata with `:arxiv <arxiv-id> [files...]`; to avoid typing long filenames, select files beforehand (space or `v`) and run `:arxiv -v <arxiv-id>` to apply the ID to the selection. If you omit the ID entirely (e.g. `:arxiv -v`) the app first tries to extract IDs from each filename (e.g. `2101.12345v2` or `math.GT/0309136`); any files without detectable IDs fall back to an interactive prompt. arXiv imports populate title, authors, year, abstract, and DOI when available.
 
 ## Search
 

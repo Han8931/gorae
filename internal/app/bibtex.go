@@ -72,6 +72,9 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 	author := ""
 	venue := ""
 	year := ""
+	published := ""
+	url := ""
+	doi := ""
 	abstract := ""
 	keywords := ""
 	if md != nil {
@@ -81,6 +84,9 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 		author = normalizeSpaces(md.Author)
 		venue = normalizeSpaces(md.Venue)
 		year = strings.TrimSpace(md.Year)
+		published = strings.TrimSpace(md.Published)
+		url = strings.TrimSpace(md.URL)
+		doi = strings.TrimSpace(md.DOI)
 		abstract = normalizeSpaces(md.Abstract)
 		keywords = normalizeKeywords(md.Tag)
 	}
@@ -104,11 +110,16 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 	if normYear != "" {
 		fields = append(fields, bibField{name: "year", value: normYear})
 	}
+	fields = append(fields, bibField{name: "published", value: published})
 	if keywords != "" {
 		fields = append(fields, bibField{name: "keywords", value: keywords})
 	}
 	if abstract != "" {
 		fields = append(fields, bibField{name: "abstract", value: abstract})
+	}
+	fields = append(fields, bibField{name: "url", value: url})
+	if doi != "" {
+		fields = append(fields, bibField{name: "doi", value: doi})
 	}
 	fields = append(fields, bibField{name: "file", value: path})
 

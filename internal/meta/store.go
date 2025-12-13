@@ -13,13 +13,16 @@ import (
 )
 
 type Metadata struct {
-	Path     string
-	Title    string
-	Author   string
-	Venue    string
-	Year     string
-	Abstract string
-	Tag      string
+	Path      string
+	Title     string
+	Author    string
+	Venue     string
+	Year      string
+	Published string
+	URL       string
+	DOI       string
+	Abstract  string
+	Tag       string
 }
 
 type Store struct {
@@ -52,11 +55,23 @@ CREATE TABLE IF NOT EXISTS metadata (
   author TEXT,
   venue  TEXT,
   year   TEXT,
+  published TEXT,
+  url    TEXT,
+  doi    TEXT,
   abstract TEXT,
   tag TEXT
 );
 `)
 	if err != nil {
+		return err
+	}
+	if err := s.ensureColumn("published", "TEXT"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("url", "TEXT"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("doi", "TEXT"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("abstract", "TEXT"); err != nil {
@@ -80,12 +95,18 @@ func (s *Store) ensureColumn(name, typ string) error {
 func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT path, title, author, venue, year, abstract, tag FROM metadata WHERE path = ?`,
+		`SELECT path, title, author, venue, year,
+		        IFNULL(published, ''),
+		        IFNULL(url, ''),
+		        IFNULL(doi, ''),
+		        IFNULL(abstract, ''),
+		        IFNULL(tag, '')
+		   FROM metadata WHERE path = ?`,
 		path,
 	)
 
 	m := Metadata{}
-	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Abstract, &m.Tag); err {
+	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Published, &m.URL, &m.DOI, &m.Abstract, &m.Tag); err {
 	case sql.ErrNoRows:
 		return nil, nil
 	case nil:
@@ -97,17 +118,20 @@ func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 
 func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO metadata (path, title, author, venue, year, abstract, tag)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO metadata (path, title, author, venue, year, published, url, doi, abstract, tag)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
   title    = excluded.title,
   author   = excluded.author,
   venue    = excluded.venue,
   year     = excluded.year,
+  published = excluded.published,
+  url      = excluded.url,
+  doi      = excluded.doi,
   abstract = excluded.abstract,
   tag      = excluded.tag
 `,
-		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Abstract, m.Tag,
+		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag,
 	)
 	return err
 }
