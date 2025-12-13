@@ -40,6 +40,7 @@ const (
 	stateEditMeta
 	stateCommand
 	stateSearchPrompt
+	stateArxivPrompt
 	stateSearchResults
 )
 
@@ -102,6 +103,10 @@ type Model struct {
 	searchSummary      string
 	lastSearchQuery    string
 	lastSearchMode     searchMode
+
+	pendingArxivFiles  []string
+	pendingArxivActive string
+	pendingArxivQueue  []arxivBatch
 }
 
 var metaFieldLabels = []string{
@@ -505,6 +510,48 @@ func (m *Model) openSearchPrompt(initial string) {
 	m.setPersistentStatus("Search: type query (use -t/-a/-c/-y) and press Enter (Esc to cancel)")
 }
 
+func (m *Model) promptArxivID(files []string) {
+	if len(files) == 0 {
+		return
+	}
+	m.pendingArxivQueue = nil
+	m.pendingArxivFiles = append([]string{}, files...)
+	m.pendingArxivActive = ""
+	if msg := m.startNextArxivPrompt(); msg != "" {
+		m.setPersistentStatus(msg)
+	}
+}
+
+func (m *Model) startNextArxivPrompt() string {
+	if len(m.pendingArxivFiles) == 0 {
+		m.pendingArxivActive = ""
+		m.pendingArxivFiles = nil
+		m.state = stateNormal
+		m.input.SetValue("")
+		m.input.Blur()
+		return ""
+	}
+
+	next := m.pendingArxivFiles[0]
+	m.pendingArxivFiles = m.pendingArxivFiles[1:]
+	m.pendingArxivActive = next
+
+	m.state = stateArxivPrompt
+	m.input.SetValue("")
+	m.input.CursorEnd()
+	m.input.Focus()
+
+	name := filepath.Base(next)
+	if name == "" {
+		name = next
+	}
+	remaining := len(m.pendingArxivFiles)
+	if remaining == 0 {
+		return fmt.Sprintf("Enter arXiv ID for %s (last file, Esc to cancel)", name)
+	}
+	return fmt.Sprintf("Enter arXiv ID for %s (%d more after this, Esc to cancel)", name, remaining)
+}
+
 func (m *Model) enterSearchResults(msg searchResultMsg) {
 	m.clearSearchResults()
 	m.state = stateSearchResults
@@ -757,6 +804,20 @@ func (m *Model) updateTextPreview() {
 	}
 
 	m.previewText = lines
+}
+
+func (m *Model) selectedPaths() []string {
+	if len(m.selected) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(m.selected))
+	for path, ok := range m.selected {
+		if ok {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func (m *Model) directoryPreviewContents(dir string) []string {

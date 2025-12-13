@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,6 +42,18 @@ type arxivUpdateMsg struct {
 	updatedPaths []string
 	err          error
 }
+
+type arxivBatch struct {
+	id    string
+	files []string
+}
+
+const arxivRequestTimeout = 30 * time.Second
+
+var (
+	arxivModernIDPattern = regexp.MustCompile(`(?i)(\d{4}\.\d{4,5})(v\d+)?`)
+	arxivLegacyIDPattern = regexp.MustCompile(`(?i)([a-z-]+(?:\.[a-z-]+)?/[0-9]{7})(v\d+)?`)
+)
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -78,6 +91,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case arxivUpdateMsg:
 		if msg.err != nil {
 			m.setStatus("arXiv import failed: " + msg.err.Error())
+			m.pendingArxivFiles = nil
+			m.pendingArxivActive = ""
+			m.pendingArxivQueue = nil
+			if m.state == stateArxivPrompt {
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+			}
 			return m, nil
 		}
 		if len(msg.updatedPaths) > 0 {
@@ -94,11 +115,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		count := len(msg.updatedPaths)
+		summary := ""
 		if count == 0 {
-			m.setStatus("arXiv import completed, but no files were updated")
+			summary = "arXiv import completed, but no files were updated"
 		} else {
-			m.setStatus(fmt.Sprintf("arXiv %s metadata applied to %d file(s)", msg.arxivID, count))
+			summary = fmt.Sprintf("arXiv %s metadata applied to %d file(s)", msg.arxivID, count)
 		}
+
+		if len(m.pendingArxivFiles) > 0 {
+			if prompt := m.startNextArxivPrompt(); prompt != "" {
+				m.setPersistentStatus(fmt.Sprintf("%s. %s", summary, prompt))
+				return m, nil
+			}
+		} else if cmd := m.nextArxivQueueCmd(); cmd != nil {
+			m.setPersistentStatus(fmt.Sprintf("%s. Continuing arXiv updates...", summary))
+			return m, cmd
+		}
+		m.setStatus(summary)
 		return m, nil
 
 	case searchResultMsg:
@@ -486,6 +519,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.SetValue("")
 				m.input.Blur()
 				m.setStatus("Search cancelled")
+				return m, inputCmd
+
+			default:
+				return m, inputCmd
+			}
+		}
+
+		// ===========================
+		//  ARXIV PROMPT MODE
+		// ===========================
+		if m.state == stateArxivPrompt {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+
+			switch key {
+			case "enter":
+				id := strings.TrimSpace(m.input.Value())
+				if id == "" {
+					m.setStatus("arXiv ID cannot be empty")
+					return m, inputCmd
+				}
+				target := strings.TrimSpace(m.pendingArxivActive)
+				if target == "" {
+					m.setStatus("No file selected for arXiv import")
+					m.state = stateNormal
+					m.input.SetValue("")
+					m.input.Blur()
+					m.pendingArxivFiles = nil
+					return m, inputCmd
+				}
+				m.pendingArxivActive = ""
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+				cmd := m.runArxivFetch(id, []string{target})
+				return m, tea.Batch(inputCmd, cmd)
+
+			case "esc":
+				m.pendingArxivActive = ""
+				m.pendingArxivFiles = nil
+				m.state = stateNormal
+				m.input.SetValue("")
+				m.input.Blur()
+				m.setStatus("arXiv command cancelled")
 				return m, inputCmd
 
 			default:
@@ -1224,7 +1301,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, :arxiv <id> fetch from arXiv",
+			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, :arxiv [-v] <id> fetch from arXiv (omit <id> to be prompted)",
 			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
@@ -1337,20 +1414,68 @@ func (m *Model) handleArxivCommand(args []string) tea.Cmd {
 		m.setStatus("Metadata store not available")
 		return nil
 	}
+
+	useSelectionOnly := false
+	var arxivID string
+	fileSpecs := make([]string, 0)
+
 	if len(args) == 0 {
-		m.setStatus("Usage: :arxiv <arxiv-id> [files...]")
-		return nil
-	}
-	id := args[0]
-	var files []string
-	if len(args) > 1 {
-		fileArgs := args[1:]
-		files = make([]string, 0, len(fileArgs))
-		for _, spec := range fileArgs {
-			spec = strings.TrimSpace(spec)
-			if spec == "" {
+		useSelectionOnly = true
+	} else {
+		for _, raw := range args {
+			arg := strings.TrimSpace(raw)
+			if arg == "" {
 				continue
 			}
+			lower := strings.ToLower(arg)
+			switch lower {
+			case "-v", "--visual", "--selected":
+				useSelectionOnly = true
+				continue
+			}
+			if strings.HasPrefix(lower, "-") && (lower != "-v" && lower != "--visual" && lower != "--selected") {
+				m.setStatus(fmt.Sprintf("Unknown arXiv option: %s", arg))
+				return nil
+			}
+			if arxivID == "" {
+				arxivID = arg
+				continue
+			}
+			fileSpecs = append(fileSpecs, arg)
+		}
+	}
+
+	var files []string
+	if useSelectionOnly || len(fileSpecs) == 0 {
+		var targets []string
+		if useSelectionOnly {
+			targets = m.selectedPaths()
+			if len(targets) == 0 {
+				m.setStatus("Select at least one file before using :arxiv -v")
+				return nil
+			}
+		} else {
+			targets = m.selectionOrCurrent()
+			if len(targets) == 0 {
+				m.setStatus("No files selected")
+				return nil
+			}
+		}
+		files = make([]string, 0, len(targets))
+		for _, path := range targets {
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			files = append(files, path)
+		}
+		if len(files) == 0 {
+			m.setStatus("arXiv import works on files only; select at least one PDF")
+			return nil
+		}
+	} else {
+		files = make([]string, 0, len(fileSpecs))
+		for _, spec := range fileSpecs {
 			resolved, err := m.resolveCommandFilePath(spec)
 			if err != nil {
 				m.setStatus(err.Error())
@@ -1358,31 +1483,85 @@ func (m *Model) handleArxivCommand(args []string) tea.Cmd {
 			}
 			files = append(files, resolved)
 		}
-	} else {
-		targets := m.selectionOrCurrent()
-		if len(targets) == 0 {
-			m.setStatus("No files selected")
-			return nil
-		}
-		files = make([]string, 0, len(targets))
-		for _, path := range targets {
-			info, err := os.Stat(path)
-			if err != nil {
-				continue
-			}
-			if info.IsDir() {
-				continue
-			}
-			files = append(files, path)
-		}
 	}
+
 	if len(files) == 0 {
 		m.setStatus("arXiv import works on files only; specify or select at least one PDF")
 		return nil
 	}
+
 	files = uniquePaths(files)
-	m.setPersistentStatus(fmt.Sprintf("Fetching arXiv %s for %d file(s)...", id, len(files)))
-	return m.fetchArxivMetadata(id, files)
+	if len(files) == 0 {
+		m.setStatus("arXiv import works on files only; specify or select at least one PDF")
+		return nil
+	}
+
+	if strings.TrimSpace(arxivID) == "" {
+		grouped, missing := detectArxivIDsFromFilenames(files)
+		detected := 0
+		for _, paths := range grouped {
+			detected += len(paths)
+		}
+		if detected == len(files) && detected > 0 {
+			m.setPersistentStatus(fmt.Sprintf("Fetching detected arXiv IDs for %d file(s)...", detected))
+			return m.startDetectedArxivQueue(grouped)
+		}
+		if len(missing) > 0 {
+			display := append([]string{}, missing...)
+			if len(display) > 3 {
+				display = append(display[:3], "...")
+			}
+			m.setStatus(fmt.Sprintf("No arXiv ID detected in: %s (enter manually)", strings.Join(display, ", ")))
+		}
+		m.promptArxivID(files)
+		return nil
+	}
+	return m.runArxivFetch(arxivID, files)
+}
+
+func detectArxivIDsFromFilenames(files []string) (map[string][]string, []string) {
+	grouped := make(map[string][]string)
+	var missing []string
+	for _, path := range files {
+		id := extractArxivIDFromFilename(path)
+		if id == "" {
+			missing = append(missing, filepath.Base(path))
+			continue
+		}
+		grouped[id] = append(grouped[id], path)
+	}
+	return grouped, missing
+}
+
+func extractArxivIDFromFilename(path string) string {
+	name := filepath.Base(path)
+	if name == "" {
+		return ""
+	}
+	if match := arxivModernIDPattern.FindStringSubmatch(name); len(match) > 0 {
+		return normalizeArxivMatch(match)
+	}
+	if match := arxivLegacyIDPattern.FindStringSubmatch(name); len(match) > 0 {
+		return normalizeArxivMatch(match)
+	}
+	return ""
+}
+
+func normalizeArxivMatch(match []string) string {
+	if len(match) < 2 {
+		return ""
+	}
+	id := strings.TrimSpace(match[1])
+	if id == "" {
+		return ""
+	}
+	if len(match) >= 3 {
+		version := strings.TrimSpace(match[2])
+		if version != "" {
+			id += strings.ToLower(version)
+		}
+	}
+	return id
 }
 
 func (m *Model) handleSearchCommand(args []string) tea.Cmd {
@@ -1536,6 +1715,45 @@ func (m *Model) buildSearchRequest(tokens []string) (searchRequest, error) {
 	return req, nil
 }
 
+func (m *Model) runArxivFetch(id string, files []string) tea.Cmd {
+	if len(files) == 0 {
+		m.setStatus("No files selected for arXiv import")
+		return nil
+	}
+	m.setPersistentStatus(fmt.Sprintf("Fetching arXiv %s for %d file(s)...", id, len(files)))
+	return m.fetchArxivMetadata(id, files)
+}
+
+func (m *Model) startDetectedArxivQueue(groups map[string][]string) tea.Cmd {
+	ids := make([]string, 0, len(groups))
+	for id := range groups {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	batches := make([]arxivBatch, 0, len(ids))
+	for _, id := range ids {
+		batches = append(batches, arxivBatch{id: id, files: groups[id]})
+	}
+	if len(batches) == 0 {
+		return nil
+	}
+	m.pendingArxivQueue = append([]arxivBatch{}, batches...)
+	return m.nextArxivQueueCmd()
+}
+
+func (m *Model) nextArxivQueueCmd() tea.Cmd {
+	if len(m.pendingArxivQueue) == 0 {
+		m.pendingArxivQueue = nil
+		return nil
+	}
+	next := m.pendingArxivQueue[0]
+	m.pendingArxivQueue = m.pendingArxivQueue[1:]
+	if len(m.pendingArxivQueue) == 0 {
+		m.pendingArxivQueue = nil
+	}
+	return m.runArxivFetch(next.id, next.files)
+}
+
 func parseSearchModeValue(value string) (searchMode, bool) {
 	switch searchMode(strings.ToLower(value)) {
 	case searchModeTitle:
@@ -1632,7 +1850,7 @@ func (m *Model) fetchArxivMetadata(id string, files []string) tea.Cmd {
 	store := m.meta
 	paths := append([]string{}, files...)
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), arxivRequestTimeout)
 		defer cancel()
 
 		metadata, err := arxiv.Fetch(ctx, id)

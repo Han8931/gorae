@@ -557,6 +557,8 @@ func (m Model) View() string {
 		fmt.Fprintf(&b, "Command: %s\n", m.input.View())
 	} else if m.state == stateSearchPrompt {
 		fmt.Fprintf(&b, "Search: %s\n", m.input.View())
+	} else if m.state == stateArxivPrompt {
+		fmt.Fprintf(&b, "arXiv ID: %s\n", m.input.View())
 	}
 	if len(m.commandOutput) > 0 {
 		lines := m.commandOutput
