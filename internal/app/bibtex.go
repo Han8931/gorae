@@ -70,7 +70,6 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 	}
 	title := base
 	author := ""
-	venue := ""
 	year := ""
 	published := ""
 	url := ""
@@ -82,16 +81,15 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 			title = v
 		}
 		author = normalizeSpaces(md.Author)
-		venue = normalizeSpaces(md.Venue)
 		year = strings.TrimSpace(md.Year)
-		published = strings.TrimSpace(md.Published)
+		published = normalizeSpaces(md.Published)
 		url = strings.TrimSpace(md.URL)
 		doi = strings.TrimSpace(md.DOI)
 		abstract = normalizeSpaces(md.Abstract)
 		keywords = normalizeKeywords(md.Tag)
 	}
 
-	entryType := determineBibtexType(author, venue)
+	entryType := determineBibtexType(author, published)
 	citeKey := buildBibtexKey(md, title, path)
 	normYear := extractYear(year)
 
@@ -100,12 +98,12 @@ func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 	if author != "" {
 		fields = append(fields, bibField{name: "author", value: author})
 	}
-	if venue != "" {
+	if published != "" {
 		fieldName := "journal"
 		if entryType == "inproceedings" {
 			fieldName = "booktitle"
 		}
-		fields = append(fields, bibField{name: fieldName, value: venue})
+		fields = append(fields, bibField{name: fieldName, value: published})
 	}
 	if normYear != "" {
 		fields = append(fields, bibField{name: "year", value: normYear})
@@ -141,13 +139,13 @@ type bibField struct {
 	value string
 }
 
-func determineBibtexType(author, venue string) string {
+func determineBibtexType(author, published string) string {
 	author = strings.TrimSpace(author)
-	venue = strings.TrimSpace(venue)
-	if venue != "" && author != "" {
+	published = strings.TrimSpace(published)
+	if published != "" && author != "" {
 		return "article"
 	}
-	if venue != "" {
+	if published != "" {
 		return "inproceedings"
 	}
 	if author != "" {

@@ -312,6 +312,13 @@ func isParagraphMetaField(label string) bool {
 	}
 }
 
+func boolLabel(v bool) string {
+	if v {
+		return "Yes"
+	}
+	return "No"
+}
+
 func (m Model) renderMetaPopupLines(width int) []string {
 	lines := m.metaPopupContentLines(width)
 	if len(lines) == 0 {
@@ -711,6 +718,10 @@ func (m Model) metadataPreviewLines(width int) []string {
 		}
 		lines = append(lines, fmt.Sprintf("%s: %s", label, val))
 	}
+	lines = append(lines, "Status:")
+	lines = append(lines, "  Favorite: "+boolLabel(md.Favorite))
+	lines = append(lines, "  To-read : "+boolLabel(md.ToRead))
+	lines = append(lines, "")
 	noteWidth := width - 2
 	if noteWidth < 10 {
 		noteWidth = width

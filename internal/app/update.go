@@ -612,6 +612,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// ===========================
+		// UNMARK PROMPT MODE
+		// ===========================
+		if m.state == stateUnmarkPrompt {
+			switch strings.ToLower(key) {
+			case "f":
+				m.applyUnmark(unmarkChoiceFavorite)
+				return m, nil
+			case "t":
+				m.applyUnmark(unmarkChoiceToRead)
+				return m, nil
+			case "b":
+				m.applyUnmark(unmarkChoiceBoth)
+				return m, nil
+			case "esc":
+				m.unmarkTargets = nil
+				m.state = stateNormal
+				m.setStatus("Unmark cancelled")
+				return m, nil
+			default:
+				return m, nil
+			}
+		}
+
+		// ===========================
 		// NORMAL MODE
 		// ===========================
 		switch key {
@@ -699,6 +723,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.awaitingSort = true
 			m.setStatus("Sort: 't' by title, 'y' by year")
 			return m, nil
+
+		case "f":
+			m.toggleMetadataFlag(metadataFlagFavorite)
+			return m, nil
+
+		case "t":
+			m.toggleMetadataFlag(metadataFlagToRead)
+			return m, nil
+
+		case "u":
+			m.startUnmarkPrompt()
+			return m, nil
+
+		case "F":
+			return m, m.showQuickFilter(quickFilterFavorites)
+
+		case "T":
+			return m, m.showQuickFilter(quickFilterToRead)
 
 		case " ":
 			if len(m.entries) == 0 {
@@ -1315,8 +1357,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 			"  Navigation : j/k move, h up, l enter",
 			"  Selection  : space toggle, d cut, p paste",
 			"  Files      : a mkdir, r rename dir, D delete",
-			"  Metadata   : e preview/edit fields, v edit fields in editor, n edit note in editor, y copy BibTeX, :arxiv [-v] <id> fetch from arXiv (omit <id> to be prompted)",
-			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits",
+			"  Metadata   : e preview/edit, v edit in editor, n edit note, y copy BibTeX, f favorite, t to-read, u unmark, :arxiv [-v] <id>",
+			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits; F favorites, T to-read quick filter",
 			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
 			"  Recently Opened: open a PDF to refresh the Recently Opened directory (keeps last 20)",
 			"  Config     : :config edits config, :config show displays info, :config editor <cmd> sets editor",

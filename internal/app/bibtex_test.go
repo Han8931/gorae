@@ -19,9 +19,8 @@ func TestBuildBibtexEntryWithMetadata(t *testing.T) {
 	md := &meta.Metadata{
 		Title:     "Attention Is All You Need",
 		Author:    "Vaswani, Ashish and others",
-		Venue:     "NeurIPS",
 		Year:      "2017",
-		Published: "2017-06-12",
+		Published: "NeurIPS 2017",
 		URL:       "https://arxiv.org/abs/1706.03762",
 		DOI:       "10.48550/arXiv.1706.03762",
 		Tag:       "transformers, attention",
@@ -37,11 +36,11 @@ func TestBuildBibtexEntryWithMetadata(t *testing.T) {
 	if !strings.Contains(entry, "title = {Attention Is All You Need}") {
 		t.Fatalf("entry missing title: %q", entry)
 	}
-	if !strings.Contains(entry, "journal = {NeurIPS}") {
-		t.Fatalf("entry missing venue: %q", entry)
+	if !strings.Contains(entry, "journal = {NeurIPS 2017}") {
+		t.Fatalf("entry missing published venue: %q", entry)
 	}
-	if !strings.Contains(entry, "published = {2017-06-12}") {
-		t.Fatalf("entry missing published date: %q", entry)
+	if !strings.Contains(entry, "published = {NeurIPS 2017}") {
+		t.Fatalf("entry missing published field: %q", entry)
 	}
 	if !strings.Contains(entry, "url = {https://arxiv.org/abs/1706.03762}") {
 		t.Fatalf("entry missing url: %q", entry)

@@ -42,7 +42,38 @@ const (
 	stateSearchPrompt
 	stateArxivPrompt
 	stateSearchResults
+	stateUnmarkPrompt
 )
+
+type quickFilterMode int
+
+const (
+	quickFilterNone quickFilterMode = iota
+	quickFilterFavorites
+	quickFilterToRead
+)
+
+func (q quickFilterMode) label() string {
+	switch q {
+	case quickFilterFavorites:
+		return "Favorites"
+	case quickFilterToRead:
+		return "To-read"
+	default:
+		return ""
+	}
+}
+
+func (q quickFilterMode) labelLower() string {
+	switch q {
+	case quickFilterFavorites:
+		return "favorites"
+	case quickFilterToRead:
+		return "to-read"
+	default:
+		return ""
+	}
+}
 
 type Model struct {
 	cfg     *config.Config
@@ -80,11 +111,12 @@ type Model struct {
 	input        textinput.Model
 	confirmItems []string
 
-	renameTarget string
+	renameTarget  string
+	unmarkTargets []string
 
 	meta            *meta.Store   // <── sqlite store
 	metaEditingPath string        // path of file being edited
-	metaFieldIndex  int           // 0:title,1:author,2:venue,3:year,...
+	metaFieldIndex  int           // 0:title,1:author,2:year,...
 	metaDraft       meta.Metadata // draft being edited
 
 	previewText []string
@@ -107,6 +139,8 @@ type Model struct {
 	pendingArxivFiles  []string
 	pendingArxivActive string
 	pendingArxivQueue  []arxivBatch
+
+	quickFilter quickFilterMode
 }
 
 var metaFieldLabels = []string{
@@ -590,6 +624,7 @@ func (m *Model) clearSearchResults() {
 	m.lastSearchMode = searchModeContent
 	m.searchResultCursor = 0
 	m.searchResultOffset = 0
+	m.quickFilter = quickFilterNone
 }
 
 func (m *Model) currentSearchMatch() *searchMatch {

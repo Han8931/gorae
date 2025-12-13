@@ -16,13 +16,14 @@ type Metadata struct {
 	Path      string
 	Title     string
 	Author    string
-	Venue     string
 	Year      string
 	Published string
 	URL       string
 	DOI       string
 	Abstract  string
 	Tag       string
+	Favorite  bool
+	ToRead    bool
 }
 
 type Store struct {
@@ -53,16 +54,23 @@ CREATE TABLE IF NOT EXISTS metadata (
   path   TEXT PRIMARY KEY,
   title  TEXT,
   author TEXT,
-  venue  TEXT,
   year   TEXT,
   published TEXT,
   url    TEXT,
   doi    TEXT,
   abstract TEXT,
-  tag TEXT
+  tag TEXT,
+  favorite INTEGER DEFAULT 0,
+  to_read INTEGER DEFAULT 0
 );
 `)
 	if err != nil {
+		return err
+	}
+	if err := s.ensureColumn("favorite", "INTEGER DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("to_read", "INTEGER DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("published", "TEXT"); err != nil {
@@ -95,18 +103,23 @@ func (s *Store) ensureColumn(name, typ string) error {
 func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT path, title, author, venue, year,
+		`SELECT path,
+		        title,
+		        author,
+		        year,
 		        IFNULL(published, ''),
 		        IFNULL(url, ''),
 		        IFNULL(doi, ''),
 		        IFNULL(abstract, ''),
-		        IFNULL(tag, '')
+		        IFNULL(tag, ''),
+		        COALESCE(favorite, 0),
+		        COALESCE(to_read, 0)
 		   FROM metadata WHERE path = ?`,
 		path,
 	)
 
-	m := Metadata{}
-	switch err := row.Scan(&m.Path, &m.Title, &m.Author, &m.Venue, &m.Year, &m.Published, &m.URL, &m.DOI, &m.Abstract, &m.Tag); err {
+	m, err := scanMetadataRow(row)
+	switch err {
 	case sql.ErrNoRows:
 		return nil, nil
 	case nil:
@@ -117,23 +130,105 @@ func (s *Store) Get(ctx context.Context, path string) (*Metadata, error) {
 }
 
 func (s *Store) Upsert(ctx context.Context, m *Metadata) error {
+	favorite := 0
+	if m.Favorite {
+		favorite = 1
+	}
+	toRead := 0
+	if m.ToRead {
+		toRead = 1
+	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO metadata (path, title, author, venue, year, published, url, doi, abstract, tag)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO metadata (path, title, author, year, published, url, doi, abstract, tag, favorite, to_read)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
   title    = excluded.title,
   author   = excluded.author,
-  venue    = excluded.venue,
   year     = excluded.year,
   published = excluded.published,
   url      = excluded.url,
   doi      = excluded.doi,
   abstract = excluded.abstract,
-  tag      = excluded.tag
+  tag      = excluded.tag,
+  favorite = excluded.favorite,
+  to_read  = excluded.to_read
 `,
-		m.Path, m.Title, m.Author, m.Venue, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag,
+		m.Path, m.Title, m.Author, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag, favorite, toRead,
 	)
 	return err
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanMetadataRow(scanner rowScanner) (Metadata, error) {
+	md := Metadata{}
+	var favorite, toRead int64
+	err := scanner.Scan(
+		&md.Path,
+		&md.Title,
+		&md.Author,
+		&md.Year,
+		&md.Published,
+		&md.URL,
+		&md.DOI,
+		&md.Abstract,
+		&md.Tag,
+		&favorite,
+		&toRead,
+	)
+	if err != nil {
+		return Metadata{}, err
+	}
+	md.Favorite = favorite != 0
+	md.ToRead = toRead != 0
+	return md, nil
+}
+
+func (s *Store) listByFlag(ctx context.Context, column string) ([]Metadata, error) {
+	query := fmt.Sprintf(`
+SELECT path,
+       title,
+       author,
+       year,
+       IFNULL(published, ''),
+       IFNULL(url, ''),
+       IFNULL(doi, ''),
+       IFNULL(abstract, ''),
+       IFNULL(tag, ''),
+       COALESCE(favorite, 0),
+       COALESCE(to_read, 0)
+  FROM metadata
+ WHERE COALESCE(%s, 0) = 1
+ ORDER BY LOWER(title), path
+`, column)
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]Metadata, 0)
+	for rows.Next() {
+		md, err := scanMetadataRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, md)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (s *Store) ListFavorites(ctx context.Context) ([]Metadata, error) {
+	return s.listByFlag(ctx, "favorite")
+}
+
+func (s *Store) ListToRead(ctx context.Context) ([]Metadata, error) {
+	return s.listByFlag(ctx, "to_read")
 }
 
 func (s *Store) Close() error {
