@@ -48,13 +48,10 @@ On first run the app writes `~/.config/gorae/config.json` (or `${XDG_CONFIG_HOME
 - `:search` relies on Poppler’s `pdftotext` and `pdfinfo` utilities (the same package that powers previews). Make sure they’re installed so content/metadata extraction works.
 
 TODO
-- Update reading state to reading of a file as I opened it. 
-- Cursor position after going back to the parent dir
 - UI improvement
 - logo command
 - Command autocomplete
 - Command history by up/down arrows
-- Screen renew or update key or auto
 - Page count
 
 AI features:

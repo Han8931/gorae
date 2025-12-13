@@ -723,6 +723,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "h", "backspace":
+			currentDir := m.cwd
 			parent := filepath.Dir(m.cwd)
 
 			if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
@@ -732,6 +733,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.cwd = parent
 			m.loadEntries()
+			childName := filepath.Base(currentDir)
+			if childName != "" {
+				target := filepath.Join(m.cwd, childName)
+				if idx := m.findEntryIndex(target); idx >= 0 {
+					m.cursor = idx
+					m.ensureCursorVisible()
+				}
+			}
 			m.clearStatus()
 			m.updateTextPreview() // <── NEW
 
