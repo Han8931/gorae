@@ -84,13 +84,14 @@ That's it—you can re-clone and reinstall at any time.
 For deeper instructions (config, themes, metadata, search tips, helper folders, etc.) read **[docs/user-guide.md](docs/user-guide.md)**. Prefer a different look? Grab one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and point `config.theme_path` at it or copy it to `~/.config/gorae/theme.toml`.
 
 TODO
+- Fix Recently read dir issue.
+- Update and revise README and manual. 
 - logo command
 
 AI features:
-- [Text extraction, pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
 - AI tag
 - AI Summary
-- Extract texts
+- [Extract texts (OCR)](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)
 - Knowledge Graphs
 - RAG
 - Prompt management

@@ -731,7 +731,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if err := m.openPDF(openPath); err != nil {
 					m.setStatus("Failed to open PDF: " + err.Error())
-				} else {
+				} else if !m.cwdIsRecentlyOpened {
 					m.recordRecentlyOpened(openPath)
 				}
 			} else {
@@ -1905,7 +1905,9 @@ func (m *Model) openSearchResultAtCursor() {
 		m.setStatus("Failed to open PDF: " + err.Error())
 		return
 	}
-	m.recordRecentlyOpened(match.Path)
+	if !m.cwdIsRecentlyOpened {
+		m.recordRecentlyOpened(match.Path)
+	}
 	m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(match.Path)))
 }
 
