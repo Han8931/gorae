@@ -519,6 +519,9 @@ func (m Model) View() string {
 	if m.state == stateSearchResults {
 		return m.renderSearchResultsView()
 	}
+	if m.state == stateHelp {
+		return m.renderHelpView()
+	}
 	var b strings.Builder
 	var overlayLines []string
 
@@ -701,6 +704,65 @@ func (m Model) renderSearchResultsView() string {
 
 	if warn := m.renderSearchWarnings(width, detailHeight); warn != "" {
 		b.WriteString("\n" + warn + "\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m Model) renderHelpView() string {
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	window := m.helpWindowHeight()
+	if window < 10 {
+		window = 10
+	}
+	body := m.helpViewBodyHeight()
+	lines := trimLinesToWidth(m.helpLines, width)
+	total := len(lines)
+	start := m.helpOffset
+	if start < 0 {
+		start = 0
+	}
+	maxOffset := total - body
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if start > maxOffset {
+		start = maxOffset
+	}
+	end := start + body
+	if end > total {
+		end = total
+	}
+
+	var b strings.Builder
+	header := fmt.Sprintf("Gorae Help — %d lines", total)
+	b.WriteString(m.styles.AppHeader.Render(padStyledLine(header, width)) + "\n")
+	controls := "Controls: j/k scroll • PgUp/PgDn jump • g g top • G/end bottom • Esc/q close • Ctrl+C quit"
+	b.WriteString(m.styles.Separator.Render(padStyledLine(controls, width)) + "\n\n")
+
+	if total == 0 {
+		b.WriteString("(Help unavailable)\n")
+	} else {
+		for i := start; i < end; i++ {
+			if i >= 0 && i < len(lines) {
+				b.WriteString(lines[i] + "\n")
+			}
+		}
+		visible := end - start
+		for i := visible; i < body; i++ {
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	if total == 0 {
+		b.WriteString(m.styles.Separator.Render(padStyledLine("No manual content available", width)))
+	} else {
+		info := fmt.Sprintf("Lines %d-%d of %d (j/k scroll, Esc/q close)", start+1, end, total)
+		b.WriteString(m.styles.Separator.Render(padStyledLine(info, width)))
 	}
 
 	return strings.TrimRight(b.String(), "\n")

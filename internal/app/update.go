@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	userdoc "gorae/docs"
 	"gorae/internal/arxiv"
 	"gorae/internal/config"
 	"gorae/internal/meta"
@@ -154,6 +155,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		key := msg.String()
+
+		if m.state == stateHelp {
+			if handled, cmd := m.handleHelpKey(key); handled {
+				return m, cmd
+			}
+		}
 
 		if m.awaitingQuickFilter {
 			m.awaitingQuickFilter = false
@@ -1436,22 +1443,10 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 
 	switch cmd {
 	case "h", "help":
-		help := []string{
-			"Command Help:",
-			"  Navigation : j/k move, h up, l enter",
-			"  Selection  : space toggle, d cut, p paste",
-			"  Files      : a mkdir, R rename dir, D delete",
-			"  Metadata   : e preview/edit, v edit in editor, n edit note, y copy BibTeX, f favorite, t to-read, r cycle read state, u unmark, :arxiv [-v] <id>",
-			"  Search     : / opens search prompt; :search or / accept -t/-a/-c/-y flags, j/k navigate results, Enter opens, Esc/q exits; F favorites, T to-read, g r/u/d show reading filters",
-			"  Recently Added : :recent rebuilds the Recently Added directory (names show metadata titles when available)",
-			"  Recently Read  : open a PDF to refresh the Recently Read directory (keeps last 20)",
-			"  Favorites/To-Read: browse the Favorites and To Read directories for quick access",
-			"  Config     : :config edits config, :config show displays info, :config editor <cmd> sets editor",
-			"  Theme      : :theme reload applies theme changes, :theme show displays the active path",
-			"  Commands   : :h help, :pwd show directory, :clear hide pane, :q quit",
-		}
-		m.setCommandOutput(help)
-		m.setPersistentStatus("Help displayed (use :clear to hide)")
+		lines := buildHelpOutput()
+		m.clearCommandOutput()
+		m.enterHelpView(lines)
+		m.setPersistentStatus("Help view open (j/k scroll, PgUp/PgDn jump, Esc closes)")
 	case "pwd":
 		output := []string{
 			"Current directory:",
@@ -1703,6 +1698,122 @@ func (m *Model) configEditor() string {
 		return env
 	}
 	return "vi"
+}
+
+func manualDocumentLines() []string {
+	guide := strings.TrimSpace(userdoc.UserGuide())
+	if guide == "" {
+		return nil
+	}
+	return strings.Split(guide, "\n")
+}
+
+func buildHelpOutput() []string {
+	lines := []string{
+		"Gorae Help",
+		"==========",
+		"",
+		"Navigation",
+		"  j/k .......... move",
+		"  h ............ go up a directory",
+		"  l/Enter ...... enter/open",
+		"  g g / G ...... top/bottom of list",
+		"",
+		"Selection & Files",
+		"  space ........ toggle selection",
+		"  v ............ select all files",
+		"  d / p ........ cut / paste",
+		"  a ............ new directory",
+		"  R / D ........ rename dir / delete selection",
+		"",
+		"Metadata & Notes",
+		"  e / v ........ inline metadata preview or edit in editor",
+		"  n ............ edit note (Markdown)",
+		"  f / t / r .... favorite / to-read / cycle reading state",
+		"  y ............ copy BibTeX",
+		"  :arxiv ....... fetch arXiv metadata (:arxiv -v for selected files)",
+		"",
+		"Search & Lists",
+		"  / or :search . search content or metadata (-t/-a/-c/-y flags)",
+		"  F / T ........ favorites / to-read lists",
+		"  g r / g u / g d... filter by reading state",
+		"  Recently Added: :recent rebuilds helper directory",
+		"  Recently Read : open PDFs to refresh helper directory",
+		"",
+		"Config & Theme",
+		"  :config ...... edit config (use :config show for summary)",
+		"  :config editor <cmd> sets your editor",
+		"  :theme reload / :theme show manage the active theme",
+		"",
+		"Other Commands",
+		"  :pwd ......... show working directory",
+		"  :clear ....... hide this panel",
+		"  :q or Ctrl+C . quit",
+		"",
+	}
+
+	if manual := manualDocumentLines(); len(manual) > 0 {
+		lines = append(lines,
+			"Manual (docs/user-guide.md)",
+			"---------------------------",
+			"(Full manual below—keep scrolling!)",
+			"",
+		)
+		lines = append(lines, manual...)
+	} else {
+		lines = append(lines,
+			"Manual: https://github.com/Han8931/gorae/blob/main/docs/user-guide.md",
+			"(Cannot load embedded manual; open the link above.)",
+		)
+	}
+
+	return lines
+}
+
+func (m *Model) handleHelpKey(key string) (bool, tea.Cmd) {
+	if m.state != stateHelp {
+		return false, nil
+	}
+	if key != "g" {
+		m.awaitingHelpGotoTop = false
+	}
+	switch key {
+	case "esc", "q":
+		m.exitHelpView()
+		m.setStatus("Help closed")
+		return true, nil
+	case "ctrl+c":
+		return true, tea.Quit
+	case "j", "down":
+		m.scrollHelp(1)
+		return true, nil
+	case "k", "up":
+		m.scrollHelp(-1)
+		return true, nil
+	case "pgdown", "ctrl+f":
+		m.scrollHelp(m.helpViewBodyHeight())
+		return true, nil
+	case "pgup", "ctrl+b":
+		m.scrollHelp(-m.helpViewBodyHeight())
+		return true, nil
+	case "home":
+		m.setHelpOffset(0)
+		return true, nil
+	case "end", "G":
+		m.setHelpOffset(len(m.helpLines))
+		return true, nil
+	case "g":
+		if m.awaitingHelpGotoTop {
+			m.setHelpOffset(0)
+			m.awaitingHelpGotoTop = false
+		} else {
+			m.awaitingHelpGotoTop = true
+			m.setStatus("Press g again to jump to the top")
+		}
+		return true, nil
+	default:
+		return true, nil
+	}
 }
 
 func (m *Model) handleArxivCommand(args []string) tea.Cmd {

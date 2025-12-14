@@ -40,6 +40,10 @@ Run `gorae` (optionally `-root /path/to/Papers`) to start the UI.
   - `editor`, `pdf_viewer`, `notes_dir`, `theme_path`.
   - Helper folders under `watch_dir`: `Recently Added`, `Recently Read`, `Favorites`, `To Read`. Gorae keeps them in sync so you can browse them with any file manager.
 
+### Recommended PDF viewer
+
+Gorae works with any viewer command, but the default `pdf_viewer` is [Zathura](https://pwmt.org/projects/zathura/) using the MuPDF backend. Zathura is lightweight, vi-key friendly, and renders quickly with MuPDF, which makes it ideal for bouncing between the TUI and an external window. Install it with your package manager (`sudo pacman -S zathura zathura-pdf-mupdf`, `sudo apt install zathura zathura-pdf-mupdf`, etc.) and either keep the auto-detected default or set `"pdf_viewer": "zathura"` explicitly in `config.json`.
+
 ## Themes
 
 - Default theme path: `~/.config/gorae/theme.toml` (create from `themes/fancy-dark.toml` or edit the generated file).

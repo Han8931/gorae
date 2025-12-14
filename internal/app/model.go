@@ -47,6 +47,7 @@ const (
 	stateSearchPrompt
 	stateArxivPrompt
 	stateSearchResults
+	stateHelp
 	stateUnmarkPrompt
 )
 
@@ -115,6 +116,9 @@ type Model struct {
 	commandOutput              []string
 	commandOutputOffset        int
 	commandOutputPinned        bool
+	helpLines                  []string
+	helpOffset                 int
+	awaitingHelpGotoTop        bool
 	commandHistory             []string
 	commandHistoryIndex        int
 	commandHistoryBuffer       string
@@ -706,6 +710,20 @@ func (m *Model) clearCommandOutput() {
 	m.commandOutputPinned = false
 }
 
+func (m *Model) enterHelpView(lines []string) {
+	m.helpLines = append([]string{}, lines...)
+	m.helpOffset = 0
+	m.awaitingHelpGotoTop = false
+	m.state = stateHelp
+}
+
+func (m *Model) exitHelpView() {
+	m.helpLines = nil
+	m.helpOffset = 0
+	m.awaitingHelpGotoTop = false
+	m.state = stateNormal
+}
+
 func (m *Model) openSearchPrompt(initial string) {
 	m.state = stateSearchPrompt
 	m.input.SetValue(initial)
@@ -933,6 +951,70 @@ func (m *Model) commandOutputViewHeight() int {
 		view = 5
 	}
 	return view
+}
+
+func (m *Model) helpViewBodyHeight() int {
+	window := m.helpWindowHeight()
+	body := window - 4
+	if body < 4 {
+		body = window - 2
+	}
+	if body < 1 {
+		body = 1
+	}
+	return body
+}
+
+func (m *Model) helpWindowHeight() int {
+	if m.windowHeight > 0 {
+		return m.windowHeight
+	}
+	if m.viewportHeight > 0 {
+		return m.viewportHeight + 5
+	}
+	return 24
+}
+
+func (m *Model) scrollHelp(delta int) {
+	if len(m.helpLines) == 0 {
+		m.helpOffset = 0
+		return
+	}
+	view := m.helpViewBodyHeight()
+	if view <= 0 || len(m.helpLines) <= view {
+		m.helpOffset = 0
+		return
+	}
+	m.helpOffset += delta
+	if m.helpOffset < 0 {
+		m.helpOffset = 0
+	}
+	maxOffset := len(m.helpLines) - view
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.helpOffset > maxOffset {
+		m.helpOffset = maxOffset
+	}
+}
+
+func (m *Model) setHelpOffset(offset int) {
+	view := m.helpViewBodyHeight()
+	if view <= 0 {
+		m.helpOffset = 0
+		return
+	}
+	maxOffset := len(m.helpLines) - view
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	m.helpOffset = offset
 }
 
 func (m *Model) ensureCursorVisible() {

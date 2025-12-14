@@ -83,8 +83,19 @@ That's it—you can re-clone and reinstall at any time.
 
 For deeper instructions (config, themes, metadata, search tips, helper folders, etc.) read **[docs/user-guide.md](docs/user-guide.md)**. Prefer a different look? Grab one of the ready-made themes in `themes/` (e.g., `aurora.toml`, `matcha.toml`, `fancy-dark.toml`) and point `config.theme_path` at it or copy it to `~/.config/gorae/theme.toml`.
 
+## Recommended PDF viewer
+
+Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend as the default. Zathura is a minimal, keyboard-driven PDF reader that starts instantly, supports vi-style navigation, and provides excellent rendering fidelity through MuPDF. It stays out of your way in tiling window managers yet still offers niceties like synctex, bookmarks, and recollection of the last page you viewed.
+
+Install it from your distro (`sudo apt install zathura zathura-pdf-mupdf`, `sudo pacman -S zathura zathura-pdf-mupdf`, etc.) and then set the viewer command in your config:
+
+```json
+"pdf_viewer": "zathura"
+```
+
+If you already have `zathura` on your `PATH`, Gorae will auto-detect it, so most users can just accept the default.
+
 TODO
-- Fix Recently read dir issue.
 - Update and revise README and manual. 
 - logo command
 
