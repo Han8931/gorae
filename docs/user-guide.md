@@ -92,12 +92,14 @@ Navigation:
 * `j` / `k`: move down / up
 * `l`: enter directory
 * `h`: go up to parent directory
-* Arrow keys are also supported
+- `g`: go to the top (start) of the list
+- `G`: go to the bottom (end) of the list
 * `a`: creates a directory 
 * `R`: rename a directory
 * `D`: delete files or dirs. 
+* `q` or `Esc`: quit Gorae
 
-> Gorae supports arrow keys too. 
+> Arrow keys are also supported.
 
 Selection:
 
