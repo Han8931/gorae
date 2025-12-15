@@ -371,6 +371,18 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 	}
 
 	if strings.TrimSpace(field) == "" {
+		if mode == searchModeTitle {
+			base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			if strings.TrimSpace(base) != "" {
+				field = base
+				if strings.TrimSpace(metaInfo.Title) == "" {
+					metaInfo.Title = base
+				}
+			}
+		}
+	}
+
+	if strings.TrimSpace(field) == "" {
 		return searchMatch{}, false, nil
 	}
 
