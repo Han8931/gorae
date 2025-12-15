@@ -4,20 +4,55 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a cozy TUI librarian for your PDFs—built for Vim/CLI/TUI lovers who want to stay in the terminal, keep metadata in sync, and enjoy quick search plus favorite/to-read queues.
+**Gorae** (*고래*, *whale*) is a terminal-first TUI librarian for PDFs—fast browsing, solid metadata, and quick search for people who live in Vim/CLI.
 
-> The Gorae logo is inspired by the Bangudae Petroglyphs (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The simple "glyph-like" whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—just like a cozy terminal app.
+> The Gorae logo is inspired by the Bangudae Petroglyphs (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The "glyph-like" whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
 ## Highlights
 
-- Fast file browser with metadata-aware favorites, to-read list, and reading states.
-- Search across content or metadata with instant previews/snippets.
-- In-app metadata editor, arXiv importer, and BibTeX copy.
-- Themeable UI (colors, glyphs, borders) plus helper folders you can browse in any file manager.
+* Vim-style fast file browser with favorites, to-read, and reading states.
+* Favorites, to-read list, and reading states backed by metadata.
+* Search by metadata or full text with previews/snippets.
+* Edit metadata in-app, import from arXiv, and copy BibTeX.
+* Themeable UI (colors, glyphs, borders) plus helper folders you can browse in any file manager.
 
 ## Demo
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
+
+## Everyday use
+
+> For deeper instructions, read **[docs/user-guide.md](docs/user-guide.md)** or run `:help`.
+
+| Action             | Key       |
+| ------------------ | --------- |
+| Move               | `j/k`     |
+| Enter dir / up     | `l` / `h` |
+| Select             | `Space`   |
+| Favorite / To-read | `f` / `t` |
+| Reading state      | `r`       |
+| Search             | `/`       |
+| Help               | `:help`   |
+
+> Arrow keys are also supported.
+
+### Search tips
+
+Search (`/`) with flags like:
+
+* `-t [title]`
+* `-a [author]`
+* `-y [year]`
+* `-c [content]`
+
+### Fetch arXiv metadata
+
+Commands:
+* `:arxiv <id> [files...]`
+
+Batch apply:
+* Select multiple files, then run:
+  * `:arxiv -v <id>` (applies to selected files)
 
 ## Install
 
@@ -78,30 +113,6 @@ install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
 
 After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library).
 
-## Everyday use
-
-> For deeper instructions, read **[docs/user-guide.md](docs/user-guide.md)** or run `:help`.
-
-| Action             | Key       |
-| ------------------ | --------- |
-| Move               | `j/k`     |
-| Enter dir / up     | `l` / `h` |
-| Select             | `Space`   |
-| Favorite / To-read | `f` / `t` |
-| Reading state      | `r`       |
-| Search             | `/`       |
-| Help               | `:help`   |
-
-> Arrow keys are also supported.
-
-### Search tips
-
-Search (`/`) with flags like:
-
-* `-t [title]`
-* `-a [author]`
-* `-y [year]`
-* `-c [content]`
 
 ## Config & themes
 
@@ -140,6 +151,9 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ## Roadmap
 
+### New Features and Todo
+* [ ] Build file
+* [ ] Yank type
 * [ ] Update and revise README and manual
 * [ ] `gorae logo` command
 
