@@ -183,7 +183,11 @@ ON CONFLICT(path) DO UPDATE SET
   tag      = excluded.tag,
   reading_state = excluded.reading_state,
   favorite = excluded.favorite,
-  to_read  = excluded.to_read
+  to_read  = excluded.to_read,
+  added_at = CASE
+                WHEN COALESCE(metadata.added_at, 0) = 0 THEN excluded.added_at
+                ELSE metadata.added_at
+             END
 `,
 		m.Path, m.Title, m.Author, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag, state, favorite, toRead, addedAtUnix,
 	)
@@ -313,7 +317,11 @@ func (s *Store) RecordOpened(ctx context.Context, path string, openedAt time.Tim
 INSERT INTO metadata (path, reading_state, added_at, last_opened_at)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
-  last_opened_at = excluded.last_opened_at
+  last_opened_at = excluded.last_opened_at,
+  added_at = CASE
+                WHEN COALESCE(metadata.added_at, 0) = 0 THEN excluded.added_at
+                ELSE metadata.added_at
+             END
 `,
 		path, defaultReadingState, ts, ts,
 	)

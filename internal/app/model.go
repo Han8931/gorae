@@ -528,6 +528,11 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	if err := m.syncCollectionDirectories(); err != nil {
 		m.setStatus("Favorite/To-read sync failed: " + err.Error())
 	}
+	if m.recentlyOpenedDir != "" && m.meta != nil && m.recentlyOpenedLimit > 0 {
+		if err := rebuildRecentlyOpenedDirectory(m.recentlyOpenedDir, m.recentlyOpenedLimit, m.meta); err != nil {
+			m.setStatus("Recently read sync failed: " + err.Error())
+		}
+	}
 
 	if themeErr != nil {
 		m.status = "Using default theme (failed to load theme: " + themeErr.Error() + ")"
