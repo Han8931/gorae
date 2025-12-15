@@ -96,6 +96,13 @@ GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
 gorae        # optionally: gorae -root /path/to/Papers
 ```
 
+> You can also use the pre-built binary for your platform from the latest GitHub Release (or from the `dist/` folder if you cloned the repo), place it somewhere on your `PATH`, and run it directly:
+> 
+> 1. Download the file that matches your OS/architecture (`gorae`, `gorae-darwin-amd64`, `gorae-darwin-arm64`, or `gorae-windows-amd64.exe`).
+> 2. Make it executable if needed (`chmod +x gorae-*` on Linux/macOS).
+> 3. Move it into a directory on your `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, or `%USERPROFILE%\bin`).
+> 4. Launch it from any terminal: `gorae -root /path/to/Papers`.
+
 ### Manual install
 
 ```sh
@@ -112,7 +119,6 @@ install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
 ```
 
 After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library).
-
 
 ## Config & themes
 
@@ -180,4 +186,3 @@ That's it—you can re-clone and reinstall at any time.
 ## Acknowledgements
 
 <!-- TODO: Add libraries/tools you use (Bubble Tea, Bubbles, Lip Gloss, Poppler, etc.) -->
-
