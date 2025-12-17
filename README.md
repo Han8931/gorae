@@ -164,17 +164,20 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 ### New Features and Todo
 
 * [ ] Support mouse
-* [x] DOI extraction / auto metadata detection
-* [ ] New file autodetection
-* [ ] Git
+* [ ] Epub support
+* [ ] New file autofetch
+* [ ] Gif file
 * [ ] Open a file at a certain position
 * [ ] Search by tags
 * [ ] Yank type (bibtex / plain text)
 * [ ] `gorae logo` command
 * [x] Build file
+* [ ] Vault warden
+* [ ] WebServer
 
 ### AI features (planned)
 
+* Audio reading
 * AI tagging and summarization
 * Text extraction (OCR) (see: [https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/))
 * RAG and knowledge graphs
@@ -194,4 +197,16 @@ That's it—you can re-clone and reinstall at any time.
 
 ## Acknowledgements
 
-<!-- TODO: Add libraries/tools you use (Bubble Tea, Bubbles, Lip Gloss, Poppler, etc.) -->
+<table>
+  <tr>
+    <td align="center" width="170">
+      <a href="https://github.com/fineday38">
+        <img src="https://github.com/fineday38.png?size=120" width="80" height="80" alt="fineday38" style="border-radius:50%;" />
+      </a>
+      <br/>
+      <a href="https://github.com/fineday38">fineday38</a>
+      <br/>
+      <sub>Nice feedback & ideas</sub>
+    </td>
+  </tr>
+</table>
