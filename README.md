@@ -165,7 +165,6 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 * [ ] Support mouse
 * [ ] Epub support
-* [ ] New file autofetch
 * [ ] Gif file
 * [ ] Open a file at a certain position
 * [ ] Search by tags
