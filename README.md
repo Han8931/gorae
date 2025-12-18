@@ -4,7 +4,7 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs** — fast browsing, solid metadata, and quick search for people who live in **Vim/CLI**.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs and EPUBs** — fast browsing, solid metadata, quick search, and **mouse support** for people who live in **Vim/CLI**.
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
@@ -35,11 +35,11 @@
 | Select             | `Space`   |
 | Favorite / To-read | `f` / `t` |
 | Reading state      | `r`       |
-| Edit metadata      | `ee`       |
+| Edit metadata      | `ee`      |
 | Search             | `/`       |
 | Help               | `:help`   |
 
-> Arrow keys are also supported.
+> **Arrow keys and mouse** input are also supported.
 
 ### 🔎 Search tips
 
@@ -63,7 +63,7 @@ You can scope the search with flags:
 
 ### Fetch arXiv metadata
 
-Gorae scan DOI or arXiv identifiers from new PDFs and populate metadata automatically.
+Gorae scans **DOI** or **arXiv identifiers** from new files and populates metadata automatically.
 
 You can do this manually by
 
@@ -180,7 +180,7 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ### New Features and Todo
 
-* [ ] Support mouse
+* [ ] ToDo management
 * [ ] Gif file
 * [ ] Open a file at a certain position
 * [ ] `gorae logo` command
