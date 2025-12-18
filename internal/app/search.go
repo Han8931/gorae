@@ -26,6 +26,7 @@ const (
 	searchModeAuthor  searchMode = "author"
 	searchModeYear    searchMode = "year"
 	searchModeContent searchMode = "content"
+	searchModeTag     searchMode = "tag"
 )
 
 type searchRequest struct {
@@ -331,6 +332,28 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 	if stored != nil {
 		metaInfo.Title = strings.TrimSpace(stored.Title)
 		metaInfo.Author = strings.TrimSpace(stored.Author)
+		metaInfo.Tag = strings.TrimSpace(stored.Tag)
+	}
+
+	if mode == searchModeTag {
+		// Tag searches rely solely on stored metadata; they do not fall back to PDF info.
+		if !matchTags(metaInfo.Tag, query, caseSensitive) {
+			return searchMatch{}, false, nil
+		}
+		lines := []string{
+			fmt.Sprintf("Title : %s", highlightField(metaInfo.Title, query, caseSensitive)),
+			fmt.Sprintf("Author: %s", highlightField(metaInfo.Author, query, caseSensitive)),
+			fmt.Sprintf("Tags  : %s", highlightField(metaInfo.Tag, query, caseSensitive)),
+		}
+		match := searchMatch{
+			Path:       path,
+			Mode:       mode,
+			MatchCount: 1,
+			Snippets:   lines,
+			Meta:       metaInfo,
+		}
+		populateMatchDisplay(&match, store)
+		return match, true, nil
 	}
 
 	var field string
@@ -339,6 +362,8 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 		field = metaInfo.Title
 	case searchModeAuthor:
 		field = metaInfo.Author
+	case searchModeTag:
+		field = metaInfo.Tag
 	}
 
 	if strings.TrimSpace(field) == "" || needPDFInfo {
@@ -399,6 +424,7 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 	lines := []string{
 		fmt.Sprintf("Title        : %s", highlightField(metaInfo.Title, query, caseSensitive)),
 		fmt.Sprintf("Author       : %s", highlightField(metaInfo.Author, query, caseSensitive)),
+		fmt.Sprintf("Tag          : %s", highlightField(metaInfo.Tag, query, caseSensitive)),
 		fmt.Sprintf("CreationDate : %s", highlightField(metaInfo.CreationDate, query, caseSensitive)),
 		fmt.Sprintf("ModDate      : %s", highlightField(metaInfo.ModDate, query, caseSensitive)),
 	}
@@ -417,6 +443,7 @@ func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive
 type pdfMeta struct {
 	Title        string
 	Author       string
+	Tag          string
 	CreationDate string
 	ModDate      string
 }
@@ -502,6 +529,44 @@ func readPDFInfo(path string) (pdfMeta, error) {
 		return pdfMeta{}, fmt.Errorf("pdfinfo: %w", err)
 	}
 	return parsePDFInfo(stdout.String()), nil
+}
+
+func matchTags(stored, query string, caseSensitive bool) bool {
+	storedTags := splitTags(stored)
+	queryTags := splitTags(query)
+	if len(storedTags) == 0 || len(queryTags) == 0 {
+		return false
+	}
+	for _, q := range queryTags {
+		for _, t := range storedTags {
+			if caseSensitive {
+				if t == q {
+					return true
+				}
+				continue
+			}
+			if strings.EqualFold(t, q) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func splitTags(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 func parsePDFInfo(output string) pdfMeta {

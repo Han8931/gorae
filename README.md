@@ -35,6 +35,7 @@
 | Select             | `Space`   |
 | Favorite / To-read | `f` / `t` |
 | Reading state      | `r`       |
+| Edit metadata      | `ee`       |
 | Search             | `/`       |
 | Help               | `:help`   |
 
@@ -51,21 +52,15 @@ Search (`/`) with flags like:
 
 ### Fetch arXiv metadata
 
-Commands:
-* `:arxiv <id> [files...]`
+Gorae scan DOI or arXiv identifiers from new PDFs and populate metadata automatically.
 
-Batch apply:
-* Select multiple files, then run:
-  * `:arxiv -v` (applies to selected files)
+You can do this manually by
 
-### Auto metadata detection
-
-Let Gorae scan PDFs for DOI or arXiv identifiers and populate metadata automatically:
-
-* `:autofetch [files...]` scans the current file (or specified files) for identifiers.
-* `:autofetch -v` applies to the current selection.
-
-Behind the scenes, Gorae uses Crossref (DOI) and the arXiv API, so the same network requirements as `:arxiv` apply. The command relies on `pdftotext`, so make sure Poppler tools are installed.
+* Commands:
+    * `:autofetch [files...]` scans the current file (or specified files) for identifiers.
+* Batch apply:
+    * Select multiple files, then run:
+    * `:autofetch -v` applies to the current selection.
 
 ## Install
 
@@ -176,7 +171,6 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 * [ ] Epub support
 * [ ] Gif file
 * [ ] Open a file at a certain position
-* [ ] Search by tags
 * [ ] Yank type (bibtex / plain text)
 * [ ] `gorae logo` command
 * [x] Build file

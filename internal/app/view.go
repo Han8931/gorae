@@ -394,10 +394,6 @@ func (m Model) metaPopupContentLines(width int) []string {
 	if width <= 0 {
 		width = 40
 	}
-	label := metaFieldLabel(m.metaFieldIndex)
-	if label == "" {
-		label = "Field"
-	}
 	fileName := filepath.Base(m.metaEditingPath)
 	if fileName == "" || fileName == "." {
 		fileName = m.metaEditingPath
@@ -421,9 +417,6 @@ func (m Model) metaPopupContentLines(width int) []string {
 			value = "(empty)"
 		}
 		prefix := "  "
-		if m.metaFieldIndex == i {
-			prefix = "➤ "
-		}
 
 		if isParagraphMetaField(fieldLabel) {
 			popupLines = append(popupLines, fmt.Sprintf("%s%s:", prefix, fieldLabel))
@@ -447,26 +440,13 @@ func (m Model) metaPopupContentLines(width int) []string {
 		}
 	}
 
-	if m.state == stateEditMeta {
-		popupLines = append(popupLines,
-			"",
-			fmt.Sprintf("Edit %s:", label),
-			m.input.View(),
-			"",
-			"Tab       → next field",
-			"Shift+Tab → previous field",
-			"Enter     → next/save",
-			"Esc or q  → cancel",
-		)
-	} else {
-		popupLines = append(popupLines,
-			"",
-			"Use ↑/↓ or PgUp/PgDn to scroll fields.",
-			"Press 'e' to edit fields here, 'v' to edit fields in your editor.",
-			"Press 'n' to edit the note in your editor.",
-			"Press 'Esc' or 'q' to cancel.",
-		)
-	}
+	popupLines = append(popupLines,
+		"",
+		"Use ↑/↓ or PgUp/PgDn to scroll fields.",
+		"Press 'e' to edit fields in your editor.",
+		"Press 'n' to edit the note in your editor.",
+		"Press 'Esc' or 'q' to close.",
+	)
 
 	box := renderPopupBox("Metadata Editor", popupLines, width)
 	box = strings.TrimRight(box, "\n")
@@ -569,7 +549,7 @@ func (m Model) View() string {
 		listLines := m.renderListPanel(middleWidth, height)
 		prevLines := m.renderPreviewPanel(rightWidth, height)
 
-		if m.state == stateEditMeta || m.state == stateMetaPreview {
+		if m.state == stateMetaPreview {
 			overlayLines = m.renderMetaPopupLines(middleWidth)
 			if len(overlayLines) > 0 {
 				for i := range overlayLines {
@@ -1150,7 +1130,7 @@ func (m Model) currentModeLabel() string {
 		return "Command"
 	case stateSearchPrompt, stateSearchResults:
 		return "Search"
-	case stateEditMeta, stateMetaPreview:
+	case stateMetaPreview:
 		return "Meta"
 	case stateNewDir:
 		return "New Dir"

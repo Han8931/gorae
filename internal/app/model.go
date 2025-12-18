@@ -42,7 +42,6 @@ const (
 	stateConfirmDelete
 	stateRename
 	stateMetaPreview
-	stateEditMeta
 	stateCommand
 	stateSearchPrompt
 	stateArxivPrompt
@@ -320,7 +319,7 @@ func (m Model) panelWidths() (int, int, int) {
 
 	leftPct := 0.22
 	rightPct := 0.33
-	if m.state == stateMetaPreview || m.state == stateEditMeta {
+	if m.state == stateMetaPreview {
 		leftPct = 0.18
 		rightPct = 0.28
 	}

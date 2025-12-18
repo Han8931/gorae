@@ -413,19 +413,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// ===========================
-		//  EDIT METADATA MODE
+		//  METADATA PREVIEW MODE
 		// ===========================
 		if m.state == stateMetaPreview {
 			switch key {
 			case "e":
-				m.state = stateEditMeta
-				m.metaFieldIndex = 0
-				m.metaPopupOffset = 0
-				m.loadMetaFieldIntoInput()
-				m.input.Focus()
-				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
-				return m, nil
-			case "v":
 				m.metaPopupOffset = 0
 				if cmd := m.launchMetadataEditor(); cmd != nil {
 					return m, cmd
@@ -460,81 +452,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateNormal
 				m.metaEditingPath = ""
 				m.metaPopupOffset = 0
-				m.setStatus("Metadata edit cancelled")
+				m.setStatus("Metadata preview closed")
 				return m, nil
 			}
 			return m, nil
-		}
-
-		if m.state == stateEditMeta {
-			var cmd tea.Cmd
-			if key != "tab" && key != "shift+tab" {
-				m.input, cmd = m.input.Update(msg)
-			}
-
-			switch key {
-			case "tab":
-				val := strings.TrimSpace(m.input.Value())
-				setMetadataFieldValue(&m.metaDraft, m.metaFieldIndex, val)
-				if m.metaFieldIndex < metaFieldCount()-1 {
-					m.metaFieldIndex++
-				}
-				m.loadMetaFieldIntoInput()
-				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
-				return m, cmd
-
-			case "shift+tab":
-				val := strings.TrimSpace(m.input.Value())
-				setMetadataFieldValue(&m.metaDraft, m.metaFieldIndex, val)
-				if m.metaFieldIndex > 0 {
-					m.metaFieldIndex--
-				}
-				m.loadMetaFieldIntoInput()
-				m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
-				return m, cmd
-
-			case "enter":
-				val := strings.TrimSpace(m.input.Value())
-				setMetadataFieldValue(&m.metaDraft, m.metaFieldIndex, val)
-
-				if m.metaFieldIndex < metaFieldCount()-1 {
-					m.metaFieldIndex++
-					m.loadMetaFieldIntoInput()
-					m.setPersistentStatus(metaEditStatus(m.metaFieldIndex))
-					return m, cmd
-				}
-
-				if m.metaDraft.Path == "" {
-					m.metaDraft.Path = m.metaEditingPath
-				}
-				if m.meta != nil {
-					ctx := context.Background()
-					if err := m.meta.Upsert(ctx, &m.metaDraft); err != nil {
-						m.setStatus("Failed to save metadata: " + err.Error())
-					} else {
-						m.setStatus("Metadata saved")
-						m.currentMetaPath = ""
-						m.resortAndPreserveSelection()
-					}
-				} else {
-					m.setStatus("Metadata store not available")
-				}
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.metaEditingPath = ""
-				m.metaPopupOffset = 0
-				return m, cmd
-
-			case "esc":
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.metaEditingPath = ""
-				m.metaPopupOffset = 0
-				m.setStatus("Metadata edit cancelled")
-				return m, cmd
-			}
-
-			return m, cmd
 		}
 
 		// ===========================
@@ -1091,7 +1012,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.metaPopupOffset = 0
 			m.input.SetValue("")
 			m.input.Blur()
-			m.setPersistentStatus("Metadata preview: 'e' edit fields, 'v' open fields in editor, 'n' edit note, Esc cancel")
+			m.setPersistentStatus("Metadata preview: 'e' edit in editor, 'n' edit note, Esc close")
 			return m, nil
 
 		case ":":
@@ -1497,7 +1418,7 @@ func (m *Model) scrollMetaPopup(delta int) {
 	if delta == 0 {
 		return
 	}
-	if m.state != stateMetaPreview && m.state != stateEditMeta {
+	if m.state != stateMetaPreview {
 		m.metaPopupOffset = 0
 		return
 	}
@@ -1509,7 +1430,7 @@ func (m *Model) scrollMetaPopup(delta int) {
 }
 
 func (m *Model) clampMetaPopupOffset() {
-	if m.state != stateMetaPreview && m.state != stateEditMeta {
+	if m.state != stateMetaPreview {
 		m.metaPopupOffset = 0
 		return
 	}
@@ -1855,7 +1776,7 @@ func buildHelpOutput() []string {
 		"  R / D ........ rename dir / delete selection",
 		"",
 		"Metadata & Notes",
-		"  e / v ........ inline metadata preview or edit in editor",
+		"  e ............ metadata preview + edit in editor",
 		"  n ............ edit note (Markdown)",
 		"  f / t / r .... favorite / to-read / cycle reading state",
 		"  y ............ copy BibTeX",
@@ -2115,6 +2036,7 @@ func detectPrefixedSearchMode(token string) (searchMode, string, bool) {
 		searchModeAuthor,
 		searchModeYear,
 		searchModeContent,
+		searchModeTag,
 	}
 	for _, candidate := range candidates {
 		prefix := string(candidate) + ":"
@@ -2203,6 +2125,8 @@ func (m *Model) buildSearchRequest(tokens []string) (searchRequest, error) {
 			req.mode = searchModeContent
 		case lower == "-y" || lower == "--year":
 			req.mode = searchModeYear
+		case lower == "--tag":
+			req.mode = searchModeTag
 		case lower == "-case" || lower == "--case":
 			req.caseSensitive = true
 		case lower == "-root" || lower == "--root":
@@ -2294,6 +2218,8 @@ func parseSearchModeValue(value string) (searchMode, bool) {
 		return searchModeYear, true
 	case searchModeContent:
 		return searchModeContent, true
+	case searchModeTag:
+		return searchModeTag, true
 	default:
 		return "", false
 	}
