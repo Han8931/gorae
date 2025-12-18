@@ -109,6 +109,10 @@ func syncRecentlyAddedDirectory(root, recentDir string, maxAge time.Duration, st
 			return nil
 		}
 
+		// Opportunistically fetch metadata for new/unknown files so that
+		// the "Recently Added" directory can use proper titles/years.
+		ensureMetadataForRecentlyAdded(store, path)
+
 		rel, err := filepath.Rel(rootAbs, path)
 		if err != nil {
 			return nil
@@ -224,6 +228,34 @@ func appendNumericSuffix(name string, suffix int) string {
 	ext := filepath.Ext(name)
 	core := strings.TrimSuffix(name, ext)
 	return fmt.Sprintf("%s__%d%s", core, suffix, ext)
+}
+
+// ensureMetadataForRecentlyAdded attempts to ensure we have metadata for a
+// recently-added PDF before creating the symlink entry. It is designed to be
+// best-effort and never fail the sync if metadata detection fails.
+func ensureMetadataForRecentlyAdded(store *meta.Store, path string) {
+	if store == nil || strings.TrimSpace(path) == "" {
+		return
+	}
+
+	ctx := context.Background()
+	canonical := canonicalPath(path)
+	if canonical == "" {
+		return
+	}
+
+	// Skip files that already have a title recorded.
+	md, err := store.Get(ctx, canonical)
+	if err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+		return
+	}
+
+	data, err := detectMetadataForFile(path)
+	if err != nil || data == nil {
+		return
+	}
+
+	_ = applyFetchedMetadata(ctx, store, canonical, data)
 }
 
 func lookupMetadataLabels(store *meta.Store, path string) (title, year string) {

@@ -168,17 +168,13 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		innerWidth = width
 	}
 
-	showMetadataOnly := false
-	if len(m.entries) > 0 {
-		entry := m.entries[m.cursor]
-		if !entry.IsDir() {
-			full := filepath.Join(m.cwd, entry.Name())
-			canonical := canonicalPath(full)
-			showMetadataOnly = canonical == m.currentMetaPath && m.currentMeta != nil
-		}
-	}
+	// When metadata is available for the current file, prefer showing the full
+	// metadata (including the abstract) instead of mixing it with the text
+	// preview. This gives the metadata panel the full vertical space so long
+	// abstracts are less likely to be visually truncated.
+	showMetadataOnly := m.currentMeta != nil
 
-	metaSection := panelizeLines(m.metadataPanelLines(innerWidth))
+	metaSection := panelizeLines(m.metadataPanelLines(width))
 	if showMetadataOnly && len(metaSection) > 0 {
 		return m.renderPanelBlock("Details", metaSection, width, height, m.styles.Preview)
 	}
@@ -324,6 +320,28 @@ func wrapTextToWidth(text string, width int) []string {
 	}
 	appendCurrent()
 	return lines
+}
+
+// panelContentUsableWidth mirrors the spacing logic in panelContent to return
+// the maximum number of characters that can be displayed inside a panel line
+// (excluding borders and internal padding).
+func panelContentUsableWidth(panelWidth int) int {
+	if panelWidth <= 0 {
+		return 0
+	}
+	inner := panelWidth - 2 // account for borders
+	if inner < 1 {
+		inner = panelWidth
+	}
+	margin := 1
+	if inner <= margin*2 {
+		margin = 0
+	}
+	usable := inner - margin*2
+	if usable < 1 {
+		usable = inner
+	}
+	return usable
 }
 
 func isParagraphMetaField(label string) bool {
@@ -869,6 +887,10 @@ func (m Model) metadataPreviewLines(width int) []string {
 	if m.meta == nil || m.currentMetaPath == "" {
 		return nil
 	}
+	contentWidth := panelContentUsableWidth(width)
+	if contentWidth < 8 {
+		contentWidth = width
+	}
 	var md meta.Metadata
 	if m.currentMeta != nil {
 		md = *m.currentMeta
@@ -901,9 +923,9 @@ func (m Model) metadataPreviewLines(width int) []string {
 				labelLine = "Title:"
 			}
 			lines = append(lines, labelLine)
-			titleWidth := width - 2
+			titleWidth := contentWidth - 2 // account for indent
 			if titleWidth < 10 {
-				titleWidth = width
+				titleWidth = contentWidth
 			}
 			if rawVal == "" {
 				if fallback := m.metadataTitleFallback(titleWidth); len(fallback) > 0 {
@@ -928,9 +950,9 @@ func (m Model) metadataPreviewLines(width int) []string {
 				labelLine = label + ":"
 			}
 			lines = append(lines, labelLine)
-			offsetWidth := width - 2
+			offsetWidth := contentWidth - 2 // account for indent
 			if offsetWidth < 10 {
-				offsetWidth = width
+				offsetWidth = contentWidth
 			}
 			wrapped := wrapTextToWidth(val, offsetWidth)
 			for _, w := range wrapped {
@@ -938,7 +960,7 @@ func (m Model) metadataPreviewLines(width int) []string {
 			}
 			continue
 		}
-		lines = append(lines, m.formatDetailLine(label, val, width))
+		lines = append(lines, m.formatDetailLine(label, val, contentWidth))
 	}
 	if titleRendered && len(lines) > 0 && lines[len(lines)-1] != "" {
 		lines = append(lines, "")
@@ -956,9 +978,9 @@ func (m Model) metadataPreviewLines(width int) []string {
 	lines = append(lines,
 		fmt.Sprintf("  Reading  : %s %s", m.readingStateIcon(md.ReadingState), readingStateLabel(md.ReadingState)))
 	lines = append(lines, "")
-	noteWidth := width - 2
+	noteWidth := contentWidth - 2 // account for indent
 	if noteWidth < 10 {
-		noteWidth = width
+		noteWidth = contentWidth
 	}
 	noteLabel := m.previewLabel("Note")
 	if noteLabel == "" {
@@ -976,7 +998,7 @@ func (m Model) metadataPreviewLines(width int) []string {
 	if len(tailFields) > 0 {
 		lines = append(lines, "")
 		for _, field := range tailFields {
-			lines = append(lines, m.formatDetailLine(field.label, field.value, width))
+			lines = append(lines, m.formatDetailLine(field.label, field.value, contentWidth))
 		}
 	}
 	return lines
@@ -1018,14 +1040,14 @@ func (m Model) metadataPreviewFromText(width int) []string {
 	if width <= 0 {
 		width = 40
 	}
+	contentWidth := panelContentUsableWidth(width) - 2 // account for indent
+	if contentWidth < 10 {
+		contentWidth = width
+	}
 	lines := []string{"Preview (first page):"}
 	if len(m.previewText) == 0 {
 		lines = append(lines, "  (no preview available)")
 		return lines
-	}
-	contentWidth := width - 2
-	if contentWidth < 10 {
-		contentWidth = width
 	}
 	added := false
 	for _, raw := range m.previewText {
