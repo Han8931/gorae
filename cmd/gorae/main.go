@@ -54,7 +54,11 @@ func main() {
 
 	m := app.NewModel(cfg, store)
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if cfg != nil && cfg.EnableMouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(m, opts...)
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}

@@ -32,6 +32,7 @@ type Config struct {
 	PDFViewer           string `json:"pdf_viewer,omitempty"`
 	NotesDir            string `json:"notes_dir,omitempty"`
 	ThemePath           string `json:"theme_path,omitempty"`
+	EnableMouse         bool   `json:"enable_mouse"`
 
 	// Runtime-only fields (not persisted)
 	ConfigPath    string `json:"-"`
@@ -232,9 +233,11 @@ func LoadOrInit() (*Config, error) {
 		ThemePath:           defaultThemePath(),
 		ConfigPath:          path,
 		NeedsConfirm:        true,
+		EnableMouse:         false,
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
+	fmt.Printf("  enable_mouse: %v (set to true to enable mouse input)\n", cfg.EnableMouse)
 	fmt.Printf("Edit %s to change these paths.\n", path)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

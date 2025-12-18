@@ -107,6 +107,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.MouseMsg:
+		if m.cfg != nil && !m.cfg.EnableMouse {
+			return m, nil
+		}
+		return m.handleMouse(msg)
+
 	case configEditFinishedMsg:
 		if msg.err != nil {
 			m.setStatus("Config edit failed: " + msg.err.Error())

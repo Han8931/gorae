@@ -83,7 +83,8 @@ You can do this manually by
 
 **Optional (recommended)**
 - A fast PDF viewer (Zathura recommended below)
-- OCR / AI features (planned)
+    * Debian/Ubuntu: `sudo apt install zathura zathura-pdf-mupdf`
+    * Arch: `sudo pacman -S zathura zathura-pdf-mupdf`
 
 Install prerequisites:
 - macOS: `brew install golang poppler`

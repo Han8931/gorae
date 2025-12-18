@@ -189,6 +189,11 @@ type Model struct {
 	styles      viewStyles
 	iconSet     theme.IconSet
 	borderChars borderCharset
+
+	lastClickRow       int
+	lastClickAt        time.Time
+	lastClickSearchRow int
+	lastClickSearchAt  time.Time
 }
 
 var metaFieldLabels = []string{

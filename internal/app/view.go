@@ -1157,6 +1157,22 @@ func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
 	return strings.TrimSuffix(name, ext)
 }
 
+// hitTestListRow returns the index of the entry for a given mouse Y (relative to viewport start).
+// It assumes the list is rendered from m.viewportStart with m.listVisibleRows() rows.
+func (m Model) hitTestListRow(mouseY int) int {
+	// Adjust for header/padding: we print a "Dir :" header plus one blank line.
+	const headerLines = 2
+	localY := mouseY - headerLines
+	if localY < 0 {
+		return -1
+	}
+	row := m.viewportStart + localY
+	if row < 0 || row >= len(m.entries) {
+		return -1
+	}
+	return row
+}
+
 func (m Model) metadataPanelLines(width int) []string {
 	metaLines := m.metadataPreviewLines(width)
 	if len(metaLines) == 0 {
