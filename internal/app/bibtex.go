@@ -17,7 +17,7 @@ import (
 var yearPattern = regexp.MustCompile(`\d{4}`)
 
 func (m *Model) copyBibtexToClipboard() error {
-	path := m.currentEntryPath()
+	path := m.currentYankTarget()
 	if path == "" {
 		return fmt.Errorf("no file selected")
 	}
@@ -53,7 +53,7 @@ func (m *Model) copyBibtexToClipboard() error {
 // suitable for pasting into plain text editors or word processors. It falls
 // back to file name when metadata is missing.
 func (m *Model) copyTitleAuthorYearToClipboard() error {
-	path := m.currentEntryPath()
+	path := m.currentYankTarget()
 	if path == "" {
 		return fmt.Errorf("no file selected")
 	}

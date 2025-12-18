@@ -79,6 +79,17 @@ func (m *Model) yankSequence(key string) string {
 	return ""
 }
 
+func (m *Model) currentYankTarget() string {
+	// When in search results, use the selected match.
+	if m.state == stateSearchResults {
+		if match := m.currentSearchMatch(); match != nil && strings.TrimSpace(match.Path) != "" {
+			return match.Path
+		}
+	}
+	// Default to current entry.
+	return m.currentEntryPath()
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -2311,6 +2322,32 @@ func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 		return true, nil
 	case "pgup", "ctrl+b":
 		m.pageSearchCursor(-1)
+		return true, nil
+	case "y":
+		if seq := m.yankSequence("y"); seq == "yy" {
+			if err := m.copyBibtexToClipboard(); err != nil {
+				m.setStatus("BibTeX copy failed: " + err.Error())
+			} else {
+				m.setStatus("BibTeX copied to clipboard")
+			}
+			return true, nil
+		}
+		if err := m.copyBibtexToClipboard(); err != nil {
+			m.setStatus("BibTeX copy failed: " + err.Error())
+		} else {
+			m.setStatus("BibTeX copied to clipboard")
+		}
+		return true, nil
+	case "t":
+		if seq := m.yankSequence("t"); seq == "yt" {
+			if err := m.copyTitleAuthorYearToClipboard(); err != nil {
+				m.setStatus("Copy failed: " + err.Error())
+			} else {
+				m.setStatus("Title/Author/Year copied")
+			}
+			return true, nil
+		}
+		// In search view, plain 't' keeps its normal meaning (jump?), so just ignore here.
 		return true, nil
 	case "g":
 		m.searchResultCursor = 0

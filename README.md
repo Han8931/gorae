@@ -167,13 +167,12 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ### New Features and Todo
 
+* [ ] Confirm file dir on the first launch 
 * [ ] Support mouse
 * [ ] Epub support
 * [ ] Gif file
 * [ ] Open a file at a certain position
-* [ ] Yank type (bibtex / plain text)
 * [ ] `gorae logo` command
-* [x] Build file
 * [ ] Vault warden
 * [ ] WebServer
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,13 @@ import (
 	"strings"
 
 	"gorae/internal/theme"
+)
+
+const (
+	colorReset = "\033[0m"
+	colorCyan  = "\033[36m"
+	colorGreen = "\033[32m"
+	colorBold  = "\033[1m"
 )
 
 type Config struct {
@@ -24,6 +32,10 @@ type Config struct {
 	PDFViewer           string `json:"pdf_viewer,omitempty"`
 	NotesDir            string `json:"notes_dir,omitempty"`
 	ThemePath           string `json:"theme_path,omitempty"`
+
+	// Runtime-only fields (not persisted)
+	ConfigPath    string `json:"-"`
+	NeedsConfirm  bool   `json:"-"`
 }
 
 const (
@@ -156,6 +168,7 @@ func LoadOrInit() (*Config, error) {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return nil, err
 		}
+		cfg.ConfigPath = path
 		changed, err := cfg.ensureDefaults()
 		if err != nil {
 			return nil, err
@@ -172,7 +185,7 @@ func LoadOrInit() (*Config, error) {
 	}
 
 	// first run: create config from defaults so the app starts immediately.
-	fmt.Println("No config found. Creating one with defaults.")
+	fmt.Printf("%s%sNo config found. Let's set it up.%s\n", colorCyan, colorBold, colorReset)
 	watch, err := defaultWatchDir()
 	if err != nil {
 		return nil, err
@@ -183,6 +196,29 @@ func LoadOrInit() (*Config, error) {
 	}
 	recentAdded := filepath.Join(watch, defaultRecentlyAddedDirName)
 	recentOpened := filepath.Join(watch, defaultRecentlyOpenedName)
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("  %swatch_dir%s (default: %s): ", colorGreen, colorReset, watch)
+	if line, _ := reader.ReadString('\n'); strings.TrimSpace(line) != "" {
+		watch = strings.TrimSpace(line)
+	}
+	fmt.Printf("  %smeta_dir %s (default: %s): ", colorGreen, colorReset, meta)
+	if line, _ := reader.ReadString('\n'); strings.TrimSpace(line) != "" {
+		meta = strings.TrimSpace(line)
+	}
+	if !filepath.IsAbs(watch) {
+		if abs, err := filepath.Abs(watch); err == nil {
+			watch = abs
+		}
+	}
+	if !filepath.IsAbs(meta) {
+		if abs, err := filepath.Abs(meta); err == nil {
+			meta = abs
+		}
+	}
+	recentAdded = filepath.Join(watch, defaultRecentlyAddedDirName)
+	recentOpened = filepath.Join(watch, defaultRecentlyOpenedName)
+
 	cfg := &Config{
 		WatchDir:            watch,
 		MetaDir:             meta,
@@ -194,6 +230,8 @@ func LoadOrInit() (*Config, error) {
 		PDFViewer:           defaultPDFViewer(),
 		NotesDir:            defaultNotesDir(meta),
 		ThemePath:           defaultThemePath(),
+		ConfigPath:          path,
+		NeedsConfirm:        true,
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
@@ -247,6 +285,7 @@ func Save(cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	cfg.ConfigPath = path
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

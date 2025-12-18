@@ -535,6 +535,14 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		}
 	}
 
+	if cfg != nil && cfg.NeedsConfirm {
+		msg := fmt.Sprintf("Config created with defaults. Review %s (watch_dir=%s, meta_dir=%s)",
+			strings.TrimSpace(cfg.ConfigPath), strings.TrimSpace(cfg.WatchDir), strings.TrimSpace(cfg.MetaDir))
+		m.status = msg
+		m.statusAt = time.Now()
+		m.sticky = true
+	}
+
 	if themeErr != nil {
 		m.status = "Using default theme (failed to load theme: " + themeErr.Error() + ")"
 		m.statusAt = time.Now()
