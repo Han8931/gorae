@@ -130,6 +130,8 @@ type Model struct {
 	sortMode                   sortMode
 	awaitingSort               bool
 	awaitingQuickFilter        bool
+	lastKey                    string
+	lastKeyAt                  time.Time
 	recentlyAddedDir           string
 	recentlyAddedDirCanonical  string
 	recentlyAddedMaxAge        time.Duration

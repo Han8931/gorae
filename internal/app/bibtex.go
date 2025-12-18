@@ -49,6 +49,73 @@ func (m *Model) copyBibtexToClipboard() error {
 	return nil
 }
 
+// copyTitleAuthorYearToClipboard copies a simple "Title — Author — Year" string
+// suitable for pasting into plain text editors or word processors. It falls
+// back to file name when metadata is missing.
+func (m *Model) copyTitleAuthorYearToClipboard() error {
+	path := m.currentEntryPath()
+	if path == "" {
+		return fmt.Errorf("no file selected")
+	}
+
+	canonical := canonicalPath(path)
+	if canonical == "" {
+		canonical = path
+	}
+
+	var md *meta.Metadata
+	if m.currentMeta != nil && m.currentMetaPath == canonical {
+		md = m.currentMeta
+	} else if m.meta != nil {
+		ctx := context.Background()
+		var err error
+		md, err = m.meta.Get(ctx, canonical)
+		if err != nil {
+			return fmt.Errorf("failed to load metadata: %w", err)
+		}
+	}
+
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if base == "" {
+		base = filepath.Base(path)
+	}
+
+	title := base
+	author := ""
+	year := ""
+	if md != nil {
+		if v := strings.TrimSpace(md.Title); v != "" {
+			title = v
+		}
+		if v := strings.TrimSpace(md.Author); v != "" {
+			author = v
+		}
+		if v := strings.TrimSpace(md.Year); v != "" {
+			if y := extractYear(v); y != "" {
+				year = y
+			} else {
+				year = v
+			}
+		}
+	}
+
+	parts := []string{title}
+	if author != "" {
+		parts = append(parts, author)
+	}
+	if year != "" {
+		parts = append(parts, year)
+	}
+	summary := strings.Join(parts, ", ")
+	if summary == "" {
+		return fmt.Errorf("nothing to copy")
+	}
+	if err := clipboard.WriteAll(summary); err != nil {
+		return fmt.Errorf("failed to access clipboard: %w", err)
+	}
+	return nil
+}
+
 func buildBibtexEntry(md *meta.Metadata, path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is empty")

@@ -60,6 +60,25 @@ var (
 	arxivLegacyIDPattern = regexp.MustCompile(`(?i)([a-z-]+(?:\.[a-z-]+)?/[0-9]{7})(v\d+)?`)
 )
 
+func (m *Model) yankSequence(key string) string {
+	now := time.Now()
+	if m.lastKey == "y" && now.Sub(m.lastKeyAt) <= 1200*time.Millisecond {
+		switch key {
+		case "y":
+			m.lastKey = ""
+			m.lastKeyAt = time.Time{}
+			return "yy"
+		case "t":
+			m.lastKey = ""
+			m.lastKeyAt = time.Time{}
+			return "yt"
+		}
+	}
+	m.lastKey = key
+	m.lastKeyAt = now
+	return ""
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -821,6 +840,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "t":
+			if seq := m.yankSequence("t"); seq == "yt" {
+				if err := m.copyTitleAuthorYearToClipboard(); err != nil {
+					m.setStatus("Copy failed: " + err.Error())
+				} else {
+					m.setStatus("Title/Author/Year copied")
+				}
+				return m, nil
+			}
 			m.toggleMetadataFlag(metadataFlagToRead)
 			return m, nil
 
@@ -1029,6 +1056,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "y":
+			if seq := m.yankSequence("y"); seq == "yy" {
+				if err := m.copyBibtexToClipboard(); err != nil {
+					m.setStatus("BibTeX copy failed: " + err.Error())
+				} else {
+					m.setStatus("BibTeX copied to clipboard")
+				}
+				return m, nil
+			}
 			if err := m.copyBibtexToClipboard(); err != nil {
 				m.setStatus("BibTeX copy failed: " + err.Error())
 			} else {
@@ -1779,7 +1814,8 @@ func buildHelpOutput() []string {
 		"  e ............ metadata preview + edit in editor",
 		"  n ............ edit note (Markdown)",
 		"  f / t / r .... favorite / to-read / cycle reading state",
-		"  y ............ copy BibTeX",
+		"  y / yy ....... copy BibTeX",
+		"  yt ........... copy Title / Author / Year",
 		"  :arxiv ....... fetch arXiv metadata (:arxiv -v for selected files)",
 		"  :autofetch ... detect DOI/arXiv IDs in PDFs and import metadata",
 		"",
