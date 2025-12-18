@@ -4,18 +4,21 @@
   <img src="gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first TUI librarian for PDFs—fast browsing, solid metadata, and quick search for people who live in Vim/CLI.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs** — fast browsing, solid metadata, and quick search for people who live in **Vim/CLI**.
 
-> The Gorae logo is inspired by the Bangudae Petroglyphs (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The "glyph-like" whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
+> The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
-## Highlights
+## ✨ Highlights
 
-* Vim-style fast file browser with favorites, to-read, and reading states.
-* Favorites, to-read list, and reading states backed by metadata.
-* Search by metadata or full text with previews/snippets.
-* Auto-detect DOI/arXiv identifiers inside PDFs to import metadata automatically.
-* Edit metadata in-app, import from arXiv, and copy BibTeX.
-* Themeable UI (colors, glyphs, borders) plus helper folders you can browse in any file manager.
+- ⚡ **Vim-style browsing**: fast file navigation with a cozy TUI feel.
+- ⭐ **Favorites**: keep your best papers one keystroke away.
+- 📌 **To-read queue**: stash papers for later.
+- 🕮 **Reading states**: *Unread / Reading / Read* tracked via metadata.
+- 🔎 **Search**: metadata + full-text search with previews/snippets.
+- 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
+- ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
+- 🎨 **Themeable UI**: colors, glyphs, borders — plus helper folders usable in any file manager.
+
 
 ## Demo
 
