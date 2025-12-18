@@ -21,4 +21,4 @@ coverage.*
 
 # User config or metadata that should stay local
 config.json
-
+build-binaries-local.md

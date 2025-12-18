@@ -106,6 +106,13 @@ GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
 gorae        # optionally: gorae -root /path/to/Papers
 ```
 
+> You can also use the pre-built binary for your platform from the latest GitHub Release (or from the `dist/` folder if you cloned the repo), place it somewhere on your `PATH`, and run it directly:
+> 
+> 1. Download the file that matches your OS/architecture (`gorae`, `gorae-darwin-amd64`, `gorae-darwin-arm64`, or `gorae-windows-amd64.exe`).
+> 2. Make it executable if needed (`chmod +x gorae-*` on Linux/macOS).
+> 3. Move it into a directory on your `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, or `%USERPROFILE%\bin`).
+> 4. Launch it from any terminal: `gorae -root /path/to/Papers`.
+
 ### Manual install
 
 ```sh
@@ -122,7 +129,6 @@ install -Dm755 gorae ~/.local/bin/gorae   # adjust destination as needed
 ```
 
 After the binary is on `PATH`, launch `gorae` from any folder (pass `-root /path/to/Papers` to point at a different library).
-
 
 ## Config & themes
 
@@ -200,12 +206,11 @@ That's it—you can re-clone and reinstall at any time.
   <tr>
     <td align="center" width="170">
       <a href="https://github.com/fineday38">
-        <img src="https://github.com/fineday38.png?size=120" width="80" height="80" alt="fineday38" style="border-radius:50%;" />
+        <img src="https://github.com/fineday38.png?size=120" width="50" height="50" alt="fineday38" style="border-radius:50%;" />
       </a>
       <br/>
       <a href="https://github.com/fineday38">fineday38</a>
       <br/>
-      <sub>Nice feedback & ideas</sub>
     </td>
   </tr>
 </table>
