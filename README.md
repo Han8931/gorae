@@ -1,7 +1,7 @@
 # Gorae
 
 <p align="center">
-  <img src="gorae.svg" alt="Gorae logo" width="180">
+  <img src="assets/gorae.svg" alt="Gorae logo" width="180">
 </p>
 
 **Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs and EPUBs**—fast browsing, solid metadata, quick search, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, and EndNote**.
@@ -22,8 +22,9 @@
 
 ## Demo
 <p align="center">
-  <img src="gorae_app.png" alt="Gorae app" width="600">
+  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="700">
 </p>
+
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
 
