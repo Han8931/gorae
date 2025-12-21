@@ -417,8 +417,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				var metaErr error
+				var recentErr error
 				if err := m.moveMetadataPaths(oldPath, newPath, true); err != nil {
 					metaErr = err
+				}
+				if err := m.syncRecentlyOpenedDirectory(); err != nil {
+					recentErr = err
 				}
 
 				m.loadEntries()
@@ -432,6 +436,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateTextPreview()
 				if metaErr != nil {
 					m.setStatus("Renamed, but metadata update failed: " + metaErr.Error())
+				} else if recentErr != nil {
+					m.setStatus("Renamed, but recently read update failed: " + recentErr.Error())
 				} else {
 					m.setStatus("Renamed")
 				}
@@ -674,10 +680,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err := m.syncCollectionDirectories(); err != nil {
 						syncErrs = append(syncErrs, "favorites/to-read: "+err.Error())
 					}
-					if m.recentlyOpenedDir != "" && m.recentlyOpenedLimit > 0 {
-						if err := rebuildRecentlyOpenedDirectory(m.recentlyOpenedDir, m.recentlyOpenedLimit, m.meta); err != nil {
-							syncErrs = append(syncErrs, "recently read: "+err.Error())
-						}
+					if err := m.syncRecentlyOpenedDirectory(); err != nil {
+						syncErrs = append(syncErrs, "recently read: "+err.Error())
 					}
 				}
 				if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
@@ -930,6 +934,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			moved := 0
 			var lastErr error
 			var metaErr error
+			var recentErr error
 
 			for _, src := range m.cut {
 				info, err := os.Stat(src)
@@ -957,16 +962,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadEntries()
 			m.updateTextPreview()
 
+			if err := m.syncRecentlyOpenedDirectory(); err != nil {
+				recentErr = err
+			}
+
 			if moved > 0 {
 				msg := fmt.Sprintf("Moved %d item(s).", moved)
 				if metaErr != nil {
 					msg += " Metadata update failed: " + metaErr.Error()
+				}
+				if recentErr != nil {
+					msg += " Recently read update failed: " + recentErr.Error()
 				}
 				m.setStatus(msg)
 			} else if lastErr != nil {
 				m.setStatus("Move failed: " + lastErr.Error())
 			} else if metaErr != nil {
 				m.setStatus("Metadata update failed: " + metaErr.Error())
+			} else if recentErr != nil {
+				m.setStatus("Recently read update failed: " + recentErr.Error())
 			}
 
 		case "D":
@@ -1543,6 +1557,13 @@ func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
 		return m.meta.MovePath(ctx, oldPath, newPath)
 	}
 	return m.meta.MovePath(ctx, oldPath, newPath)
+}
+
+func (m *Model) syncRecentlyOpenedDirectory() error {
+	if m.meta == nil || m.recentlyOpenedDir == "" || m.recentlyOpenedLimit <= 0 {
+		return nil
+	}
+	return rebuildRecentlyOpenedDirectory(m.recentlyOpenedDir, m.recentlyOpenedLimit, m.meta)
 }
 
 func (m *Model) runCommand(raw string) tea.Cmd {

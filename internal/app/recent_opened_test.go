@@ -83,6 +83,62 @@ func TestRebuildRecentlyOpenedDirectory(t *testing.T) {
 	}
 }
 
+func TestRebuildRecentlyOpenedDirectoryUpdatesMovedPaths(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "recent")
+	db := filepath.Join(dir, "meta.db")
+
+	store, err := meta.Open(db)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+
+	oldDir := filepath.Join(dir, "old")
+	newDir := filepath.Join(dir, "new")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatalf("mkdir old dir: %v", err)
+	}
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		t.Fatalf("mkdir new dir: %v", err)
+	}
+
+	oldPath := filepath.Join(oldDir, "paper.pdf")
+	writeDummyPDF(t, oldPath)
+
+	if err := store.RecordOpened(ctx, canonicalPath(oldPath), time.Unix(1000, 0)); err != nil {
+		t.Fatalf("record initial open: %v", err)
+	}
+	if err := rebuildRecentlyOpenedDirectory(dest, 5, store); err != nil {
+		t.Fatalf("initial rebuild: %v", err)
+	}
+	if targets := listSymlinkTargets(t, dest); len(targets) != 1 || targets[0] != canonicalPath(oldPath) {
+		t.Fatalf("unexpected initial target list: %v", targets)
+	}
+
+	newPath := filepath.Join(newDir, "paper.pdf")
+	if err := os.Rename(oldPath, newPath); err != nil {
+		t.Fatalf("rename file: %v", err)
+	}
+	if err := store.MovePath(ctx, canonicalPath(oldPath), canonicalPath(newPath)); err != nil {
+		t.Fatalf("update metadata path: %v", err)
+	}
+
+	if err := rebuildRecentlyOpenedDirectory(dest, 5, store); err != nil {
+		t.Fatalf("rebuild after move: %v", err)
+	}
+
+	targets := listSymlinkTargets(t, dest)
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target after move, got %v", targets)
+	}
+	if targets[0] != canonicalPath(newPath) {
+		t.Fatalf("expected target %s after move, got %s", canonicalPath(newPath), targets[0])
+	}
+}
+
 func listSymlinkNames(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -101,6 +157,34 @@ func listSymlinkNames(t *testing.T, dir string) []string {
 		names = append(names, entry.Name())
 	}
 	return names
+}
+
+func listSymlinkTargets(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		linkPath := filepath.Join(dir, entry.Name())
+		target, err := os.Readlink(linkPath)
+		if err != nil {
+			continue
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		out = append(out, filepath.Clean(target))
+	}
+	return out
 }
 
 func lstat(t *testing.T, path string) os.FileInfo {
