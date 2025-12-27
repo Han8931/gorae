@@ -71,11 +71,9 @@ For Arch Linux users:
 yay -S gorae
 ```
 
-
 ### Option A) Run the pre-built executable (no Go required)
 
 Download the ready-to-run binary from the **latest GitHub Release**.
-(If you cloned the repo, you might also have binaries in `dist/`.)
 
 1. **Download the file for your OS/CPU**
 
