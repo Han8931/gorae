@@ -362,7 +362,7 @@ func (t Theme) IconSet() IconSet {
 			Read:      "✓",
 			Reading:   "▶",
 			Unread:    "○",
-			Folder:    "▸",
+			Folder:    "",
 			PDF:       "▣",
 			Selected:  "✔",
 			Selection: "▌",

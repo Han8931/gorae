@@ -140,6 +140,11 @@ func (m Model) renderListPanel(width, height int) []string {
 		e := m.entries[i]
 		full := filepath.Join(m.cwd, e.Name())
 		display := m.entryDisplayName(full, e)
+		if e.IsDir() {
+			if icon := strings.TrimSpace(m.entryIcon(true)); icon != "" {
+				display = fmt.Sprintf("%s %s", icon, display)
+			}
+		}
 
 		kind := panelLineBody
 		if i == m.cursor {
