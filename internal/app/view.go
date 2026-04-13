@@ -243,11 +243,10 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		return m.renderImagePreviewPanel(width, height, innerWidth)
 	}
 
-	// When metadata is available for the current file, prefer showing the full
-	// metadata (including the abstract) instead of mixing it with the text
-	// preview. This gives the metadata panel the full vertical space so long
-	// abstracts are less likely to be visually truncated.
-	showMetadataOnly := m.currentMeta != nil
+	// Keep the metadata-only layout when there is no document preview to show.
+	// If previewText is populated (for example a PDF text fallback when chafa is
+	// unavailable), preserve the split layout so the preview remains visible.
+	showMetadataOnly := m.currentMeta != nil && len(m.previewText) == 0
 
 	metaSection := panelizeLines(m.metadataPanelLines(width))
 	if showMetadataOnly && len(metaSection) > 0 {

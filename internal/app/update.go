@@ -128,6 +128,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.WindowSizeMsg:
+		prevWidth := m.width
+		prevViewportHeight := m.viewportHeight
 		m.windowHeight = msg.Height
 		m.viewportHeight = msg.Height - 5
 		if m.viewportHeight < 1 {
@@ -138,6 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampMetaPopupOffset()
 		if m.state == stateSearchResults {
 			m.ensureSearchResultVisible()
+		}
+		if prevWidth != m.width || prevViewportHeight != m.viewportHeight {
+			return m, m.updateTextPreviewAsync()
 		}
 		return m, nil
 
