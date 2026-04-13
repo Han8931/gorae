@@ -18,6 +18,7 @@ import (
 var errTerminalGraphicsUnsupported = errors.New("terminal image preview unsupported")
 
 const kittyPreviewImageID = 1
+const kittyChunkRawSize = 3072
 
 func terminalGraphicFormat() string {
 	if override := normalizeGraphicFormat(os.Getenv("GORAE_PDF_PREVIEW_FORMAT")); override != "" {
@@ -174,18 +175,44 @@ func stripChafaCursorSequences(output string) string {
 }
 
 func kittyDeletePreviewSequence() string {
-	return fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", kittyPreviewImageID)
+	return fmt.Sprintf("\x1b_Ga=d,d=i,i=%d,q=1\x1b\\", kittyPreviewImageID)
 }
 
-func kittyFilePreviewSequence(pngPath string, imgWidth, imgHeight int) string {
-	payload := base64.StdEncoding.EncodeToString([]byte(pngPath))
-	return fmt.Sprintf(
-		"\x1b_Ga=T,i=%d,t=f,f=100,c=%d,r=%d,q=2;%s\x1b\\",
-		kittyPreviewImageID,
-		imgWidth,
-		imgHeight,
-		payload,
-	)
+func kittyPNGPreviewSequence(pngPath string, imgWidth, imgHeight int) (string, error) {
+	data, err := os.ReadFile(pngPath)
+	if err != nil {
+		return "", err
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty PNG preview for %s", filepath.Base(pngPath))
+	}
+
+	var b strings.Builder
+	for offset := 0; offset < len(data); offset += kittyChunkRawSize {
+		end := offset + kittyChunkRawSize
+		if end > len(data) {
+			end = len(data)
+		}
+		more := 0
+		if end < len(data) {
+			more = 1
+		}
+		payload := base64.StdEncoding.EncodeToString(data[offset:end])
+		if offset == 0 {
+			fmt.Fprintf(
+				&b,
+				"\x1b_Ga=T,i=%d,f=100,c=%d,r=%d,C=1,q=1,m=%d;%s\x1b\\",
+				kittyPreviewImageID,
+				imgWidth,
+				imgHeight,
+				more,
+				payload,
+			)
+		} else {
+			fmt.Fprintf(&b, "\x1b_Gm=%d;%s\x1b\\", more, payload)
+		}
+	}
+	return b.String(), nil
 }
 
 // extractFirstPageGraphicPreview renders the first PDF page as a terminal image
@@ -210,7 +237,11 @@ func extractFirstPageGraphicPreview(path string, imgWidth, imgHeight int) (strin
 		if err != nil {
 			return "", "", err
 		}
-		return kittyFilePreviewSequence(tmpPNG, imgWidth, imgHeight), format, nil
+		rendered, err := kittyPNGPreviewSequence(tmpPNG, imgWidth, imgHeight)
+		if err != nil {
+			return "", "", err
+		}
+		return rendered, format, nil
 	}
 
 	tmpPPM, err := rasterizeFirstPageToPPM(path)
