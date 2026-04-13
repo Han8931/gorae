@@ -248,10 +248,9 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		return m.renderImagePreviewPanel(width, height, innerWidth)
 	}
 
-	// Keep the metadata-only layout when there is no document preview to show.
-	// If previewText is populated (for example a PDF text fallback when chafa is
-	// unavailable), preserve the split layout so the preview remains visible.
-	showMetadataOnly := m.currentMeta != nil && len(m.previewText) == 0
+	// Keep the metadata-only layout whenever metadata is available and there is
+	// no image preview to show. This matches the older, simpler fallback view.
+	showMetadataOnly := m.currentMeta != nil
 
 	metaSection := panelizeLines(m.metadataPanelLines(width))
 	if showMetadataOnly && len(metaSection) > 0 {

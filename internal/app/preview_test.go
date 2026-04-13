@@ -63,7 +63,7 @@ func TestWindowSizeMsgRefreshesDirectoryPreview(t *testing.T) {
 	}
 }
 
-func TestRenderPreviewPanelShowsTextPreviewAlongsideMetadata(t *testing.T) {
+func TestRenderPreviewPanelPrefersMetadataOverTextFallback(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "paper.pdf")
 	writeDummyPDF(t, file)
@@ -100,8 +100,8 @@ func TestRenderPreviewPanelShowsTextPreviewAlongsideMetadata(t *testing.T) {
 	if !strings.Contains(rendered, "Test Driven Preview") {
 		t.Fatalf("expected metadata in preview panel, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "Preview line one.") {
-		t.Fatalf("expected preview text in preview panel, got %q", rendered)
+	if strings.Contains(rendered, "Preview line one.") {
+		t.Fatalf("expected metadata-only fallback without preview split, got %q", rendered)
 	}
 }
 
