@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 )
 
 var errTerminalGraphicsUnsupported = errors.New("terminal image preview unsupported")
+
+const kittyPreviewImageID = 1
 
 func terminalGraphicFormat() string {
 	if override := normalizeGraphicFormat(os.Getenv("GORAE_PDF_PREVIEW_FORMAT")); override != "" {
@@ -119,10 +122,70 @@ func rasterizeFirstPageToPPM(path string) (string, error) {
 	return tmpPPM, nil
 }
 
+func rasterizeFirstPageToPNG(path string) (string, error) {
+	if _, err := exec.LookPath("pdftocairo"); err != nil {
+		if runtime.GOOS == "darwin" {
+			return "", fmt.Errorf("pdftocairo not found (brew install poppler)")
+		}
+		return "", fmt.Errorf("pdftocairo not found (apt install poppler-utils / pacman -S poppler)")
+	}
+
+	// Use a moderate, fixed-size cached PNG. Kitty handles the final scaling,
+	// so rerendering per panel size just wastes time.
+	const maxSize = 900
+
+	hash := sha1.Sum([]byte(fmt.Sprintf("%s@png:%d", path, maxSize)))
+	hashStr := hex.EncodeToString(hash[:])
+	tmpDir := os.TempDir()
+	tmpBase := filepath.Join(tmpDir, "gorae_prev_"+hashStr)
+	tmpPNG := tmpBase + ".png"
+	if _, err := os.Stat(tmpPNG); err == nil {
+		return tmpPNG, nil
+	}
+
+	cmd := exec.Command(
+		"pdftocairo",
+		"-png",
+		"-singlefile",
+		"-f", "1",
+		"-l", "1",
+		"-scale-to", fmt.Sprintf("%d", maxSize),
+		path,
+		tmpBase,
+	)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("pdftocairo: %w — %s", err, errBuf.String())
+	}
+	if _, err := os.Stat(tmpPNG); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("pdftocairo produced no output for %s", filepath.Base(path))
+		}
+		return "", err
+	}
+	return tmpPNG, nil
+}
+
 func stripChafaCursorSequences(output string) string {
 	output = strings.ReplaceAll(output, "\x1b[?25l", "")
 	output = strings.ReplaceAll(output, "\x1b[?25h", "")
 	return output
+}
+
+func kittyDeletePreviewSequence() string {
+	return fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", kittyPreviewImageID)
+}
+
+func kittyFilePreviewSequence(pngPath string, imgWidth, imgHeight int) string {
+	payload := base64.StdEncoding.EncodeToString([]byte(pngPath))
+	return fmt.Sprintf(
+		"\x1b_Ga=T,i=%d,t=f,f=100,c=%d,r=%d,q=2;%s\x1b\\",
+		kittyPreviewImageID,
+		imgWidth,
+		imgHeight,
+		payload,
+	)
 }
 
 // extractFirstPageGraphicPreview renders the first PDF page as a terminal image
@@ -140,6 +203,14 @@ func extractFirstPageGraphicPreview(path string, imgWidth, imgHeight int) (strin
 	}
 	if imgHeight < 2 {
 		imgHeight = 2
+	}
+
+	if format == "kitty" {
+		tmpPNG, err := rasterizeFirstPageToPNG(path)
+		if err != nil {
+			return "", "", err
+		}
+		return kittyFilePreviewSequence(tmpPNG, imgWidth, imgHeight), format, nil
 	}
 
 	tmpPPM, err := rasterizeFirstPageToPPM(path)

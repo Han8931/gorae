@@ -167,11 +167,12 @@ type Model struct {
 
 	// Terminal image preview using kitty/iTerm2/sixel escape sequences. This is
 	// the preferred PDF preview mode when the terminal supports it.
-	previewGraphic     string
-	previewGraphicFmt  string
-	previewGraphicW    int
-	previewGraphicH    int
-	previewGraphicPath string
+	previewGraphic      string
+	previewGraphicFmt   string
+	previewGraphicW     int
+	previewGraphicH     int
+	previewGraphicPath  string
+	previewGraphicClear bool
 
 	// Image preview (chafa block-character art). Only populated for PDF files
 	// when terminal graphics are unavailable and chafa is available.
@@ -1125,6 +1126,7 @@ func (m *Model) updateTextPreview() {
 	if len(m.entries) == 0 {
 		m.previewPath = ""
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.updateCurrentMetadata("")
 		return
@@ -1144,6 +1146,7 @@ func (m *Model) updateTextPreview() {
 	if isDir {
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.previewText = m.directoryPreviewContents(full)
 		return
@@ -1170,6 +1173,7 @@ func (m *Model) updateTextPreview() {
 		if title != "" {
 			m.previewPath = full
 			m.previewGraphic = ""
+			m.previewGraphicClear = true
 			m.previewImage = nil
 			return
 		}
@@ -1180,11 +1184,13 @@ func (m *Model) updateTextPreview() {
 		// Reuse cached preview for the same file.
 		if m.previewPath == full && len(m.previewText) > 0 {
 			m.previewGraphic = ""
+			m.previewGraphicClear = true
 			m.previewImage = nil
 			return
 		}
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewImage = nil
 		maxLines := m.viewportHeight - 2
 		if maxLines < 5 {
@@ -1205,6 +1211,7 @@ func (m *Model) updateTextPreview() {
 	// Fallback for other file types
 	m.previewPath = full
 	m.previewGraphic = ""
+	m.previewGraphicClear = true
 	m.previewImage = nil
 	m.previewText = []string{
 		"No preview (unsupported type)",
@@ -1238,6 +1245,7 @@ func (m *Model) updatePDFPreview(full string) {
 		m.previewGraphicH == imgH &&
 		m.previewGraphic != "" {
 		m.previewPath = full
+		m.previewGraphicClear = false
 		m.previewImage = nil
 		m.previewText = nil
 		return
@@ -1250,6 +1258,7 @@ func (m *Model) updatePDFPreview(full string) {
 		len(m.previewImage) > 0 {
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewText = nil
 		return
 	}
@@ -1258,6 +1267,7 @@ func (m *Model) updatePDFPreview(full string) {
 	if m.previewTextCachePath == full && len(m.previewTextCacheLines) > 0 {
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
 		return
@@ -1265,6 +1275,7 @@ func (m *Model) updatePDFPreview(full string) {
 
 	m.previewPath = full
 	m.previewGraphic = ""
+	m.previewGraphicClear = true
 	m.previewImage = nil
 	m.previewText = nil
 
@@ -1276,6 +1287,7 @@ func (m *Model) updatePDFPreview(full string) {
 			m.previewGraphicPath = full
 			m.previewGraphicW = imgW
 			m.previewGraphicH = imgH
+			m.previewGraphicClear = false
 			return
 		}
 	}
@@ -1356,6 +1368,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphic != "" {
 		m.updateCurrentMetadata(canonical)
 		m.previewPath = full
+		m.previewGraphicClear = false
 		m.previewImage = nil
 		m.previewText = nil
 		return nil
@@ -1369,6 +1382,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.updateCurrentMetadata(canonical)
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewText = nil
 		return nil
 	}
@@ -1378,6 +1392,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.updateCurrentMetadata(canonical)
 		m.previewPath = full
 		m.previewGraphic = ""
+		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
 		return nil
@@ -1387,6 +1402,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	m.updateCurrentMetadata(canonical)
 	m.previewPath = full
 	m.previewGraphic = ""
+	m.previewGraphicClear = true
 	m.previewImage = nil
 	m.previewText = nil
 

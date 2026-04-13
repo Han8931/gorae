@@ -158,3 +158,17 @@ func TestViewAppendsGraphicPreviewOverlay(t *testing.T) {
 		t.Fatalf("expected graphic overlay %q in view", want)
 	}
 }
+
+func TestViewClearsKittyGraphicPreviewWhenNoPreviewRemains(t *testing.T) {
+	m := Model{
+		width:               100,
+		viewportHeight:      18,
+		previewGraphicFmt:   "kitty",
+		previewGraphicClear: true,
+	}
+	m.applyTheme(theme.Default())
+
+	if view := m.View(); !strings.Contains(view, kittyDeletePreviewSequence()) {
+		t.Fatalf("expected kitty delete sequence in view")
+	}
+}

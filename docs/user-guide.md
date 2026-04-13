@@ -210,7 +210,7 @@ Quick filters:
 ## Tips
 
 * Keep Poppler updated for faster previews and better text extraction.
-* Install `chafa` if you want image-based first-page PDF previews in terminals that support kitty, iTerm2, or sixel graphics.
+* Kitty uses native image previews for the first PDF page. Install `chafa` only if you want the fallback image/text-art preview path in other terminals.
 * Back up `meta_dir` regularly to preserve annotations and reading states.
 * Use helper folders (`Favorites/`, `To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
 

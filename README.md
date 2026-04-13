@@ -111,13 +111,19 @@ This option builds and installs Gorae using Go.
 
 * **Go 1.21+**
 * **Poppler CLI tools**: `pdftotext`, `pdfinfo`
-* **Optional image preview**: `chafa` for first-page PDF previews in kitty/WezTerm/iTerm2/sixel terminals
+* **Optional fallback preview**: `chafa` for non-Kitty image/text-art PDF previews
 
 Install prerequisites:
 
-* **macOS:** `brew install golang poppler chafa`
-* **Debian/Ubuntu:** `sudo apt install golang-go poppler-utils chafa`
-* **Arch:** `sudo pacman -S go poppler chafa`
+* **macOS:** `brew install golang poppler`
+* **Debian/Ubuntu:** `sudo apt install golang-go poppler-utils`
+* **Arch:** `sudo pacman -S go poppler`
+
+If you want fallback previews outside Kitty:
+
+* **macOS:** `brew install chafa`
+* **Debian/Ubuntu:** `sudo apt install chafa`
+* **Arch:** `sudo pacman -S chafa`
 
 #### Optional (recommended)
 

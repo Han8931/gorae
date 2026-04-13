@@ -116,12 +116,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewGraphicPath = msg.path
 				m.previewGraphicW = msg.imageW
 				m.previewGraphicH = msg.imageH
+				m.previewGraphicClear = false
 				m.previewImage = nil
 				m.previewText = nil
 				m.previewTextCachePath = ""
 				m.previewTextCacheLines = nil
 			} else if len(msg.image) > 0 {
 				m.previewGraphic = ""
+				m.previewGraphicClear = true
 				m.previewImage = msg.image
 				m.previewImagePath = msg.path
 				m.previewImageW = msg.imageW
@@ -132,6 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewTextCacheLines = nil
 			} else {
 				m.previewGraphic = ""
+				m.previewGraphicClear = true
 				m.previewImage = nil
 				m.previewText = msg.text
 				// Cache the text fallback to avoid re-running pdftotext on revisit.

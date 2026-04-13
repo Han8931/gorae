@@ -743,7 +743,16 @@ func (m Model) View() string {
 }
 
 func (m Model) graphicPreviewOverlay() string {
-	if m.previewGraphic == "" || m.width <= 0 || m.viewportHeight < 3 {
+	if m.width <= 0 || m.viewportHeight < 3 {
+		if m.previewGraphicClear && m.previewGraphicFmt == "kitty" {
+			return kittyDeletePreviewSequence()
+		}
+		return ""
+	}
+	if m.previewGraphic == "" {
+		if m.previewGraphicClear && (m.previewGraphicFmt == "kitty" || terminalGraphicFormat() == "kitty") {
+			return kittyDeletePreviewSequence()
+		}
 		return ""
 	}
 
@@ -759,7 +768,12 @@ func (m Model) graphicPreviewOverlay() string {
 		col = 1
 	}
 
-	return "\x1b7" + fmt.Sprintf("\x1b[%d;%dH", row, col) + m.previewGraphic + "\x1b8"
+	overlay := "\x1b7" + fmt.Sprintf("\x1b[%d;%dH", row, col)
+	if m.previewGraphicFmt == "kitty" {
+		overlay += kittyDeletePreviewSequence()
+	}
+	overlay += m.previewGraphic + "\x1b8"
+	return overlay
 }
 
 func (m Model) renderSearchResultsView() string {
