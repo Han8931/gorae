@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -14,7 +15,10 @@ func extractFirstPageText(path string, maxLines int) ([]string, error) {
 
 	// Ensure pdftotext exists
 	if _, err := exec.LookPath("pdftotext"); err != nil {
-		return nil, fmt.Errorf("pdftotext not installed (install via 'pacman -S poppler')")
+		if runtime.GOOS == "darwin" {
+			return nil, fmt.Errorf("pdftotext not found (brew install poppler)")
+		}
+		return nil, fmt.Errorf("pdftotext not found (apt install poppler-utils / pacman -S poppler)")
 	}
 
 	cmd := exec.Command(

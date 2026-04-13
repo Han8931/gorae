@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -21,10 +22,16 @@ import (
 // positive and appropriate for the panel that will render the output.
 func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]string, error) {
 	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		return nil, fmt.Errorf("pdftoppm not found (install via poppler)")
+		if runtime.GOOS == "darwin" {
+			return nil, fmt.Errorf("pdftoppm not found (brew install poppler)")
+		}
+		return nil, fmt.Errorf("pdftoppm not found (apt install poppler-utils / pacman -S poppler)")
 	}
 	if _, err := exec.LookPath("chafa"); err != nil {
-		return nil, fmt.Errorf("chafa not found (brew install chafa)")
+		if runtime.GOOS == "darwin" {
+			return nil, fmt.Errorf("chafa not found (brew install chafa)")
+		}
+		return nil, fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
 	}
 	if imgWidth < 4 {
 		imgWidth = 4
