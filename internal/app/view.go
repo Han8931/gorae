@@ -50,6 +50,10 @@ const (
 	panelLineSelected
 	panelLineCursor
 	panelLineCursorSelected
+	// panelLineImage holds a row of ANSI-escaped terminal art (e.g. from
+	// chafa). It bypasses the normal trimming/padding pipeline so that the
+	// escape codes are preserved and the pre-sized art is not mangled.
+	panelLineImage
 )
 
 type panelLine struct {
@@ -164,6 +168,65 @@ func (m Model) renderListPanel(width, height int) []string {
 	return m.renderPanelBlock(title, lines, width, height, m.styles.List)
 }
 
+// renderImagePreviewPanel renders the right panel with chafa block-art in the
+// upper portion and metadata (when available) in the lower portion.
+func (m Model) renderImagePreviewPanel(width, height, innerWidth int) []string {
+	metaSection := panelizeLines(m.metadataPanelLines(width))
+
+	// Build the image section: each chafa line gets panelLineImage so that
+	// renderPanelBlock preserves the ANSI escape codes unchanged.
+	imgLines := make([]panelLine, 0, len(m.previewImage))
+	for _, l := range m.previewImage {
+		imgLines = append(imgLines, panelLine{text: l, kind: panelLineImage})
+	}
+
+	if len(metaSection) == 0 {
+		return m.renderPanelBlock("Preview", imgLines, width, height, m.styles.Preview)
+	}
+
+	// Reserve the lower half (min 6 rows) for metadata.
+	reservedMeta := height / 2
+	if reservedMeta < 6 {
+		if height >= 6 {
+			reservedMeta = 6
+		} else {
+			reservedMeta = height / 2
+		}
+	}
+	if reservedMeta > height {
+		reservedMeta = height
+	}
+
+	imgLimit := height - reservedMeta
+	if imgLimit < 0 {
+		imgLimit = 0
+	}
+	if imgLimit > len(imgLines) {
+		imgLimit = len(imgLines)
+	}
+
+	lines := make([]panelLine, 0, height)
+	lines = append(lines, imgLines[:imgLimit]...)
+	if imgLimit > 0 && len(lines) < height {
+		lines = append(lines, panelLine{
+			text: dividerLine(innerWidth),
+			kind: panelLineInfo,
+		})
+	}
+
+	remaining := height - len(lines)
+	if remaining < 0 {
+		remaining = 0
+	}
+	metaCount := len(metaSection)
+	if metaCount > remaining {
+		metaCount = remaining
+	}
+	lines = append(lines, metaSection[:metaCount]...)
+
+	return m.renderPanelBlock("Preview", lines, width, height, m.styles.Preview)
+}
+
 func (m Model) renderPreviewPanel(width, height int) []string {
 	if height <= 0 {
 		return nil
@@ -171,6 +234,13 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 	innerWidth := width - 2
 	if innerWidth <= 0 {
 		innerWidth = width
+	}
+
+	// When an image preview is available, show it in the upper portion of the
+	// panel and let metadata (if any) appear below — mirroring how ranger/lf
+	// display visual PDF previews.
+	if len(m.previewImage) > 0 {
+		return m.renderImagePreviewPanel(width, height, innerWidth)
 	}
 
 	// When metadata is available for the current file, prefer showing the full
@@ -1363,8 +1433,16 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 			text = entry.text
 			kind = entry.kind
 		}
-		content := panelContent(innerWidth, text)
-		styled := m.styleForPanelLine(styles, kind).Render(content)
+		var styled string
+		if kind == panelLineImage {
+			// Image lines already contain ANSI art sized to the panel's usable
+			// width. Adding one space on each side gives the standard margin
+			// without running the text through the ANSI-unsafe trim pipeline.
+			styled = " " + text + " "
+		} else {
+			content := panelContent(innerWidth, text)
+			styled = m.styleForPanelLine(styles, kind).Render(content)
+		}
 		result = append(result, m.borderRow(styled, width))
 	}
 

@@ -165,6 +165,13 @@ type Model struct {
 	previewText []string
 	previewPath string
 
+	// Image preview (chafa block-character art). Only populated for PDF files
+	// when both pdftoppm and chafa are available.
+	previewImage   []string
+	previewImageW  int // panel dimensions used when generating the image
+	previewImageH  int
+	previewImagePath string
+
 	autoMetadataAttempts map[string]time.Time
 
 	currentMeta     *meta.Metadata
@@ -1093,9 +1100,13 @@ func (m *Model) ensureCursorVisible() {
 
 func (m *Model) updateTextPreview() {
 	m.previewText = nil
+	// previewImage is managed per-branch below; clearing it here unconditionally
+	// would invalidate the PDF cache on every cursor move, so individual
+	// branches are responsible for clearing it when appropriate.
 
 	if len(m.entries) == 0 {
 		m.previewPath = ""
+		m.previewImage = nil
 		m.updateCurrentMetadata("")
 		return
 	}
@@ -1113,61 +1124,45 @@ func (m *Model) updateTextPreview() {
 	// Directories: show summary and contents
 	if isDir {
 		m.previewPath = full
+		m.previewImage = nil
 		m.previewText = m.directoryPreviewContents(full)
 		return
 	}
 
-	if m.currentMeta != nil && m.currentMetaPath == canonical {
-		title := ""
-		if m.currentMeta != nil {
-			title = strings.TrimSpace(m.currentMeta.Title)
-		}
-		if title != "" {
-			m.previewPath = full
-			return
-		}
-	}
-
-	// Handle PDF/EPUB previews
 	name := e.Name()
 	if err == nil {
 		name = info.Name()
 	}
 	ext := strings.ToLower(filepath.Ext(name))
-	switch ext {
-	case ".pdf":
-		// If we already have preview for this file, keep it
-		if m.previewPath == full && len(m.previewText) > 0 {
-			return
-		}
 
-		m.previewPath = full
-
-		// approximate how many lines we can show
-		maxLines := m.viewportHeight - 2
-		if maxLines < 5 {
-			maxLines = 5
-		}
-
-		lines, err := extractFirstPageText(full, maxLines)
-		if err != nil {
-			m.previewText = []string{
-				"Preview error:",
-				"  " + err.Error(),
-			}
-			return
-		}
-
-		m.previewText = lines
+	// For PDF files, always attempt visual image preview so it appears even
+	// when metadata (title) is present. The image is shown above the metadata
+	// block in renderImagePreviewPanel.
+	if ext == ".pdf" {
+		m.updatePDFPreview(full)
 		return
+	}
 
-	case ".epub":
-		// If we already have preview for this file, keep it
-		if m.previewPath == full && len(m.previewText) > 0 {
+	// For non-PDF files with titled metadata, skip text preview — the view
+	// already shows the full metadata block.
+	if m.currentMeta != nil && m.currentMetaPath == canonical {
+		title := strings.TrimSpace(m.currentMeta.Title)
+		if title != "" {
+			m.previewPath = full
+			m.previewImage = nil
 			return
 		}
+	}
 
+	// EPUB preview
+	if ext == ".epub" {
+		// Reuse cached preview for the same file.
+		if m.previewPath == full && len(m.previewText) > 0 {
+			m.previewImage = nil
+			return
+		}
 		m.previewPath = full
+		m.previewImage = nil
 		maxLines := m.viewportHeight - 2
 		if maxLines < 5 {
 			maxLines = 5
@@ -1186,12 +1181,67 @@ func (m *Model) updateTextPreview() {
 
 	// Fallback for other file types
 	m.previewPath = full
+	m.previewImage = nil
 	m.previewText = []string{
 		"No preview (unsupported type)",
 		"",
 		name,
 	}
 	return
+}
+
+// updatePDFPreview attempts to generate a visual image preview for the PDF at
+// `full`. On success m.previewImage is set; on failure it falls back to text
+// extraction via pdftotext. Either way m.previewText/previewImage is left in
+// a consistent state when the function returns.
+func (m *Model) updatePDFPreview(full string) {
+	_, _, rightW := m.panelWidths()
+	imgW := rightW - 4 // 2 border cols + 2 margin cols
+	imgH := m.viewportHeight - 3 // 2 border rows + 1 header row
+	if imgW < 4 {
+		imgW = 4
+	}
+	if imgH < 2 {
+		imgH = 2
+	}
+
+	// Serve from cache when path and panel dimensions are unchanged.
+	if m.previewImagePath == full &&
+		m.previewImageW == imgW &&
+		m.previewImageH == imgH &&
+		len(m.previewImage) > 0 {
+		m.previewPath = full
+		m.previewText = nil
+		return
+	}
+
+	m.previewPath = full
+	m.previewImage = nil
+	m.previewText = nil
+
+	imgLines, err := extractFirstPageImagePreview(full, imgW, imgH)
+	if err == nil {
+		m.previewImage = imgLines
+		m.previewImagePath = full
+		m.previewImageW = imgW
+		m.previewImageH = imgH
+		return
+	}
+
+	// chafa or pdftoppm unavailable — fall back to text extraction.
+	maxLines := m.viewportHeight - 2
+	if maxLines < 5 {
+		maxLines = 5
+	}
+	textLines, err := extractFirstPageText(full, maxLines)
+	if err != nil {
+		m.previewText = []string{
+			"Preview error:",
+			"  " + err.Error(),
+		}
+		return
+	}
+	m.previewText = textLines
 }
 
 func (m *Model) selectedPaths() []string {
