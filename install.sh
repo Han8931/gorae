@@ -17,6 +17,13 @@ if ! command -v go >/dev/null 2>&1; then
 	exit 1
 fi
 
+missing_poppler=()
+for cmd in pdftotext pdfinfo pdftocairo; do
+	if ! command -v "$cmd" >/dev/null 2>&1; then
+		missing_poppler+=("$cmd")
+	fi
+done
+
 echo "Building gorae..."
 GO111MODULE=on go build -o "$build_dir/gorae" ./cmd/gorae
 
@@ -26,3 +33,19 @@ install -m 755 "$build_dir/gorae" "$dest"
 
 echo "gorae installed to $dest"
 echo "Add $(dirname "$dest") to your PATH if it is not already available."
+
+if [[ ${#missing_poppler[@]} -gt 0 ]]; then
+	echo
+	echo "warning: missing Poppler tools: ${missing_poppler[*]}" >&2
+	echo "Gorae will build, but PDF metadata extraction and PDF previews will be limited until Poppler is installed." >&2
+	echo "Install Poppler with one of:" >&2
+	echo "  macOS:        brew install poppler" >&2
+	echo "  Debian/Ubuntu: sudo apt install poppler-utils" >&2
+	echo "  Arch:         sudo pacman -S poppler" >&2
+fi
+
+if command -v chafa >/dev/null 2>&1; then
+	echo "Optional preview fallback detected: chafa"
+else
+	echo "Note: chafa is optional and only used for non-Kitty preview fallbacks."
+fi

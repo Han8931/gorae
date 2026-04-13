@@ -110,7 +110,8 @@ This option builds and installs Gorae using Go.
 #### Requirements
 
 * **Go 1.21+**
-* **Poppler CLI tools**: `pdftotext`, `pdfinfo`
+* **Poppler CLI tools**: `pdftotext`, `pdfinfo`, `pdftocairo`
+* **Kitty preview**: native first-page PDF image previews work in Kitty without `chafa`
 * **Optional fallback preview**: `chafa` for non-Kitty image/text-art PDF previews
 
 Install prerequisites:
@@ -155,6 +156,8 @@ If you want fallback previews outside Kitty:
    ```sh
    gorae
    ```
+
+> Linux + Kitty: install `poppler`/`poppler-utils` and Gorae will use native image-based first-page PDF previews. `chafa` is not required for the Kitty path.
 
 ## Recommended PDF viewer
 
