@@ -27,12 +27,14 @@ import (
 // previewReadyMsg carries the result of an asynchronous PDF preview request.
 // The seq field is matched against Model.previewSeq to discard stale results.
 type previewReadyMsg struct {
-	seq    int
-	path   string
-	text   []string
-	image  []string
-	imageW int
-	imageH int
+	seq           int
+	path          string
+	text          []string
+	graphic       string
+	graphicFormat string
+	image         []string
+	imageW        int
+	imageH        int
 }
 
 type configEditFinishedMsg struct {
@@ -108,7 +110,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only apply if this result matches the latest preview request.
 		if msg.seq == m.previewSeq {
 			m.previewPath = msg.path
-			if len(msg.image) > 0 {
+			if msg.graphic != "" {
+				m.previewGraphic = msg.graphic
+				m.previewGraphicFmt = msg.graphicFormat
+				m.previewGraphicPath = msg.path
+				m.previewGraphicW = msg.imageW
+				m.previewGraphicH = msg.imageH
+				m.previewImage = nil
+				m.previewText = nil
+				m.previewTextCachePath = ""
+				m.previewTextCacheLines = nil
+			} else if len(msg.image) > 0 {
+				m.previewGraphic = ""
 				m.previewImage = msg.image
 				m.previewImagePath = msg.path
 				m.previewImageW = msg.imageW
@@ -118,6 +131,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewTextCachePath = ""
 				m.previewTextCacheLines = nil
 			} else {
+				m.previewGraphic = ""
 				m.previewImage = nil
 				m.previewText = msg.text
 				// Cache the text fallback to avoid re-running pdftotext on revisit.

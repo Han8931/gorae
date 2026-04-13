@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,49 +14,76 @@ import (
 	"strings"
 )
 
-// extractFirstPageImagePreview converts the first page of a PDF to terminal
-// block-character art using pdftoppm and chafa. imgWidth and imgHeight are the
-// desired visual dimensions in terminal columns/rows. Returns one string per
-// row; each string may contain ANSI escape codes.
-//
-// The caller is responsible for ensuring that imgWidth and imgHeight are
-// positive and appropriate for the panel that will render the output.
-func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]string, error) {
-	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		if runtime.GOOS == "darwin" {
-			return nil, fmt.Errorf("pdftoppm not found (brew install poppler)")
-		}
-		return nil, fmt.Errorf("pdftoppm not found (apt install poppler-utils / pacman -S poppler)")
-	}
-	if _, err := exec.LookPath("chafa"); err != nil {
-		if runtime.GOOS == "darwin" {
-			return nil, fmt.Errorf("chafa not found (brew install chafa)")
-		}
-		return nil, fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
-	}
-	if imgWidth < 4 {
-		imgWidth = 4
-	}
-	if imgHeight < 2 {
-		imgHeight = 2
+var errTerminalGraphicsUnsupported = errors.New("terminal image preview unsupported")
+
+func terminalGraphicFormat() string {
+	if override := normalizeGraphicFormat(os.Getenv("GORAE_PDF_PREVIEW_FORMAT")); override != "" {
+		return override
 	}
 
-	// 72 DPI is sufficient for block-character art: the character grid is the
-	// resolution bottleneck, not the source image. Higher DPI only slows
-	// pdftoppm without improving the visible result.
+	term := strings.ToLower(strings.TrimSpace(os.Getenv("TERM")))
+	termProgram := strings.ToLower(strings.TrimSpace(os.Getenv("TERM_PROGRAM")))
+
+	switch {
+	case os.Getenv("KITTY_WINDOW_ID") != "" || strings.Contains(term, "kitty"):
+		return "kitty"
+	case termProgram == "wezterm":
+		return "kitty"
+	case termProgram == "iterm.app":
+		return "iterm"
+	case strings.Contains(term, "sixel"):
+		return "sixels"
+	default:
+		return ""
+	}
+}
+
+func normalizeGraphicFormat(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "kitty":
+		return "kitty"
+	case "iterm", "imgcat":
+		return "iterm"
+	case "sixel", "sixels":
+		return "sixels"
+	default:
+		return ""
+	}
+}
+
+func ensurePreviewTools(requireChafa bool) error {
+	if _, err := exec.LookPath("pdftoppm"); err != nil {
+		if runtime.GOOS == "darwin" {
+			return fmt.Errorf("pdftoppm not found (brew install poppler)")
+		}
+		return fmt.Errorf("pdftoppm not found (apt install poppler-utils / pacman -S poppler)")
+	}
+	if requireChafa {
+		if _, err := exec.LookPath("chafa"); err != nil {
+			if runtime.GOOS == "darwin" {
+				return fmt.Errorf("chafa not found (brew install chafa)")
+			}
+			return fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
+		}
+	}
+	return nil
+}
+
+func rasterizeFirstPageToPPM(path string) (string, error) {
+	if err := ensurePreviewTools(false); err != nil {
+		return "", err
+	}
+
+	// 72 DPI is sufficient for previews inside a terminal pane.
 	const dpi = 72
 
 	// Derive a deterministic temp-file base from the PDF path and DPI so that
 	// successive calls for the same file reuse the already-converted image.
-	// DPI is part of the key so that changing it never serves stale files.
 	hash := sha1.Sum([]byte(fmt.Sprintf("%s@%d", path, dpi)))
 	hashStr := hex.EncodeToString(hash[:])
 	tmpDir := os.TempDir()
 	tmpBase := filepath.Join(tmpDir, "gorae_prev_"+hashStr)
 
-	// pdftoppm zero-pads page numbers according to total page count, so the
-	// actual output file might be "base-1.ppm", "base-01.ppm", "base-001.ppm",
-	// etc. Locate whichever variant was produced.
 	findPPM := func() string {
 		matches, _ := filepath.Glob(tmpBase + "-*.ppm")
 		if len(matches) == 0 {
@@ -66,25 +94,110 @@ func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]strin
 	}
 
 	tmpPPM := findPPM()
+	if tmpPPM != "" {
+		return tmpPPM, nil
+	}
+
+	cmd := exec.Command(
+		"pdftoppm",
+		"-f", "1",
+		"-l", "1",
+		"-r", fmt.Sprintf("%d", dpi),
+		path,
+		tmpBase,
+	)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("pdftoppm: %w — %s", err, errBuf.String())
+	}
+
+	tmpPPM = findPPM()
 	if tmpPPM == "" {
-		// Not cached yet — rasterise the first page.
-		cmd := exec.Command(
-			"pdftoppm",
-			"-f", "1",
-			"-l", "1",
-			"-r", fmt.Sprintf("%d", dpi),
-			path,
-			tmpBase,
-		)
-		var errBuf bytes.Buffer
-		cmd.Stderr = &errBuf
-		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("pdftoppm: %w — %s", err, errBuf.String())
+		return "", fmt.Errorf("pdftoppm produced no output for %s", filepath.Base(path))
+	}
+	return tmpPPM, nil
+}
+
+func stripChafaCursorSequences(output string) string {
+	output = strings.ReplaceAll(output, "\x1b[?25l", "")
+	output = strings.ReplaceAll(output, "\x1b[?25h", "")
+	return output
+}
+
+// extractFirstPageGraphicPreview renders the first PDF page as a terminal image
+// sequence supported by kitty, iTerm2, or sixel-capable terminals.
+func extractFirstPageGraphicPreview(path string, imgWidth, imgHeight int) (string, string, error) {
+	format := terminalGraphicFormat()
+	if format == "" {
+		return "", "", errTerminalGraphicsUnsupported
+	}
+	if err := ensurePreviewTools(true); err != nil {
+		return "", "", err
+	}
+	if imgWidth < 4 {
+		imgWidth = 4
+	}
+	if imgHeight < 2 {
+		imgHeight = 2
+	}
+
+	tmpPPM, err := rasterizeFirstPageToPPM(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	size := fmt.Sprintf("%dx%d", imgWidth, imgHeight)
+	args := []string{
+		"--probe=off",
+		"--format=" + format,
+		"--relative=on",
+		"--passthrough=auto",
+		"--align=top,left",
+		"--animate=off",
+		"--size=" + size,
+		tmpPPM,
+	}
+	cmd := exec.Command("chafa", args...)
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("chafa %s: %w — %s", format, err, errBuf.String())
+	}
+
+	rendered := strings.TrimRight(stripChafaCursorSequences(out.String()), "\n")
+	if rendered == "" {
+		return "", "", fmt.Errorf("chafa produced no %s output for %s", format, filepath.Base(path))
+	}
+	return rendered, format, nil
+}
+
+// extractFirstPageImagePreview converts the first page of a PDF to terminal
+// block-character art using pdftoppm and chafa. imgWidth and imgHeight are the
+// desired visual dimensions in terminal columns/rows. Returns one string per
+// row; each string may contain ANSI escape codes.
+func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]string, error) {
+	if err := ensurePreviewTools(true); err != nil {
+		return nil, err
+	}
+	if imgWidth < 4 {
+		imgWidth = 4
+	}
+	if imgHeight < 2 {
+		imgHeight = 2
+	}
+
+	tmpPPM, err := rasterizeFirstPageToPPM(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := exec.LookPath("chafa"); err != nil {
+		if runtime.GOOS == "darwin" {
+			return nil, fmt.Errorf("chafa not found (brew install chafa)")
 		}
-		tmpPPM = findPPM()
-		if tmpPPM == "" {
-			return nil, fmt.Errorf("pdftoppm produced no output for %s", filepath.Base(path))
-		}
+		return nil, fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
 	}
 
 	// Render the PPM as terminal art sized to the panel.
@@ -107,11 +220,7 @@ func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]strin
 		return nil, fmt.Errorf("chafa: %w — %s", err, errBuf.String())
 	}
 
-	// Strip cursor-visibility sequences that chafa emits but that would
-	// conflict with bubbletea's own cursor management.
-	output := strings.ReplaceAll(out.String(), "\x1b[?25l", "")
-	output = strings.ReplaceAll(output, "\x1b[?25h", "")
-
+	output := stripChafaCursorSequences(out.String())
 	raw := strings.TrimRight(output, "\n")
 	lines := strings.Split(raw, "\n")
 	return lines, nil

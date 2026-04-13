@@ -165,8 +165,16 @@ type Model struct {
 	previewText []string
 	previewPath string
 
+	// Terminal image preview using kitty/iTerm2/sixel escape sequences. This is
+	// the preferred PDF preview mode when the terminal supports it.
+	previewGraphic     string
+	previewGraphicFmt  string
+	previewGraphicW    int
+	previewGraphicH    int
+	previewGraphicPath string
+
 	// Image preview (chafa block-character art). Only populated for PDF files
-	// when both pdftoppm and chafa are available.
+	// when terminal graphics are unavailable and chafa is available.
 	previewImage     []string
 	previewImageW    int // panel dimensions used when generating the image
 	previewImageH    int
@@ -1116,6 +1124,7 @@ func (m *Model) updateTextPreview() {
 
 	if len(m.entries) == 0 {
 		m.previewPath = ""
+		m.previewGraphic = ""
 		m.previewImage = nil
 		m.updateCurrentMetadata("")
 		return
@@ -1134,6 +1143,7 @@ func (m *Model) updateTextPreview() {
 	// Directories: show summary and contents
 	if isDir {
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewImage = nil
 		m.previewText = m.directoryPreviewContents(full)
 		return
@@ -1159,6 +1169,7 @@ func (m *Model) updateTextPreview() {
 		title := strings.TrimSpace(m.currentMeta.Title)
 		if title != "" {
 			m.previewPath = full
+			m.previewGraphic = ""
 			m.previewImage = nil
 			return
 		}
@@ -1168,10 +1179,12 @@ func (m *Model) updateTextPreview() {
 	if ext == ".epub" {
 		// Reuse cached preview for the same file.
 		if m.previewPath == full && len(m.previewText) > 0 {
+			m.previewGraphic = ""
 			m.previewImage = nil
 			return
 		}
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewImage = nil
 		maxLines := m.viewportHeight - 2
 		if maxLines < 5 {
@@ -1191,6 +1204,7 @@ func (m *Model) updateTextPreview() {
 
 	// Fallback for other file types
 	m.previewPath = full
+	m.previewGraphic = ""
 	m.previewImage = nil
 	m.previewText = []string{
 		"No preview (unsupported type)",
@@ -1205,7 +1219,7 @@ func (m *Model) updateTextPreview() {
 // blocking is acceptable (rename, delete, flags, etc.).
 func (m *Model) updatePDFPreview(full string) {
 	_, _, rightW := m.panelWidths()
-	imgW := rightW - 4 // 2 border cols + 2 margin cols
+	imgW := rightW - 4           // 2 border cols + 2 margin cols
 	imgH := m.viewportHeight - 3 // 2 border rows + 1 header row
 	if imgW < 4 {
 		imgW = 4
@@ -1214,12 +1228,28 @@ func (m *Model) updatePDFPreview(full string) {
 		imgH = 2
 	}
 
+	format := terminalGraphicFormat()
+
+	// Terminal-graphics cache hit.
+	if format != "" &&
+		m.previewGraphicPath == full &&
+		m.previewGraphicFmt == format &&
+		m.previewGraphicW == imgW &&
+		m.previewGraphicH == imgH &&
+		m.previewGraphic != "" {
+		m.previewPath = full
+		m.previewImage = nil
+		m.previewText = nil
+		return
+	}
+
 	// Image cache hit.
 	if m.previewImagePath == full &&
 		m.previewImageW == imgW &&
 		m.previewImageH == imgH &&
 		len(m.previewImage) > 0 {
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewText = nil
 		return
 	}
@@ -1227,14 +1257,28 @@ func (m *Model) updatePDFPreview(full string) {
 	// Text cache hit (chafa/pdftoppm unavailable).
 	if m.previewTextCachePath == full && len(m.previewTextCacheLines) > 0 {
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
 		return
 	}
 
 	m.previewPath = full
+	m.previewGraphic = ""
 	m.previewImage = nil
 	m.previewText = nil
+
+	if format != "" {
+		graphic, graphicFormat, err := extractFirstPageGraphicPreview(full, imgW, imgH)
+		if err == nil {
+			m.previewGraphic = graphic
+			m.previewGraphicFmt = graphicFormat
+			m.previewGraphicPath = full
+			m.previewGraphicW = imgW
+			m.previewGraphicH = imgH
+			return
+		}
+	}
 
 	imgLines, err := extractFirstPageImagePreview(full, imgW, imgH)
 	if err == nil {
@@ -1293,7 +1337,6 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	// Increment seq to invalidate any previously in-flight async.
 	m.previewSeq++
 
-	// Image cache hit: serve synchronously.
 	_, _, rightW := m.panelWidths()
 	imgW := rightW - 4
 	imgH := m.viewportHeight - 3
@@ -1303,12 +1346,29 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	if imgH < 2 {
 		imgH = 2
 	}
+	format := terminalGraphicFormat()
+
+	if format != "" &&
+		m.previewGraphicPath == full &&
+		m.previewGraphicFmt == format &&
+		m.previewGraphicW == imgW &&
+		m.previewGraphicH == imgH &&
+		m.previewGraphic != "" {
+		m.updateCurrentMetadata(canonical)
+		m.previewPath = full
+		m.previewImage = nil
+		m.previewText = nil
+		return nil
+	}
+
+	// Image cache hit: serve synchronously.
 	if m.previewImagePath == full &&
 		m.previewImageW == imgW &&
 		m.previewImageH == imgH &&
 		len(m.previewImage) > 0 {
 		m.updateCurrentMetadata(canonical)
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewText = nil
 		return nil
 	}
@@ -1317,6 +1377,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	if m.previewTextCachePath == full && len(m.previewTextCacheLines) > 0 {
 		m.updateCurrentMetadata(canonical)
 		m.previewPath = full
+		m.previewGraphic = ""
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
 		return nil
@@ -1325,6 +1386,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	// Cache miss: update cheap state immediately, then dispatch async.
 	m.updateCurrentMetadata(canonical)
 	m.previewPath = full
+	m.previewGraphic = ""
 	m.previewImage = nil
 	m.previewText = nil
 
@@ -1335,6 +1397,17 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		if format != "" {
+			graphic, graphicFormat, err := extractFirstPageGraphicPreview(full, imgW, imgH)
+			if err == nil {
+				return previewReadyMsg{
+					seq: seq, path: full,
+					graphic: graphic, graphicFormat: graphicFormat,
+					imageW: imgW, imageH: imgH,
+				}
+			}
+		}
+
 		imgLines, err := extractFirstPageImagePreview(full, imgW, imgH)
 		if err == nil {
 			return previewReadyMsg{

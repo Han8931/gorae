@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -101,5 +102,59 @@ func TestRenderPreviewPanelShowsTextPreviewAlongsideMetadata(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "Preview line one.") {
 		t.Fatalf("expected preview text in preview panel, got %q", rendered)
+	}
+}
+
+func TestRenderPreviewPanelUsesBlankCanvasForGraphicPreview(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "paper.pdf")
+	writeDummyPDF(t, file)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read preview test dir: %v", err)
+	}
+
+	m := Model{
+		cwd:            root,
+		entries:        entries,
+		previewGraphic: "GRAPHIC",
+		currentMeta: &meta.Metadata{
+			Title: "Should Be Hidden",
+		},
+	}
+	m.applyTheme(theme.Default())
+
+	rendered := strings.Join(m.renderPreviewPanel(60, 16), "\n")
+	rendered = ansiPattern.ReplaceAllString(rendered, "")
+
+	if strings.Contains(rendered, "Should Be Hidden") {
+		t.Fatalf("expected metadata to be hidden behind graphic preview, got %q", rendered)
+	}
+}
+
+func TestViewAppendsGraphicPreviewOverlay(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "paper.pdf")
+	writeDummyPDF(t, file)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read preview test dir: %v", err)
+	}
+
+	m := Model{
+		cwd:            root,
+		entries:        entries,
+		width:          100,
+		viewportHeight: 18,
+		previewGraphic: "GRAPHIC",
+	}
+	m.applyTheme(theme.Default())
+
+	leftWidth, middleWidth, _ := m.panelWidths()
+	col := leftWidth + panelSeparatorWidth/2 + middleWidth + panelSeparatorWidth/2 + 3
+	want := "\x1b7\x1b[5;" + strconv.Itoa(col) + "HGRAPHIC\x1b8"
+
+	if view := m.View(); !strings.Contains(view, want) {
+		t.Fatalf("expected graphic overlay %q in view", want)
 	}
 }

@@ -236,9 +236,14 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 		innerWidth = width
 	}
 
-	// When an image preview is available, show it in the upper portion of the
-	// panel and let metadata (if any) appear below — mirroring how ranger/lf
-	// display visual PDF previews.
+	// Pixel-based previews are drawn as a terminal overlay after the textual
+	// frame is rendered, so the panel itself stays blank and acts as the canvas.
+	if m.previewGraphic != "" {
+		return m.renderPanelBlock("Preview", nil, width, height, m.styles.Preview)
+	}
+
+	// When a symbol-art preview is available, show it in the upper portion of
+	// the panel and let metadata (if any) appear below.
 	if len(m.previewImage) > 0 {
 		return m.renderImagePreviewPanel(width, height, innerWidth)
 	}
@@ -730,7 +735,31 @@ func (m Model) View() string {
 		}
 	}
 
+	if overlay := m.graphicPreviewOverlay(); overlay != "" {
+		b.WriteString(overlay)
+	}
+
 	return b.String()
+}
+
+func (m Model) graphicPreviewOverlay() string {
+	if m.previewGraphic == "" || m.width <= 0 || m.viewportHeight < 3 {
+		return ""
+	}
+
+	leftWidth, middleWidth, _ := m.panelWidths()
+	gapWidth := panelSeparatorWidth / 2
+	if gapWidth < 1 {
+		gapWidth = 1
+	}
+
+	row := 5
+	col := leftWidth + gapWidth + middleWidth + gapWidth + 3
+	if col < 1 {
+		col = 1
+	}
+
+	return "\x1b7" + fmt.Sprintf("\x1b[%d;%dH", row, col) + m.previewGraphic + "\x1b8"
 }
 
 func (m Model) renderSearchResultsView() string {
