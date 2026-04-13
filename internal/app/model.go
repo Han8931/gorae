@@ -167,10 +167,19 @@ type Model struct {
 
 	// Image preview (chafa block-character art). Only populated for PDF files
 	// when both pdftoppm and chafa are available.
-	previewImage   []string
-	previewImageW  int // panel dimensions used when generating the image
-	previewImageH  int
+	previewImage     []string
+	previewImageW    int // panel dimensions used when generating the image
+	previewImageH    int
 	previewImagePath string
+
+	// Async preview: sequence counter to discard stale results when the user
+	// navigates quickly. Incremented on every preview update (sync or async).
+	previewSeq int
+
+	// Text-fallback cache for PDF files: avoids re-running pdftotext when
+	// revisiting the same file when chafa/pdftoppm are unavailable.
+	previewTextCachePath  string
+	previewTextCacheLines []string
 
 	autoMetadataAttempts map[string]time.Time
 
@@ -1099,6 +1108,7 @@ func (m *Model) ensureCursorVisible() {
 }
 
 func (m *Model) updateTextPreview() {
+	m.previewSeq++ // Invalidate any in-flight async preview for this entry.
 	m.previewText = nil
 	// previewImage is managed per-branch below; clearing it here unconditionally
 	// would invalidate the PDF cache on every cursor move, so individual
@@ -1190,10 +1200,9 @@ func (m *Model) updateTextPreview() {
 	return
 }
 
-// updatePDFPreview attempts to generate a visual image preview for the PDF at
-// `full`. On success m.previewImage is set; on failure it falls back to text
-// extraction via pdftotext. Either way m.previewText/previewImage is left in
-// a consistent state when the function returns.
+// updatePDFPreview synchronously generates the preview for `full`.
+// Called by updateTextPreview() for non-navigation operations where brief
+// blocking is acceptable (rename, delete, flags, etc.).
 func (m *Model) updatePDFPreview(full string) {
 	_, _, rightW := m.panelWidths()
 	imgW := rightW - 4 // 2 border cols + 2 margin cols
@@ -1205,13 +1214,21 @@ func (m *Model) updatePDFPreview(full string) {
 		imgH = 2
 	}
 
-	// Serve from cache when path and panel dimensions are unchanged.
+	// Image cache hit.
 	if m.previewImagePath == full &&
 		m.previewImageW == imgW &&
 		m.previewImageH == imgH &&
 		len(m.previewImage) > 0 {
 		m.previewPath = full
 		m.previewText = nil
+		return
+	}
+
+	// Text cache hit (chafa/pdftoppm unavailable).
+	if m.previewTextCachePath == full && len(m.previewTextCacheLines) > 0 {
+		m.previewPath = full
+		m.previewImage = nil
+		m.previewText = m.previewTextCacheLines
 		return
 	}
 
@@ -1242,6 +1259,100 @@ func (m *Model) updatePDFPreview(full string) {
 		return
 	}
 	m.previewText = textLines
+	m.previewTextCachePath = full
+	m.previewTextCacheLines = textLines
+}
+
+// updateTextPreviewAsync is used by navigation keypresses (j/k/h/enter). It
+// handles cheap cases synchronously and dispatches PDF preview generation to a
+// goroutine, returning the resulting tea.Cmd. Cache hits are served
+// synchronously regardless of file type. Stale results are discarded via
+// previewSeq when the user moves past quickly.
+func (m *Model) updateTextPreviewAsync() tea.Cmd {
+	if len(m.entries) == 0 {
+		m.updateTextPreview()
+		return nil
+	}
+	e := m.entries[m.cursor]
+	info, err := e.Info()
+	name := e.Name()
+	if err == nil {
+		name = info.Name()
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+
+	// Only PDFs get the async treatment; everything else is cheap.
+	if ext != ".pdf" {
+		m.updateTextPreview()
+		return nil
+	}
+
+	full := filepath.Join(m.cwd, e.Name())
+	canonical := canonicalPath(full)
+
+	// Increment seq to invalidate any previously in-flight async.
+	m.previewSeq++
+
+	// Image cache hit: serve synchronously.
+	_, _, rightW := m.panelWidths()
+	imgW := rightW - 4
+	imgH := m.viewportHeight - 3
+	if imgW < 4 {
+		imgW = 4
+	}
+	if imgH < 2 {
+		imgH = 2
+	}
+	if m.previewImagePath == full &&
+		m.previewImageW == imgW &&
+		m.previewImageH == imgH &&
+		len(m.previewImage) > 0 {
+		m.updateCurrentMetadata(canonical)
+		m.previewPath = full
+		m.previewText = nil
+		return nil
+	}
+
+	// Text cache hit: serve synchronously.
+	if m.previewTextCachePath == full && len(m.previewTextCacheLines) > 0 {
+		m.updateCurrentMetadata(canonical)
+		m.previewPath = full
+		m.previewImage = nil
+		m.previewText = m.previewTextCacheLines
+		return nil
+	}
+
+	// Cache miss: update cheap state immediately, then dispatch async.
+	m.updateCurrentMetadata(canonical)
+	m.previewPath = full
+	m.previewImage = nil
+	m.previewText = nil
+
+	seq := m.previewSeq
+	maxLines := m.viewportHeight - 2
+	if maxLines < 5 {
+		maxLines = 5
+	}
+
+	return func() tea.Msg {
+		imgLines, err := extractFirstPageImagePreview(full, imgW, imgH)
+		if err == nil {
+			return previewReadyMsg{
+				seq: seq, path: full,
+				image: imgLines, imageW: imgW, imageH: imgH,
+			}
+		}
+		// chafa or pdftoppm unavailable — fall back to text extraction.
+		textLines, err := extractFirstPageText(full, maxLines)
+		if err != nil {
+			return previewReadyMsg{
+				seq:  seq,
+				path: full,
+				text: []string{"Preview error:", "  " + err.Error()},
+			}
+		}
+		return previewReadyMsg{seq: seq, path: full, text: textLines}
+	}
 }
 
 func (m *Model) selectedPaths() []string {

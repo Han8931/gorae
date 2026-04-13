@@ -24,6 +24,17 @@ import (
 	"gorae/internal/theme"
 )
 
+// previewReadyMsg carries the result of an asynchronous PDF preview request.
+// The seq field is matched against Model.previewSeq to discard stale results.
+type previewReadyMsg struct {
+	seq    int
+	path   string
+	text   []string
+	image  []string
+	imageW int
+	imageH int
+}
+
 type configEditFinishedMsg struct {
 	err error
 }
@@ -92,6 +103,29 @@ func (m *Model) currentYankTarget() string {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case previewReadyMsg:
+		// Only apply if this result matches the latest preview request.
+		if msg.seq == m.previewSeq {
+			m.previewPath = msg.path
+			if len(msg.image) > 0 {
+				m.previewImage = msg.image
+				m.previewImagePath = msg.path
+				m.previewImageW = msg.imageW
+				m.previewImageH = msg.imageH
+				m.previewText = nil
+				// Image succeeded; drop any stale text cache for this file.
+				m.previewTextCachePath = ""
+				m.previewTextCacheLines = nil
+			} else {
+				m.previewImage = nil
+				m.previewText = msg.text
+				// Cache the text fallback to avoid re-running pdftotext on revisit.
+				m.previewTextCachePath = msg.path
+				m.previewTextCacheLines = msg.text
+			}
+		}
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.windowHeight = msg.Height
@@ -774,24 +808,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
 				m.ensureCursorVisible()
-				m.updateTextPreview() // <── NEW
+				return m, m.updateTextPreviewAsync()
 			}
 
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
 				m.ensureCursorVisible()
-				m.updateTextPreview()
+				return m, m.updateTextPreviewAsync()
 			}
 
 		case "g":
 			m.cursor = 0
 			m.ensureCursorVisible()
-			if len(m.entries) > 0 {
-				m.updateTextPreview()
-			}
+			prevCmd := m.updateTextPreviewAsync()
 			m.awaitingQuickFilter = true
 			m.setStatus("Filter: g r reading, g u unread, g d read (press other key to cancel)")
+			return m, prevCmd
 
 		case "G":
 			if n := len(m.entries); n > 0 {
@@ -827,7 +860,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cwd = full
 				m.loadEntries()
 				m.clearStatus()
-				m.updateTextPreview() // <── NEW
+				return m, m.updateTextPreviewAsync()
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") || strings.HasSuffix(strings.ToLower(entry.Name()), ".epub") {
 				openPath := full
 				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
@@ -862,7 +895,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.clearStatus()
-			m.updateTextPreview() // <── NEW
+			return m, m.updateTextPreviewAsync()
 
 		case "s":
 			m.awaitingSort = true
