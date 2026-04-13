@@ -40,9 +40,12 @@ func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]strin
 		imgHeight = 2
 	}
 
-	// Derive a deterministic temp-file base from the PDF path so that
+	const pdfDPI = 150
+
+	// Derive a deterministic temp-file base from the PDF path and DPI so that
 	// successive calls for the same file reuse the already-converted image.
-	hash := sha1.Sum([]byte(path))
+	// DPI is included in the key so that a DPI change never serves stale files.
+	hash := sha1.Sum([]byte(fmt.Sprintf("%s@%d", path, pdfDPI)))
 	hashStr := hex.EncodeToString(hash[:])
 	tmpDir := os.TempDir()
 	tmpBase := filepath.Join(tmpDir, "gorae_prev_"+hashStr)
@@ -66,7 +69,7 @@ func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]strin
 			"pdftoppm",
 			"-f", "1",
 			"-l", "1",
-			"-r", "72",
+			"-r", fmt.Sprintf("%d", pdfDPI),
 			path,
 			tmpBase,
 		)
