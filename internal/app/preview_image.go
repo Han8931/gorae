@@ -16,6 +16,7 @@ import (
 )
 
 var errTerminalGraphicsUnsupported = errors.New("terminal image preview unsupported")
+var execLookPath = exec.LookPath
 
 const kittyPreviewImageID = 1
 const kittyChunkRawSize = 3072
@@ -56,21 +57,46 @@ func normalizeGraphicFormat(raw string) string {
 }
 
 func ensurePreviewTools(requireChafa bool) error {
-	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		if runtime.GOOS == "darwin" {
-			return fmt.Errorf("pdftoppm not found (brew install poppler)")
-		}
-		return fmt.Errorf("pdftoppm not found (apt install poppler-utils / pacman -S poppler)")
+	if err := ensureCommand("pdftoppm"); err != nil {
+		return err
 	}
 	if requireChafa {
-		if _, err := exec.LookPath("chafa"); err != nil {
+		if err := ensureCommand("chafa"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureCommand(name string) error {
+	if _, err := execLookPath(name); err != nil {
+		switch name {
+		case "chafa":
 			if runtime.GOOS == "darwin" {
 				return fmt.Errorf("chafa not found (brew install chafa)")
 			}
 			return fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
+		case "pdftocairo", "pdftoppm":
+			if runtime.GOOS == "darwin" {
+				return fmt.Errorf("%s not found (brew install poppler)", name)
+			}
+			return fmt.Errorf("%s not found (apt install poppler-utils / pacman -S poppler)", name)
+		default:
+			return err
 		}
 	}
 	return nil
+}
+
+func ensureGraphicPreviewTools(format string) error {
+	switch format {
+	case "kitty":
+		return ensureCommand("pdftocairo")
+	case "iterm", "sixels":
+		return ensurePreviewTools(true)
+	default:
+		return errTerminalGraphicsUnsupported
+	}
 }
 
 func rasterizeFirstPageToPPM(path string) (string, error) {
@@ -124,11 +150,8 @@ func rasterizeFirstPageToPPM(path string) (string, error) {
 }
 
 func rasterizeFirstPageToPNG(path string) (string, error) {
-	if _, err := exec.LookPath("pdftocairo"); err != nil {
-		if runtime.GOOS == "darwin" {
-			return "", fmt.Errorf("pdftocairo not found (brew install poppler)")
-		}
-		return "", fmt.Errorf("pdftocairo not found (apt install poppler-utils / pacman -S poppler)")
+	if err := ensureCommand("pdftocairo"); err != nil {
+		return "", err
 	}
 
 	// Use a moderate, fixed-size cached PNG. Kitty handles the final scaling,
@@ -222,7 +245,7 @@ func extractFirstPageGraphicPreview(path string, imgWidth, imgHeight int) (strin
 	if format == "" {
 		return "", "", errTerminalGraphicsUnsupported
 	}
-	if err := ensurePreviewTools(true); err != nil {
+	if err := ensureGraphicPreviewTools(format); err != nil {
 		return "", "", err
 	}
 	if imgWidth < 4 {
@@ -295,11 +318,8 @@ func extractFirstPageImagePreview(path string, imgWidth, imgHeight int) ([]strin
 		return nil, err
 	}
 
-	if _, err := exec.LookPath("chafa"); err != nil {
-		if runtime.GOOS == "darwin" {
-			return nil, fmt.Errorf("chafa not found (brew install chafa)")
-		}
-		return nil, fmt.Errorf("chafa not found (apt install chafa / pacman -S chafa)")
+	if err := ensureCommand("chafa"); err != nil {
+		return nil, err
 	}
 
 	// Render the PPM as terminal art sized to the panel.
