@@ -349,3 +349,69 @@ func TestEndKeyRequestsPreviewRefresh(t *testing.T) {
 		t.Fatalf("expected cursor on last pdf entry, got %q", updated.entries[updated.cursor].Name())
 	}
 }
+
+func TestPageDownRequestsPreviewRefresh(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 8; i++ {
+		writeDummyPDF(t, filepath.Join(root, fmt.Sprintf("%02d.pdf", i)))
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	m := Model{
+		root:           root,
+		cwd:            root,
+		entries:        entries,
+		viewportHeight: 10,
+		width:          100,
+	}
+	m.applyTheme(theme.Default())
+
+	updatedAny, cmd := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if cmd == nil {
+		t.Fatal("expected preview refresh command for pgdown navigation")
+	}
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after pgdown, got %T", updatedAny)
+	}
+	if updated.cursor <= 0 {
+		t.Fatalf("expected cursor to move down, got %d", updated.cursor)
+	}
+}
+
+func TestCtrlDRequestsPreviewRefresh(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 8; i++ {
+		writeDummyPDF(t, filepath.Join(root, fmt.Sprintf("%02d.pdf", i)))
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	m := Model{
+		root:           root,
+		cwd:            root,
+		entries:        entries,
+		viewportHeight: 10,
+		width:          100,
+	}
+	m.applyTheme(theme.Default())
+
+	updatedAny, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if cmd == nil {
+		t.Fatal("expected preview refresh command for ctrl+d navigation")
+	}
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after ctrl+d, got %T", updatedAny)
+	}
+	if updated.cursor <= 0 {
+		t.Fatalf("expected cursor to move down, got %d", updated.cursor)
+	}
+}

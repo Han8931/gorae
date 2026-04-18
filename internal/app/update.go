@@ -843,6 +843,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.updateTextPreviewAsync()
 			}
 
+		case "pgdown", "ctrl+f", "ctrl+d":
+			if len(m.entries) == 0 {
+				return m, nil
+			}
+			step := m.listVisibleRows()
+			if key == "ctrl+d" {
+				step /= 2
+				if step < 1 {
+					step = 1
+				}
+			}
+			if m.cursor < len(m.entries)-1 {
+				m.cursor += step
+				if m.cursor >= len(m.entries) {
+					m.cursor = len(m.entries) - 1
+				}
+				m.ensureCursorVisible()
+				return m, m.updateTextPreviewAsync()
+			}
+
+		case "pgup", "ctrl+b", "ctrl+u":
+			if len(m.entries) == 0 {
+				return m, nil
+			}
+			step := m.listVisibleRows()
+			if key == "ctrl+u" {
+				step /= 2
+				if step < 1 {
+					step = 1
+				}
+			}
+			if m.cursor > 0 {
+				m.cursor -= step
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+				m.ensureCursorVisible()
+				return m, m.updateTextPreviewAsync()
+			}
+
 		case "g":
 			m.cursor = 0
 			m.ensureCursorVisible()
