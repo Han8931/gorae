@@ -287,6 +287,35 @@ func TestPreviewReadyMsgClearsScreenWhenReplacingITermGraphicPreview(t *testing.
 	}
 }
 
+func TestPreviewReadyMsgClearsScreenWhenApplyingKittyGraphicPreview(t *testing.T) {
+	m := Model{
+		previewSeq: 4,
+	}
+
+	updatedAny, cmd := m.Update(previewReadyMsg{
+		seq:           4,
+		path:          "/tmp/paper.pdf",
+		graphic:       "KITTY",
+		graphicFormat: "kitty",
+		imageW:        20,
+		imageH:        10,
+	})
+	if cmd == nil {
+		t.Fatal("expected clear-screen command when applying kitty graphic preview")
+	}
+	if got := fmt.Sprintf("%T", cmd()); got != "tea.clearScreenMsg" {
+		t.Fatalf("expected clear-screen message, got %s", got)
+	}
+
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after previewReadyMsg, got %T", updatedAny)
+	}
+	if updated.previewGraphic != "KITTY" {
+		t.Fatalf("expected kitty graphic preview, got %q", updated.previewGraphic)
+	}
+}
+
 func TestUpdateTextPreviewAsyncClearsScreenWhenEnteringITermGraphicPreview(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "paper.pdf")

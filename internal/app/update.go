@@ -121,7 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewText = nil
 				m.previewTextCachePath = ""
 				m.previewTextCacheLines = nil
-				if msg.graphicFormat == "iterm" {
+				if msg.graphicFormat == "iterm" || msg.graphicFormat == "kitty" {
 					return m, clearScreenCmd
 				}
 			} else if len(msg.image) > 0 {
