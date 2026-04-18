@@ -20,6 +20,7 @@
 - 📌 **To-read queue**: stash papers for later.
 - 🕮 **Reading states**: *Unread / Reading / Read* tracked via metadata.
 - 🔎 **Search**: metadata + full-text search with previews/snippets.
+- 🖼️ **PDF image preview**: first-page previews inside the preview pane, with terminal-aware rendering paths.
 - 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
 - ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
 - 🎨 **Themeable UI**: colors, glyphs, borders — plus helper folders usable in any file manager.
@@ -43,6 +44,19 @@
 | Help               | `:help`   |
 
 > **Arrow keys and mouse** input are also supported.
+
+### Preview support
+
+Gorae includes first-page PDF image previews in the right preview pane.
+
+- **Kitty**: native graphic preview path via `pdftocairo`
+- **iTerm2**: terminal image preview support is included
+- **Fallback path**: `chafa`-based symbol/image preview when terminal graphics are unavailable or not desired
+
+Tested terminals for the image preview feature:
+
+- **Kitty** on Linux
+- **iTerm2** on macOS
 
 ### 🔎 Search tips
 
@@ -112,7 +126,8 @@ This option builds and installs Gorae using Go.
 * **Go 1.21+**
 * **Poppler CLI tools**: `pdftotext`, `pdfinfo`, `pdftocairo`
 * **Kitty preview**: native first-page PDF image previews use `pdftocairo` and do not require `chafa`
-* **Optional fallback preview**: `chafa` for non-Kitty image/text-art PDF previews
+* **iTerm2 preview**: inline image preview path is supported
+* **Optional fallback preview**: `chafa` for non-Kitty / non-inline image text-art previews
 
 Install prerequisites:
 
