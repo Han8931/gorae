@@ -287,7 +287,7 @@ func TestPreviewReadyMsgClearsScreenWhenReplacingITermGraphicPreview(t *testing.
 	}
 }
 
-func TestPreviewReadyMsgClearsScreenWhenApplyingKittyGraphicPreview(t *testing.T) {
+func TestPreviewReadyMsgAppliesKittyGraphicPreviewWithoutFullScreenClear(t *testing.T) {
 	m := Model{
 		previewSeq: 4,
 	}
@@ -300,11 +300,8 @@ func TestPreviewReadyMsgClearsScreenWhenApplyingKittyGraphicPreview(t *testing.T
 		imageW:        20,
 		imageH:        10,
 	})
-	if cmd == nil {
-		t.Fatal("expected clear-screen command when applying kitty graphic preview")
-	}
-	if got := fmt.Sprintf("%T", cmd()); got != "tea.clearScreenMsg" {
-		t.Fatalf("expected clear-screen message, got %s", got)
+	if cmd != nil {
+		t.Fatalf("expected no full-screen clear for kitty graphic preview")
 	}
 
 	updated, ok := updatedAny.(Model)
