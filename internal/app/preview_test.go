@@ -260,9 +260,7 @@ func TestUpdateTextPreviewAsyncClearsScreenWhenLeavingITermGraphicPreviewForDire
 
 func TestPreviewReadyMsgClearsScreenWhenReplacingITermGraphicPreview(t *testing.T) {
 	m := Model{
-		previewSeq:        3,
-		previewGraphic:    "OLD",
-		previewGraphicFmt: "iterm",
+		previewSeq: 3,
 	}
 
 	updatedAny, cmd := m.Update(previewReadyMsg{
@@ -286,5 +284,68 @@ func TestPreviewReadyMsgClearsScreenWhenReplacingITermGraphicPreview(t *testing.
 	}
 	if updated.previewGraphic != "NEW" {
 		t.Fatalf("expected updated graphic preview, got %q", updated.previewGraphic)
+	}
+}
+
+func TestUpdateTextPreviewAsyncClearsScreenWhenEnteringITermGraphicPreview(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "paper.pdf")
+	writeDummyPDF(t, file)
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	t.Setenv("GORAE_PDF_PREVIEW_FORMAT", "iterm")
+	m := Model{
+		root:           root,
+		cwd:            root,
+		entries:        entries,
+		viewportHeight: 18,
+		width:          100,
+	}
+
+	cmd := m.updateTextPreviewAsync()
+	if cmd == nil {
+		t.Fatal("expected sequence command when entering iterm graphic preview")
+	}
+	if got := fmt.Sprintf("%T", cmd()); got != "tea.sequenceMsg" {
+		t.Fatalf("expected sequence message, got %s", got)
+	}
+}
+
+func TestEndKeyRequestsPreviewRefresh(t *testing.T) {
+	root := t.TempDir()
+	writeDummyPDF(t, filepath.Join(root, "a-first.pdf"))
+	writeDummyPDF(t, filepath.Join(root, "z-last.pdf"))
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	m := Model{
+		root:           root,
+		cwd:            root,
+		entries:        entries,
+		viewportHeight: 18,
+		width:          100,
+	}
+	m.applyTheme(theme.Default())
+
+	updatedAny, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	if cmd == nil {
+		t.Fatal("expected preview refresh command for end/G navigation")
+	}
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after G, got %T", updatedAny)
+	}
+	if updated.cursor != len(entries)-1 {
+		t.Fatalf("expected cursor at last entry, got %d of %d", updated.cursor, len(entries))
+	}
+	if updated.entries[updated.cursor].Name() != "z-last.pdf" {
+		t.Fatalf("expected cursor on last pdf entry, got %q", updated.entries[updated.cursor].Name())
 	}
 }

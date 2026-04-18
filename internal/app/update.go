@@ -109,7 +109,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewReadyMsg:
 		// Only apply if this result matches the latest preview request.
 		if msg.seq == m.previewSeq {
-			hadITermGraphic := m.previewGraphicFmt == "iterm" && m.previewGraphic != ""
 			m.previewPath = msg.path
 			if msg.graphic != "" {
 				m.previewGraphic = msg.graphic
@@ -122,7 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewText = nil
 				m.previewTextCachePath = ""
 				m.previewTextCacheLines = nil
-				if hadITermGraphic {
+				if msg.graphicFormat == "iterm" {
 					return m, clearScreenCmd
 				}
 			} else if len(msg.image) > 0 {
@@ -852,11 +851,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Filter: g r reading, g u unread, g d read (press other key to cancel)")
 			return m, prevCmd
 
-		case "G":
+		case "home":
+			if len(m.entries) > 0 {
+				m.cursor = 0
+				m.ensureCursorVisible()
+			}
+			return m, m.updateTextPreviewAsync()
+
+		case "end", "G":
 			if n := len(m.entries); n > 0 {
 				m.cursor = n - 1
 				m.ensureCursorVisible()
 			}
+			return m, m.updateTextPreviewAsync()
 
 		// case "enter", "l":
 		// 	if len(m.entries) == 0 {

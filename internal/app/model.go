@@ -1376,6 +1376,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		imgH = 2
 	}
 	format := terminalGraphicFormat()
+	clearForITerm := hadITermGraphic || format == "iterm"
 
 	if format != "" &&
 		m.previewGraphicPath == full &&
@@ -1388,7 +1389,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphicClear = false
 		m.previewImage = nil
 		m.previewText = nil
-		return previewRefreshCmd(hadITermGraphic, nil)
+		return previewRefreshCmd(clearForITerm, nil)
 	}
 
 	// Image cache hit: serve synchronously.
@@ -1401,7 +1402,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphic = ""
 		m.previewGraphicClear = true
 		m.previewText = nil
-		return previewRefreshCmd(hadITermGraphic, nil)
+		return previewRefreshCmd(clearForITerm, nil)
 	}
 
 	// Text cache hit: serve synchronously.
@@ -1412,7 +1413,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
-		return previewRefreshCmd(hadITermGraphic, nil)
+		return previewRefreshCmd(clearForITerm, nil)
 	}
 
 	// Cache miss: update cheap state immediately, then dispatch async.
@@ -1429,7 +1430,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		maxLines = 5
 	}
 
-	return previewRefreshCmd(hadITermGraphic, func() tea.Msg {
+	return previewRefreshCmd(clearForITerm, func() tea.Msg {
 		if format != "" {
 			graphic, graphicFormat, err := extractFirstPageGraphicPreview(full, imgW, imgH)
 			if err == nil {
