@@ -109,6 +109,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewReadyMsg:
 		// Only apply if this result matches the latest preview request.
 		if msg.seq == m.previewSeq {
+			hadITermGraphic := m.previewGraphicFmt == "iterm" && m.previewGraphic != ""
 			m.previewPath = msg.path
 			if msg.graphic != "" {
 				m.previewGraphic = msg.graphic
@@ -121,6 +122,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previewText = nil
 				m.previewTextCachePath = ""
 				m.previewTextCacheLines = nil
+				if hadITermGraphic {
+					return m, clearScreenCmd
+				}
 			} else if len(msg.image) > 0 {
 				m.previewGraphic = ""
 				m.previewGraphicClear = true

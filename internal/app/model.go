@@ -1221,6 +1221,20 @@ func (m *Model) updateTextPreview() {
 	return
 }
 
+var clearScreenCmd tea.Cmd = func() tea.Msg {
+	return tea.ClearScreen()
+}
+
+func previewRefreshCmd(clear bool, cmd tea.Cmd) tea.Cmd {
+	if !clear {
+		return cmd
+	}
+	if cmd == nil {
+		return clearScreenCmd
+	}
+	return tea.Sequence(clearScreenCmd, cmd)
+}
+
 // updatePDFPreview synchronously generates the preview for `full`.
 // Called by updateTextPreview() for non-navigation operations where brief
 // blocking is acceptable (rename, delete, flags, etc.).
@@ -1325,9 +1339,10 @@ func (m *Model) updatePDFPreview(full string) {
 // synchronously regardless of file type. Stale results are discarded via
 // previewSeq when the user moves past quickly.
 func (m *Model) updateTextPreviewAsync() tea.Cmd {
+	hadITermGraphic := m.previewGraphicFmt == "iterm" && m.previewGraphic != ""
 	if len(m.entries) == 0 {
 		m.updateTextPreview()
-		return nil
+		return previewRefreshCmd(hadITermGraphic, nil)
 	}
 	e := m.entries[m.cursor]
 	info, err := e.Info()
@@ -1337,17 +1352,19 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	}
 	ext := strings.ToLower(filepath.Ext(name))
 
+	// Increment seq to invalidate any previously in-flight async preview.
+	// Must happen before the extension check so that moving away from a PDF
+	// to a non-PDF (e.g., directory) invalidates stale async results.
+	m.previewSeq++
+
 	// Only PDFs get the async treatment; everything else is cheap.
 	if ext != ".pdf" {
 		m.updateTextPreview()
-		return nil
+		return previewRefreshCmd(hadITermGraphic, nil)
 	}
 
 	full := filepath.Join(m.cwd, e.Name())
 	canonical := canonicalPath(full)
-
-	// Increment seq to invalidate any previously in-flight async.
-	m.previewSeq++
 
 	_, _, rightW := m.panelWidths()
 	imgW := rightW - 4
@@ -1371,7 +1388,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphicClear = false
 		m.previewImage = nil
 		m.previewText = nil
-		return nil
+		return previewRefreshCmd(hadITermGraphic, nil)
 	}
 
 	// Image cache hit: serve synchronously.
@@ -1384,7 +1401,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphic = ""
 		m.previewGraphicClear = true
 		m.previewText = nil
-		return nil
+		return previewRefreshCmd(hadITermGraphic, nil)
 	}
 
 	// Text cache hit: serve synchronously.
@@ -1395,7 +1412,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		m.previewGraphicClear = true
 		m.previewImage = nil
 		m.previewText = m.previewTextCacheLines
-		return nil
+		return previewRefreshCmd(hadITermGraphic, nil)
 	}
 
 	// Cache miss: update cheap state immediately, then dispatch async.
@@ -1412,7 +1429,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 		maxLines = 5
 	}
 
-	return func() tea.Msg {
+	return previewRefreshCmd(hadITermGraphic, func() tea.Msg {
 		if format != "" {
 			graphic, graphicFormat, err := extractFirstPageGraphicPreview(full, imgW, imgH)
 			if err == nil {
@@ -1441,7 +1458,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 			}
 		}
 		return previewReadyMsg{seq: seq, path: full, text: textLines}
-	}
+	})
 }
 
 func (m *Model) selectedPaths() []string {

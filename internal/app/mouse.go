@@ -14,31 +14,31 @@ import (
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.MouseWheelUp:
-		return m.scrollMouse(-1), nil
+		return m.scrollMouse(-1)
 	case tea.MouseWheelDown:
-		return m.scrollMouse(1), nil
+		return m.scrollMouse(1)
 	case tea.MouseLeft:
-		return m.clickMouse(msg), nil
+		return m.clickMouse(msg)
 	case tea.MouseRight:
-		return m.clickMouse(msg), nil
+		return m.clickMouse(msg)
 	default:
 		return m, nil
 	}
 }
 
-func (m Model) scrollMouse(delta int) Model {
+func (m Model) scrollMouse(delta int) (Model, tea.Cmd) {
 	if m.state == stateSearchResults {
 		if delta < 0 {
 			m.moveSearchCursor(-1)
 		} else {
 			m.moveSearchCursor(1)
 		}
-		return m
+		return m, nil
 	}
 	// normal list
 	step := delta
 	if step == 0 {
-		return m
+		return m, nil
 	}
 	m.cursor += step
 	if m.cursor < 0 {
@@ -51,11 +51,10 @@ func (m Model) scrollMouse(delta int) Model {
 		}
 	}
 	m.ensureCursorVisible()
-	m.syncCurrentEntryState()
-	return m
+	return m, m.updateTextPreviewAsync()
 }
 
-func (m Model) clickMouse(msg tea.MouseMsg) Model {
+func (m Model) clickMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	// We only handle clicks on the middle list panel when in normal state.
 	// Use viewportStart and listVisibleRows to hit-test rows.
 	// Adjust X/Y if you add panel-aware hit tests later.
@@ -75,33 +74,51 @@ func (m Model) clickMouse(msg tea.MouseMsg) Model {
 				m.lastClickSearchAt = now
 			}
 		}
-		return m
+		return m, nil
 	}
 	if msg.Button != tea.MouseButtonLeft {
 		if msg.Button == tea.MouseButtonRight {
 			if _, ok := m.clickInListPanel(msg); ok {
-				m.goToParentDir()
+				currentDir := m.cwd
+				parent := filepath.Dir(m.cwd)
+				if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
+					m.setStatus("Already at root")
+					return m, nil
+				}
+
+				m.cwd = parent
+				m.loadEntries()
+				childName := filepath.Base(currentDir)
+				if childName != "" {
+					target := filepath.Join(m.cwd, childName)
+					if idx := m.findEntryIndex(target); idx >= 0 {
+						m.cursor = idx
+						m.ensureCursorVisible()
+					}
+				}
+				m.clearStatus()
+				return m, m.updateTextPreviewAsync()
 			}
 		}
-		return m
+		return m, nil
 	}
 	localY, ok := m.clickInListPanel(msg)
 	if !ok {
-		return m
+		return m, nil
 	}
 	row := m.hitTestListRow(localY)
 	if row < 0 {
-		return m
+		return m, nil
 	}
 	m.cursor = row
 	m.ensureCursorVisible()
-	m.syncCurrentEntryState()
+	cmd := m.updateTextPreviewAsync()
 
 	now := time.Now()
 	if row == m.lastClickRow && now.Sub(m.lastClickAt) < 500*time.Millisecond {
 		// double-click: open
 		if len(m.entries) == 0 {
-			return m
+			return m, cmd
 		}
 		entry := m.entries[m.cursor]
 		full := filepath.Join(m.cwd, entry.Name())
@@ -109,8 +126,7 @@ func (m Model) clickMouse(msg tea.MouseMsg) Model {
 			m.cwd = full
 			m.loadEntries()
 			m.clearStatus()
-			m.updateTextPreview()
-			return m
+			return m, m.updateTextPreviewAsync()
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if ext == ".pdf" || ext == ".epub" {
@@ -126,11 +142,11 @@ func (m Model) clickMouse(msg tea.MouseMsg) Model {
 		}
 		m.lastClickRow = -1
 		m.lastClickAt = time.Time{}
-		return m
+		return m, cmd
 	}
 	m.lastClickRow = row
 	m.lastClickAt = now
-	return m
+	return m, cmd
 }
 
 // clickInListPanel returns the local Y (relative to list area) and ok when inside the list panel.
@@ -184,5 +200,3 @@ func (m *Model) goToParentDir() {
 	m.clearStatus()
 	m.updateTextPreview()
 }
-
-

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -170,5 +171,120 @@ func TestViewClearsKittyGraphicPreviewWhenNoPreviewRemains(t *testing.T) {
 
 	if view := m.View(); !strings.Contains(view, kittyDeletePreviewSequence()) {
 		t.Fatalf("expected kitty delete sequence in view")
+	}
+}
+
+func TestPreviewReadyMsgWithStaleSeqDoesNotOverwriteDirectoryPreview(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "subdir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nested.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	m := Model{
+		root:           root,
+		cwd:            root,
+		entries:        entries,
+		cursor:         0,
+		viewportHeight: 18,
+		width:          100,
+		previewSeq:     2,
+		previewPath:    dir,
+		previewText:    []string{"  nested.txt"},
+	}
+
+	updatedAny, cmd := m.Update(previewReadyMsg{
+		seq:    1,
+		path:   filepath.Join(root, "paper.pdf"),
+		image:  []string{"IMAGE"},
+		imageW: 20,
+		imageH: 10,
+	})
+	if cmd != nil {
+		t.Fatalf("expected no command for stale preview result")
+	}
+
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after stale preview result, got %T", updatedAny)
+	}
+	if got := strings.Join(updated.previewText, "\n"); got != "  nested.txt" {
+		t.Fatalf("expected directory preview to remain intact, got %q", got)
+	}
+	if len(updated.previewImage) != 0 {
+		t.Fatalf("expected stale image preview to be discarded, got %v", updated.previewImage)
+	}
+}
+
+func TestUpdateTextPreviewAsyncClearsScreenWhenLeavingITermGraphicPreviewForDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "subdir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read root entries: %v", err)
+	}
+
+	m := Model{
+		root:              root,
+		cwd:               root,
+		entries:           entries,
+		viewportHeight:    18,
+		width:             100,
+		previewGraphic:    "GRAPHIC",
+		previewGraphicFmt: "iterm",
+	}
+
+	cmd := m.updateTextPreviewAsync()
+	if cmd == nil {
+		t.Fatal("expected clear-screen command when leaving iterm graphic preview")
+	}
+	if got := fmt.Sprintf("%T", cmd()); got != "tea.clearScreenMsg" {
+		t.Fatalf("expected clear-screen message, got %s", got)
+	}
+	if len(m.previewText) == 0 {
+		t.Fatal("expected directory preview after leaving iterm graphic preview")
+	}
+}
+
+func TestPreviewReadyMsgClearsScreenWhenReplacingITermGraphicPreview(t *testing.T) {
+	m := Model{
+		previewSeq:        3,
+		previewGraphic:    "OLD",
+		previewGraphicFmt: "iterm",
+	}
+
+	updatedAny, cmd := m.Update(previewReadyMsg{
+		seq:           3,
+		path:          "/tmp/paper.pdf",
+		graphic:       "NEW",
+		graphicFormat: "iterm",
+		imageW:        20,
+		imageH:        10,
+	})
+	if cmd == nil {
+		t.Fatal("expected clear-screen command when replacing iterm graphic preview")
+	}
+	if got := fmt.Sprintf("%T", cmd()); got != "tea.clearScreenMsg" {
+		t.Fatalf("expected clear-screen message, got %s", got)
+	}
+
+	updated, ok := updatedAny.(Model)
+	if !ok {
+		t.Fatalf("expected Model after previewReadyMsg, got %T", updatedAny)
+	}
+	if updated.previewGraphic != "NEW" {
+		t.Fatalf("expected updated graphic preview, got %q", updated.previewGraphic)
 	}
 }
