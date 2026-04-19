@@ -315,6 +315,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, scheduleAutoMetadataScan(autoMetadataScanInterval))
 		return m, tea.Batch(cmds...)
 
+	case indexCompleteMsg:
+		parts := []string{}
+		if msg.indexed > 0 {
+			parts = append(parts, fmt.Sprintf("%d indexed", msg.indexed))
+		}
+		if msg.skipped > 0 {
+			parts = append(parts, fmt.Sprintf("%d unchanged", msg.skipped))
+		}
+		if msg.failed > 0 {
+			parts = append(parts, fmt.Sprintf("%d failed", msg.failed))
+		}
+		summary := "Index complete"
+		if len(parts) > 0 {
+			summary = "Index complete: " + strings.Join(parts, ", ")
+		}
+		if len(msg.warnings) > 0 {
+			summary += fmt.Sprintf(" [%d warning(s)]", len(msg.warnings))
+		}
+		m.setStatus(summary)
+		return m, nil
+
+	case linksScannedMsg:
+		if msg.err != nil {
+			m.setStatus("Link scan failed: " + msg.err.Error())
+		}
+		return m, nil
+
 	case searchResultMsg:
 		if msg.err != nil {
 			m.setStatus("Search failed: " + msg.err.Error())
@@ -1735,6 +1762,10 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		return m.handleAutoMetadataCommand(args)
 	case "search":
 		return m.handleSearchCommand(args)
+	case "index":
+		return m.handleIndexCommand(args)
+	case "tags":
+		return m.handleTagsCommand(args)
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit
@@ -2927,4 +2958,46 @@ func longestCommonPrefix(strs []string) string {
 		}
 	}
 	return prefix
+}
+
+func (m *Model) handleIndexCommand(args []string) tea.Cmd {
+	if m.meta == nil {
+		m.setStatus("Metadata store not available")
+		return nil
+	}
+	root := m.root
+	if len(args) > 0 && strings.ToLower(args[0]) == "here" {
+		root = m.cwd
+	}
+	if root == "" {
+		m.setStatus("No root directory configured")
+		return nil
+	}
+	m.setPersistentStatus(fmt.Sprintf("Indexing documents under %s...", root))
+	return indexAllCmd(root, m.meta, m.searchSkipDirs())
+}
+
+func (m *Model) handleTagsCommand(args []string) tea.Cmd {
+	if m.meta == nil {
+		m.setStatus("Metadata store not available")
+		return nil
+	}
+	ctx := context.Background()
+	tags, err := m.meta.AllTags(ctx)
+	if err != nil {
+		m.setStatus("Failed to list tags: " + err.Error())
+		return nil
+	}
+	if len(tags) == 0 {
+		m.setStatus("No tags found")
+		return nil
+	}
+	lines := make([]string, 0, len(tags)+1)
+	lines = append(lines, fmt.Sprintf("All tags (%d):", len(tags)))
+	for _, t := range tags {
+		lines = append(lines, "  "+t)
+	}
+	m.setCommandOutput(lines)
+	m.setPersistentStatus(fmt.Sprintf("Tags: %d unique (Esc/q closes)", len(tags)))
+	return nil
 }

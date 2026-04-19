@@ -122,7 +122,16 @@ CREATE TABLE IF NOT EXISTS metadata (
 	if err := s.ensureColumn("added_at", "INTEGER"); err != nil {
 		return err
 	}
-	return s.ensureColumn("last_opened_at", "INTEGER")
+	if err := s.ensureColumn("last_opened_at", "INTEGER"); err != nil {
+		return err
+	}
+	if err := s.initFTS(); err != nil {
+		return err
+	}
+	if err := s.initTags(); err != nil {
+		return err
+	}
+	return s.initLinks()
 }
 
 func (s *Store) ensureColumn(name, typ string) error {
@@ -193,7 +202,10 @@ ON CONFLICT(path) DO UPDATE SET
 `,
 		m.Path, m.Title, m.Author, m.Year, m.Published, m.URL, m.DOI, m.Abstract, m.Tag, state, favorite, toRead, addedAtUnix,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.SyncTags(ctx, m.Path, m.Tag)
 }
 
 type rowScanner interface {
@@ -368,7 +380,23 @@ func (s *Store) MovePath(ctx context.Context, oldPath, newPath string) error {
 	if oldPath == newPath {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE metadata SET path = ? WHERE path = ?`, newPath, oldPath)
+	if _, err := s.db.ExecContext(ctx, `UPDATE metadata SET path = ? WHERE path = ?`, newPath, oldPath); err != nil {
+		return err
+	}
+	// Migrate FTS index state, tags, and links to the new path.
+	if _, err := s.db.ExecContext(ctx, `UPDATE fts_index_state SET path = ? WHERE path = ?`, newPath, oldPath); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE fts_content SET path = ? WHERE path = ?`, newPath, oldPath); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE document_tags SET path = ? WHERE path = ?`, newPath, oldPath); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE document_links SET source = ? WHERE source = ?`, newPath, oldPath); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE document_links SET target = ? WHERE target = ?`, newPath, oldPath)
 	return err
 }
 
@@ -376,7 +404,12 @@ func (s *Store) DeletePath(ctx context.Context, path string) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM metadata WHERE path = ?`, path)
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM metadata WHERE path = ?`, path); err != nil {
+		return err
+	}
+	_ = s.DeleteFromIndex(ctx, path)
+	_ = s.DeleteOutlinks(ctx, path)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM document_tags WHERE path = ?`, path)
 	return err
 }
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -1097,6 +1098,31 @@ func (m Model) metadataPreviewLines(width int) []string {
 			lines = append(lines, m.formatDetailLine(field.label, field.value, contentWidth))
 		}
 	}
+
+	// Backlinks: show documents that link to this one via [[wikilinks]].
+	if m.meta != nil {
+		path := m.previewPath
+		if path == "" {
+			path = m.currentEntryPath()
+		}
+		if path != "" {
+			canonical := canonicalPath(path)
+			if canonical != "" {
+				ctx := context.Background()
+				backlinks, err := m.meta.GetBacklinks(ctx, canonical)
+				if err == nil && len(backlinks) > 0 {
+					lines = append(lines, "")
+					backlinkLabel := "Backlinks:"
+					lines = append(lines, backlinkLabel)
+					for _, bl := range backlinks {
+						name := strings.TrimSuffix(filepath.Base(bl), filepath.Ext(bl))
+						lines = append(lines, "  ← "+name)
+					}
+				}
+			}
+		}
+	}
+
 	return lines
 }
 

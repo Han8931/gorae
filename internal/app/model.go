@@ -653,6 +653,7 @@ func (m Model) entryIcon(isDir bool) string {
 	return "▣"
 }
 
+
 func (m Model) selectionIndicator() string {
 	if icon := strings.TrimSpace(m.iconSet.Selected); icon != "" {
 		return icon

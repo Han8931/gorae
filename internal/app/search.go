@@ -103,6 +103,13 @@ func performSearch(req searchRequest) (searchAggregate, string, error) {
 		return searchAggregate{}, "", fmt.Errorf("empty query")
 	}
 
+	// For content search, delegate to the FTS index when available.
+	if req.mode == searchModeContent && req.metaStore != nil {
+		if agg, summary, ok := tryFTSSearch(req); ok {
+			return agg, summary, nil
+		}
+	}
+
 	info, err := os.Stat(req.root)
 	if err != nil {
 		return searchAggregate{}, "", fmt.Errorf("search root: %w", err)
@@ -193,6 +200,43 @@ func formatSearchSummary(req searchRequest, agg searchAggregate) string {
 	return summary
 }
 
+// tryFTSSearch attempts a full-text search via the SQLite FTS5 index.
+// Returns (result, summary, true) on success, or (_, _, false) if the index is empty or unusable.
+func tryFTSSearch(req searchRequest) (searchAggregate, string, bool) {
+	ctx := context.Background()
+	count, err := req.metaStore.IndexedCount(ctx)
+	if err != nil || count == 0 {
+		return searchAggregate{}, "", false
+	}
+
+	matches, err := req.metaStore.SearchFTS(ctx, req.query, 200)
+	if err != nil {
+		// Invalid FTS5 query syntax or other error — fall back to file scan.
+		return searchAggregate{}, "", false
+	}
+
+	agg := searchAggregate{}
+	for _, fm := range matches {
+		snippet := strings.ReplaceAll(fm.Snippet, "\n", " ")
+		sm := searchMatch{
+			Path:       fm.Path,
+			Mode:       searchModeContent,
+			MatchCount: 1,
+			Snippets:   []string{snippet},
+		}
+		populateMatchDisplay(&sm, req.metaStore)
+		agg.matches = append(agg.matches, sm)
+		agg.filesMatched++
+		agg.totalMatches++
+	}
+
+	summary := fmt.Sprintf("Content search (FTS): %d file(s) matched [index: %d files]", agg.filesMatched, count)
+	if agg.filesMatched == 0 {
+		summary = fmt.Sprintf("Content search (FTS): no matches for %q [index: %d files]", req.query, count)
+	}
+	return agg, summary, true
+}
+
 func collectDocumentFiles(root string, skipDirs []string) ([]string, []string, error) {
 	files := make([]string, 0, 32)
 	warnings := make([]string, 0)
@@ -263,7 +307,7 @@ func collectDocumentFiles(root string, skipDirs []string) ([]string, []string, e
 		if strings.HasPrefix(name, ".") {
 			return nil
 		}
-		if ext := strings.ToLower(filepath.Ext(name)); ext == ".pdf" || ext == ".epub" {
+		if isBrowsableDocument(name) {
 			files = append(files, path)
 		}
 		return nil
@@ -679,14 +723,17 @@ func matchTags(stored, query string, caseSensitive bool) bool {
 		return false
 	}
 	for _, q := range queryTags {
+		qNorm := q
+		if !caseSensitive {
+			qNorm = strings.ToLower(q)
+		}
 		for _, t := range storedTags {
-			if caseSensitive {
-				if t == q {
-					return true
-				}
-				continue
+			tNorm := t
+			if !caseSensitive {
+				tNorm = strings.ToLower(t)
 			}
-			if strings.EqualFold(t, q) {
+			// Exact match or prefix match: query "ml" matches stored "ml/transformers".
+			if tNorm == qNorm || strings.HasPrefix(tNorm, qNorm+"/") || strings.Contains(tNorm, qNorm) {
 				return true
 			}
 		}

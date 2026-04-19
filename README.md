@@ -4,7 +4,7 @@
   <img src="assets/gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI librarian for PDFs and EPUBs**—fast browsing, solid metadata, quick search, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, and EndNote**.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown**—fast browsing, solid metadata, instant full-text search, bidirectional links, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
@@ -20,6 +20,9 @@
 - 📌 **To-read queue**: stash papers for later.
 - 🕮 **Reading states**: *Unread / Reading / Read* tracked via metadata.
 - 🔎 **Search**: metadata + full-text search with previews/snippets.
+- ⚡ **FTS5 instant search**: index your library once with `:index`; content search becomes instant and ranked, no `pdftotext` on every query.
+- 🏷️ **Hierarchical tags**: multi-tag support with prefix matching (`ml/` matches `ml/cnn`, `ml/transformers`).
+- 🔗 **Bidirectional links**: write `[[document name]]` in any Markdown note to link documents; backlinks appear in the info pane automatically.
 - 🖼️ **PDF image preview**: first-page previews inside the preview pane, with terminal-aware rendering paths.
 - 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
 - ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
@@ -77,6 +80,36 @@ You can scope the search with flags:
 - `/ -y 2023`
 - `/ -c attention`
 - `/ --tag llm,graph`
+
+### ⚡ Full-text index (FTS)
+
+Content search (`-c`) uses the **FTS5 index** when available — instant, ranked results with no external tools required. Build the index once, then keep it fresh:
+
+```
+:index          index all documents under the watch root
+:index here     index only the current directory
+```
+
+Files are skipped automatically when their size hasn't changed, so re-indexing is fast. The index supports **stemming** (searching "running" also finds "run") via SQLite's built-in porter tokenizer.
+
+> Without an index, content search falls back to scanning files with `pdftotext` as before.
+
+### 🏷️ Tags
+
+Tags are stored as comma-separated values in the metadata editor and normalized into a dedicated table for fast lookup. Browse all tags with:
+
+```
+:tags
+```
+
+Hierarchical tags (`ml/transformers`, `ml/cnn`) are supported — searching for `ml/` matches all tags under that prefix.
+
+### 🔗 Bidirectional links (Markdown)
+
+In any Markdown file, write `[[filename]]` to link to another document by name. Run `:index` to resolve those links and build the link graph. After indexing:
+
+- **Backlinks** appear at the bottom of the info pane for every document that other files point to.
+- Links are resolved case-insensitively by filename (with or without extension).
 
 ## Install
 
@@ -200,11 +233,20 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 
 ### New Features and Todo
 
-* [ ] Open URL 
+* [ ] Open URL
 * [ ] ToDo management
 * [ ] Vault warden for cloud support
 * [ ] WebServer
 * [ ] Trash
+
+### Knowledge base (in progress)
+
+* [x] **FTS5 full-text index** — instant ranked content search via `:index`
+* [x] **Hierarchical multi-tag table** — normalized tags with prefix matching and `:tags` browser
+* [x] **Bidirectional links** — `[[wikilinks]]` in Markdown with backlinks in the info pane
+* [ ] **Semantic / vector search** — embeddings via local model (ollama) stored in SQLite
+* [ ] **AI Q&A over collection** — RAG: ask a question, get an answer citing your own documents
+* [ ] **Citation network** — auto-fetch citation relationships from DOIs via Semantic Scholar
 
 ### AI features (planned)
 

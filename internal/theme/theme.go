@@ -235,7 +235,7 @@ func Default() Theme {
 			Reading:   "▶",
 			Unread:    "○",
 			Folder:    "▸",
-			PDF:       "▣",
+			PDF:       "§",
 			Selected:  "✔",
 			Selection: "▌",
 		},
@@ -347,13 +347,15 @@ func (t Theme) IconSet() IconSet {
 			Read:      "v",
 			Reading:   ">",
 			Unread:    "o",
-			Folder:    "[D]",
-			PDF:       "[F]",
+			Folder:    "d",
+			PDF:       "p",
 			Selected:  "*",
 			Selection: "|",
 		}
 	case "off":
-		base = IconSet{}
+		base = IconSet{
+			PDF: " ",
+		}
 	default:
 		// unicode default
 		base = IconSet{
@@ -363,7 +365,7 @@ func (t Theme) IconSet() IconSet {
 			Reading:   "▶",
 			Unread:    "○",
 			Folder:    "",
-			PDF:       "▣",
+			PDF:       "§",
 			Selected:  "✔",
 			Selection: "▌",
 		}

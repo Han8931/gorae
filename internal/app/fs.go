@@ -16,6 +16,20 @@ import (
 	"gorae/internal/meta"
 )
 
+func isMarkdown(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdown", ".mkd", ".mkdn":
+		return true
+	default:
+		return false
+	}
+}
+
+
+func isBrowsableDocument(path string) bool {
+	return isPDF(path) || isEPUB(path) || isMarkdown(path)
+}
+
 func (m *Model) loadEntries() {
 	needSyncRecent := false
 	if info, err := os.Stat(m.cwd); err == nil {
@@ -80,9 +94,7 @@ func (m *Model) loadEntries() {
 		}
 
 		if !e.IsDir() {
-			name := strings.ToLower(e.Name())
-			ext := filepath.Ext(name)
-			if ext != ".pdf" && ext != ".epub" {
+			if !isBrowsableDocument(e.Name()) {
 				continue
 			}
 		}
