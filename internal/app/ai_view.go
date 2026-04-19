@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"gorae/internal/ai"
 )
@@ -20,11 +21,23 @@ func (m Model) renderGoraeView() string {
 		height = 24
 	}
 
-	// Layout: status bar (1) + input bar (1) + borders/padding = ~4 overhead
+	// Build overlay lines shown between separator and input.
+	var overlayLines []string
+	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
+		overlayLines = m.buildFindOverlay(width)
+	} else if !m.aiStreaming {
+		muted := m.styles.Preview.Body
+		accent := m.styles.StatusValue
+		bright := m.styles.Preview.Info
+		overlayLines = m.goraeCommandHint(muted, accent, bright)
+	}
+
+	// Layout: status(1) + input(1) + separator(1) + overlay + padding(1)
 	const inputRows = 1
 	const statusRows = 1
-	const paddingRows = 2
-	chatHeight := height - inputRows - statusRows - paddingRows
+	const sepRows = 1
+	const paddingRows = 1
+	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - len(overlayLines)
 	if chatHeight < 3 {
 		chatHeight = 3
 	}
@@ -62,9 +75,14 @@ func (m Model) renderGoraeView() string {
 		fmt.Fprintln(&b, line)
 	}
 
-	// Divider
+	// Separator
 	b.WriteString(m.styles.Separator.Render(strings.Repeat("─", width)))
 	b.WriteString("\n")
+
+	// Overlay (find results or command hints) above the input row
+	for _, ol := range overlayLines {
+		fmt.Fprintln(&b, ol)
+	}
 
 	// Input row
 	if m.aiStreaming {
@@ -83,6 +101,41 @@ func (m Model) renderGoraeView() string {
 	return b.String()
 }
 
+// renderThinkingBlock renders a collapsible thinking section.
+// When expanded=false it shows only the "▶ Thinking…" header line.
+// When expanded=true it shows the full content, like Claude's expanded view.
+func (m Model) renderThinkingBlock(thinking string, wrapW int, expanded bool) []string {
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#777777")).Italic(true)
+	thinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+
+	// Count lines of content for the collapsed summary
+	contentLines := strings.Count(strings.TrimSpace(thinking), "\n") + 1
+
+	var lines []string
+	if !expanded {
+		label := fmt.Sprintf("▶  Thinking… (%d lines)  Ctrl+T to expand", contentLines)
+		lines = append(lines, "   "+headerStyle.Render(label))
+		return lines
+	}
+
+	// Expanded view
+	lines = append(lines, "   "+headerStyle.Render("▼  Thinking  (Ctrl+T to collapse)"))
+	lines = append(lines, "   "+borderStyle.Render(strings.Repeat("╌", wrapW)))
+	for _, pl := range renderMarkdownCustom(thinking, wrapW-2, m.styles.Markdown) {
+		lines = append(lines, "   "+thinkStyle.Render(stripANSI(pl.text)))
+	}
+	lines = append(lines, "   "+borderStyle.Render(strings.Repeat("╌", wrapW)))
+	return lines
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 var goraeCommandDescs = []struct{ name, desc string }{
 	{"/find", "find files by title or filename"},
 	{"/select", "clear focused file"},
@@ -94,7 +147,6 @@ var goraeCommandDescs = []struct{ name, desc string }{
 }
 
 func (m Model) buildChatLines(width int) []string {
-	userStyle := m.styles.Preview.Info
 	assistantStyle := m.styles.Preview.Body
 	labelUserStyle := m.styles.StatusLabel
 	labelAIStyle := m.styles.StatusValue
@@ -113,13 +165,22 @@ func (m Model) buildChatLines(width int) []string {
 		for _, msg := range m.aiMessages {
 			switch msg.Role {
 			case ai.RoleUser:
-				lines = append(lines, labelUserStyle.Render(" YOU ")+" "+userStyle.Render(""))
+				chatUserStyle := m.styles.ChatUser
+				lines = append(lines, labelUserStyle.Render(" YOU "))
 				for _, l := range wrapTextToWidth(msg.Content, wrapW) {
-					lines = append(lines, "       "+userStyle.Render(l))
+					pad := wrapW - runewidth.StringWidth(l)
+					if pad < 0 {
+						pad = 0
+					}
+					padded := l + strings.Repeat(" ", pad)
+					lines = append(lines, "  "+chatUserStyle.Render(" "+padded+" "))
 				}
 				lines = append(lines, "")
 			case ai.RoleAssistant:
 				lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
+				if msg.Thinking != "" {
+					lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
+				}
 				for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
 					lines = append(lines, "   "+pl.text)
 				}
@@ -128,43 +189,47 @@ func (m Model) buildChatLines(width int) []string {
 		}
 
 		// Streaming buffer
-		if m.aiStreaming && m.aiStreamBuf != "" {
+		if m.aiStreaming {
 			lines = append(lines, labelAIStyle.Render(" GORAE ")+" ")
-			for _, pl := range renderMarkdownCustom(m.aiStreamBuf, wrapW, m.styles.Markdown) {
-				lines = append(lines, "   "+pl.text)
+			if m.aiThinkBuf != "" {
+				lines = append(lines, m.renderThinkingBlock(m.aiThinkBuf, wrapW, m.aiShowThinking)...)
+			}
+			if m.aiStreamBuf != "" {
+				for _, pl := range renderMarkdownCustom(m.aiStreamBuf, wrapW, m.styles.Markdown) {
+					lines = append(lines, "   "+pl.text)
+				}
 			}
 		}
 	}
 
-	// Interactive search selection list
-	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, assistantStyle.Render("  Select a file  (↑/↓ navigate · Enter select · Esc cancel)"))
-		lines = append(lines, "")
-		for i, r := range m.aiSearchResults {
-			if i == m.aiSearchCursor {
-				marker := labelAIStyle.Render(" ▶ ")
-				title := userStyle.Render(r.Title)
-				fname := assistantStyle.Render("     " + filepath.Base(r.Path))
-				lines = append(lines, marker+title)
-				lines = append(lines, fname)
-			} else {
-				title := assistantStyle.Render("     " + r.Title)
-				fname := assistantStyle.Render("       " + filepath.Base(r.Path))
-				lines = append(lines, title)
-				lines = append(lines, fname)
-			}
-		}
-		lines = append(lines, "")
+	return lines
+}
+
+// buildFindOverlay renders the live /find results as an fzf-style bottom overlay.
+func (m Model) buildFindOverlay(width int) []string {
+	labelStyle := m.styles.StatusValue
+	titleStyle := m.styles.Preview.Info
+	mutedStyle := m.styles.Preview.Body
+	cursorStyle := m.styles.StatusLabel
+
+	wrapW := width - 6
+	if wrapW < 20 {
+		wrapW = 20
 	}
 
-	// Command hint: show when input starts with "/" and no space yet
-	if !m.aiStreaming && !m.aiSearchSelecting {
-		if hint := m.goraeCommandHint(assistantStyle, labelAIStyle, userStyle); len(hint) > 0 {
-			lines = append(lines, hint...)
+	var lines []string
+	lines = append(lines, mutedStyle.Render("  ↑/↓ navigate · Enter select · Esc cancel"))
+	for i, r := range m.aiSearchResults {
+		title := runewidth.Truncate(r.Title, wrapW-4, "…")
+		fname := runewidth.Truncate(filepath.Base(r.Path), wrapW-6, "…")
+		if i == m.aiSearchCursor {
+			lines = append(lines, "  "+cursorStyle.Render(" ▶ ")+labelStyle.Render(" "+title+" "))
+			lines = append(lines, "      "+mutedStyle.Render(fname))
+		} else {
+			lines = append(lines, "      "+titleStyle.Render(title))
+			lines = append(lines, "        "+mutedStyle.Render(fname))
 		}
 	}
-
 	return lines
 }
 

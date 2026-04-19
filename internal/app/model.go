@@ -168,13 +168,17 @@ type Model struct {
 	aiMessages      []ai.Message // full conversation history
 	aiInput         textinput.Model
 	aiStreaming     bool
-	aiStreamBuf     string   // tokens accumulating for the current assistant turn
+	aiRawBuf        string // raw stream including <think> tags
+	aiStreamBuf     string // display content (outside <think> blocks)
+	aiThinkBuf      string // thinking content (inside <think> blocks) for current turn
+	aiShowThinking  bool   // ctrl+t toggles visibility of thinking blocks
 	aiSources       []string // document paths cited in last answer
 	aiChatScroll    int
 	aiClient        *ai.Client
-	aiSearchResults   []meta.NameMatch     // last /search results
-	aiSearchSelecting bool                 // true while the user is picking from results
-	aiSearchCursor    int                  // highlighted row in the selection list
+	aiSearchResults   []meta.NameMatch     // live find results shown in overlay
+	aiSearchSelecting bool                 // true while the find overlay is active
+	aiSearchCursor    int                  // highlighted row in the overlay
+	aiLiveQuery       string               // last query sent to live find
 	aiFocusedFile     string               // path selected; injected as context
 	aiCancelFunc        context.CancelFunc   // cancels the in-flight request
 	aiSpinnerFrame      int                  // current spinner animation frame

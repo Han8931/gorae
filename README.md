@@ -318,33 +318,48 @@ Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
 
 | Key | Action |
 |---|---|
-| `Enter` | Send message |
-| `↑` / `↓` | Browse input history (previously sent messages) |
+| `Enter` | Send message / select file |
+| `↑` / `↓` | Browse input history · navigate `/find` results |
 | `Tab` | Autocomplete `/` command |
-| `Esc` | Stop streaming · cancel file picker · exit |
+| `Ctrl+T` | Toggle reasoning display (expand/collapse `<think>` blocks) |
+| `Esc` | Stop streaming · cancel `/find` · exit |
 | `Ctrl+P` / `Ctrl+N` | Scroll chat up / down |
 | `PgUp` / `PgDn` | Scroll chat half a page |
 
 ### In-chat commands
 
-Type `/` to see a live filtered list of available commands.
+Type `/` to see a live-filtered command list at the bottom of the screen.
 
 | Command | Description |
 |---|---|
-| `/find <query>` | Find files by title or filename; navigate results with ↑/↓, select with Enter |
+| `/find <query>` | Live fzf-style file picker — results update as you type |
 | `/select` | Clear the currently focused file |
+| `/summarize` | Summarize the focused file and save to its note |
 | `/sources` | Show documents cited in the last answer |
 | `/clear` | Clear conversation history |
 | `/export` | Save conversation to a Markdown file in `notes_dir` |
-| `/help` | Show help |
+| `/help` | Show help and all keybindings |
 
-### Focusing a file
+### Live file finder (`/find`)
 
-`/find` opens an interactive file picker. Once a file is selected it becomes the **focused file**: its full indexed text is injected as primary context for every subsequent question, in addition to the normal RAG results. The status bar shows `focus: filename.pdf` while a file is focused. Use `/select` to clear it.
+Start typing `/find <query>` and a file picker appears at the bottom of the screen, updating results on every keystroke — no Enter needed to search. Use `↑`/`↓` to move through results, `Enter` to select, `Esc` to cancel.
+
+Once a file is selected it becomes the **focused file**: its full indexed text is injected as primary context for every subsequent question, in addition to the normal RAG results. The status bar shows `focus: filename` while a file is active. Use `/select` to clear it.
+
+### Reasoning / thinking display
+
+Gorae supports models that expose their internal reasoning via `<think>…</think>` blocks (e.g. **DeepSeek-R1**, **Qwen3**, **QwQ**). When such a model is used:
+
+- A collapsed `▶ Thinking… (N lines)` indicator always appears above the response.
+- Press **`Ctrl+T`** to expand the full reasoning trace; press again to collapse.
+- Thinking content streams live, just like the response.
+- The status bar shows `[think:on]` when the expanded view is active.
+
+Standard models (GPT-4o, Llama, Mistral, etc.) that do not emit `<think>` blocks are unaffected.
 
 ### Markdown rendering
 
-AI responses are rendered with terminal Markdown: **bold**, `code`, headings, blockquotes, fenced code blocks, and tables all display with theme-appropriate colors.
+AI responses are rendered with terminal Markdown: **bold**, `code`, headings, blockquotes, fenced code blocks, and tables all display with theme-appropriate colors. Long lines are word-wrapped to fit the terminal width.
 
 ---
 
@@ -376,7 +391,9 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 * [ ] Text extraction / OCR
 * [ ] TTS
 * [ ] AI chat session management
-* [ ] /summarize command summarize and adds output to a note directly
+* [x] `/summarize` command — streams summary and saves to the file's note
+* [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
+* [x] Live `/find` file picker — fzf-style, results update as you type
 * [ ] Semantic search in Gorae mode
 * [ ] Prompt management
 

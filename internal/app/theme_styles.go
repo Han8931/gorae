@@ -45,6 +45,7 @@ type viewStyles struct {
 	Border      lipgloss.Style
 	SepChar     string
 	Markdown    mdStyles
+	ChatUser    lipgloss.Style
 }
 
 type borderCharset struct {
@@ -98,6 +99,9 @@ func newViewStyles(th theme.Theme) viewStyles {
 			HR:         styleFromSpec(palette, th.Components.Markdown.HR),
 			Body:       styleFromSpec(palette, th.Components.PreviewBody),
 		},
+		ChatUser: lipgloss.NewStyle().
+			Background(lipgloss.Color("#2a2a2a")).
+			Foreground(lipgloss.Color("#e8e8e8")),
 	}
 }
 

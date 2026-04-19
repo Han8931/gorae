@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"gorae/internal/meta"
 )
@@ -373,33 +374,48 @@ func wrapTextToWidth(text string, width int) []string {
 	}
 	var lines []string
 	current := ""
+	currentW := 0
 	appendCurrent := func() {
 		if current != "" {
 			lines = append(lines, current)
 			current = ""
+			currentW = 0
 		}
 	}
 	for _, word := range words {
-		wordRunes := []rune(word)
-		if runeLen(word) > width {
+		ww := runewidth.StringWidth(word)
+		if ww > width {
+			// Force-break the oversized word at display-column boundaries.
 			appendCurrent()
-			for len(wordRunes) > width {
-				lines = append(lines, string(wordRunes[:width]))
-				wordRunes = wordRunes[width:]
+			runes := []rune(word)
+			col := 0
+			start := 0
+			for i, r := range runes {
+				cw := runewidth.RuneWidth(r)
+				if col+cw > width {
+					lines = append(lines, string(runes[start:i]))
+					start = i
+					col = 0
+				}
+				col += cw
 			}
-			current = string(wordRunes)
+			current = string(runes[start:])
+			currentW = col
 			continue
 		}
 		if current == "" {
 			current = word
+			currentW = ww
 			continue
 		}
-		candidate := current + " " + word
-		if runeLen(candidate) > width {
+		// +1 for the space separator
+		if currentW+1+ww > width {
 			lines = append(lines, current)
 			current = word
+			currentW = ww
 		} else {
-			current = candidate
+			current = current + " " + word
+			currentW = currentW + 1 + ww
 		}
 	}
 	appendCurrent()

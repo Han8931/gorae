@@ -30,8 +30,9 @@ const (
 )
 
 type Message struct {
-	Role    Role   `json:"role"`
-	Content string `json:"content"`
+	Role     Role   `json:"role"`
+	Content  string `json:"content"`
+	Thinking string `json:"-"` // reasoning content from <think>…</think>; not sent to API
 }
 
 type Client struct {

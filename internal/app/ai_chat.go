@@ -41,6 +41,25 @@ type aiSourcesMsg struct {
 	paths []string
 }
 
+type aiLiveFindMsg struct {
+	query   string
+	results []meta.NameMatch
+}
+
+func (m *Model) doLiveFind(query string) tea.Cmd {
+	store := m.meta
+	return func() tea.Msg {
+		if store == nil || strings.TrimSpace(query) == "" {
+			return aiLiveFindMsg{query: query}
+		}
+		results, err := store.SearchByName(context.Background(), query, 8)
+		if err != nil {
+			return aiLiveFindMsg{query: query}
+		}
+		return aiLiveFindMsg{query: query, results: results}
+	}
+}
+
 // ── entry / exit ──────────────────────────────────────────────────────────────
 
 func (m *Model) enterGoraeChat() tea.Cmd {
@@ -109,6 +128,9 @@ func (m *Model) goraeSelectCurrent() {
 	chosen := m.aiSearchResults[m.aiSearchCursor]
 	m.aiFocusedFile = chosen.Path
 	m.aiSearchSelecting = false
+	m.aiSearchResults = nil
+	m.aiLiveQuery = ""
+	m.aiInput.SetValue("")
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
@@ -119,6 +141,9 @@ func (m *Model) updateGoraeStatus(modelName string) {
 	status := "Gorae AI  model:" + modelName + "  Esc to exit"
 	if m.aiFocusedFile != "" {
 		status += "  focus:" + filepath.Base(m.aiFocusedFile)
+	}
+	if m.aiShowThinking {
+		status += "  [think:on]"
 	}
 	m.setPersistentStatus(status)
 }
@@ -175,6 +200,12 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.goraeHistoryForward()
 			return m, nil
+		case "ctrl+t":
+			m.aiShowThinking = !m.aiShowThinking
+			if m.aiClient != nil {
+				m.updateGoraeStatus(m.aiClient.Model())
+			}
+			return m, nil
 		case "ctrl+p":
 			m.aiChatScroll--
 			if m.aiChatScroll < 0 {
@@ -219,6 +250,17 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.aiSources = msg.paths
 		return m, nil
 
+	case aiLiveFindMsg:
+		// Discard stale results from a previous query
+		if msg.query == m.aiLiveQuery {
+			m.aiSearchResults = msg.results
+			m.aiSearchSelecting = len(msg.results) > 0
+			if m.aiSearchCursor >= len(msg.results) {
+				m.aiSearchCursor = 0
+			}
+		}
+		return m, nil
+
 	case goraeSpinnerTickMsg:
 		if m.aiStreaming {
 			m.aiSpinnerFrame = (m.aiSpinnerFrame + 1) % len(spinnerFrames)
@@ -230,6 +272,25 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var inputCmd tea.Cmd
 	m.aiInput, inputCmd = m.aiInput.Update(msg)
 	cmds = append(cmds, inputCmd)
+
+	// Live /find: trigger search whenever the query part changes.
+	if !m.aiStreaming {
+		val := m.aiInput.Value()
+		const findPrefix = "/find "
+		if strings.HasPrefix(strings.ToLower(val), findPrefix) {
+			query := strings.TrimSpace(val[len(findPrefix):])
+			if query != m.aiLiveQuery {
+				m.aiLiveQuery = query
+				cmds = append(cmds, m.doLiveFind(query))
+			}
+		} else if m.aiSearchSelecting {
+			// Input no longer starts with "/find " — clear overlay
+			m.aiSearchSelecting = false
+			m.aiSearchResults = nil
+			m.aiLiveQuery = ""
+		}
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -351,6 +412,14 @@ Gorae AI slash commands:
   /sources    — show documents cited in the last answer
   /help       — this help text
 
+Keyboard shortcuts:
+  Ctrl+T      — toggle thinking / reasoning display
+  Ctrl+P/N    — scroll chat up / down
+  PgUp/PgDn   — scroll half a page
+  ↑/↓         — browse input history
+  Tab         — autocomplete / command
+  Esc         — exit
+
 Press Esc or Ctrl+C to exit.`)
 }
 
@@ -393,7 +462,9 @@ func (m *Model) startSummarize() tea.Cmd {
 	m.aiHistoryCursor = -1
 	m.aiChatScroll = 1<<31 - 1
 	m.aiStreaming = true
+	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
+	m.aiThinkBuf = ""
 	m.aiSpinnerFrame = 0
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -493,7 +564,9 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	m.aiHistoryDraft = ""
 	m.aiChatScroll = 1<<31 - 1 // scroll to bottom
 	m.aiStreaming = true
+	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
+	m.aiThinkBuf = ""
 	m.aiSpinnerFrame = 0
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -509,7 +582,11 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
 
-		sources, docContext := goraeRetrieveContext(ctx, store, cfg, userText)
+		var sources []string
+		var docContext string
+		if needsRAG(userText) {
+			sources, docContext = goraeRetrieveContext(ctx, store, cfg, userText)
+		}
 
 		// Prepend focused file content if set.
 		if focusedFile != "" && store != nil {
@@ -571,24 +648,56 @@ func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
 		m.flushStreamBuf()
 		return nil
 	}
-	m.aiStreamBuf += tok.text
+	m.aiRawBuf += tok.text
+	m.aiStreamBuf, m.aiThinkBuf = parseThinkBlocks(m.aiRawBuf)
 	return pumpTokenCmd(tok.ch)
 }
 
 func (m *Model) flushStreamBuf() {
-	if m.aiStreamBuf == "" {
+	if m.aiRawBuf == "" {
 		return
 	}
-	content := m.aiStreamBuf
+	display, thinking := parseThinkBlocks(m.aiRawBuf)
 	m.aiMessages = append(m.aiMessages, ai.Message{
-		Role:    ai.RoleAssistant,
-		Content: content,
+		Role:     ai.RoleAssistant,
+		Content:  display,
+		Thinking: thinking,
 	})
+	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
+	m.aiThinkBuf = ""
 	if m.aiSummarizeTarget != "" {
-		m.saveSummaryToNote(m.aiSummarizeTarget, content)
+		m.saveSummaryToNote(m.aiSummarizeTarget, display)
 		m.aiSummarizeTarget = ""
 	}
+}
+
+// parseThinkBlocks splits raw streamed text into display content (outside
+// <think>…</think> blocks) and thinking content (inside those blocks).
+func parseThinkBlocks(raw string) (display, thinking string) {
+	var dispBuf, thinkBuf strings.Builder
+	rest := raw
+	for {
+		openIdx := strings.Index(rest, "<think>")
+		if openIdx < 0 {
+			dispBuf.WriteString(rest)
+			break
+		}
+		dispBuf.WriteString(rest[:openIdx])
+		rest = rest[openIdx+len("<think>"):]
+		closeIdx := strings.Index(rest, "</think>")
+		if closeIdx < 0 {
+			// Still streaming inside a think block
+			thinkBuf.WriteString(rest)
+			break
+		}
+		if thinkBuf.Len() > 0 {
+			thinkBuf.WriteString("\n\n")
+		}
+		thinkBuf.WriteString(strings.TrimSpace(rest[:closeIdx]))
+		rest = rest[closeIdx+len("</think>"):]
+	}
+	return strings.TrimLeft(dispBuf.String(), "\n"), thinkBuf.String()
 }
 
 func (m *Model) appendAISystem(text string) {
@@ -599,6 +708,32 @@ func (m *Model) appendAISystem(text string) {
 }
 
 // ── RAG helpers ───────────────────────────────────────────────────────────────
+
+// needsRAG returns false for short conversational messages that don't benefit
+// from document retrieval (greetings, thanks, simple yes/no replies, etc.).
+// Skipping RAG for these eliminates the FTS search latency and keeps the
+// prompt small, so time-to-first-token is much faster.
+func needsRAG(text string) bool {
+	words := strings.Fields(text)
+	if len(words) <= 3 {
+		return false
+	}
+	// Common purely-conversational patterns
+	lower := strings.ToLower(strings.TrimRight(text, "!?."))
+	conversational := []string{
+		"hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
+		"sure", "yes", "no", "nope", "yep", "got it", "i see",
+		"sounds good", "great", "nice", "cool", "perfect",
+		"bye", "goodbye", "see you", "good morning", "good evening",
+		"good afternoon", "how are you", "what's up", "whats up",
+	}
+	for _, phrase := range conversational {
+		if lower == phrase {
+			return false
+		}
+	}
+	return true
+}
 
 func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string) ([]string, string) {
 	if store == nil {
