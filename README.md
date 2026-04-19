@@ -4,7 +4,7 @@
   <img src="assets/gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown**—fast browsing, solid metadata, instant full-text search, bidirectional links, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown**—fast browsing, solid metadata, instant full-text search, bidirectional links, and a built-in AI assistant—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
@@ -27,6 +27,7 @@
 - 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
 - ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
 - 🎨 **Themeable UI**: colors, glyphs, borders — plus helper folders usable in any file manager.
+- 🤖 **AI assistant** *(new in v2.0)*: RAG-powered chat over your library via `:gorae` — streaming responses, reasoning trace display, and a live fzf-style file picker. Works with OpenAI, Ollama, and any OpenAI-compatible endpoint.
 
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
