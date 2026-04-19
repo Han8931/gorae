@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,22 +22,33 @@ const (
 	colorBold  = "\033[1m"
 )
 
+// AIConfig holds settings for the AI chat feature (:gorae).
+type AIConfig struct {
+	Provider     string `json:"provider,omitempty"`
+	Model        string `json:"model,omitempty"`
+	APIKey       string `json:"api_key"`
+	BaseURL      string `json:"base_url"`
+	TopK         int    `json:"top_k,omitempty"`
+	SystemPrompt string `json:"system_prompt"`
+}
+
 type Config struct {
-	WatchDir            string `json:"watch_dir"`
-	MetaDir             string `json:"meta_dir"`
-	RecentlyAddedDir    string `json:"recent_dir,omitempty"` // keep legacy key for compatibility
-	RecentlyAddedDays   int    `json:"recent_days,omitempty"`
-	RecentlyOpenedDir   string `json:"recently_opened_dir,omitempty"`
-	RecentlyOpenedLimit int    `json:"recently_opened_limit,omitempty"`
-	Editor              string `json:"editor,omitempty"`
-	PDFViewer           string `json:"pdf_viewer,omitempty"`
-	NotesDir            string `json:"notes_dir,omitempty"`
-	ThemePath           string `json:"theme_path,omitempty"`
-	EnableMouse         bool   `json:"enable_mouse"`
+	WatchDir            string    `json:"watch_dir"`
+	MetaDir             string    `json:"meta_dir"`
+	RecentlyAddedDir    string    `json:"recent_dir,omitempty"` // keep legacy key for compatibility
+	RecentlyAddedDays   int       `json:"recent_days,omitempty"`
+	RecentlyOpenedDir   string    `json:"recently_opened_dir,omitempty"`
+	RecentlyOpenedLimit int       `json:"recently_opened_limit,omitempty"`
+	Editor              string    `json:"editor,omitempty"`
+	PDFViewer           string    `json:"pdf_viewer,omitempty"`
+	NotesDir            string    `json:"notes_dir,omitempty"`
+	ThemePath           string    `json:"theme_path,omitempty"`
+	EnableMouse         bool      `json:"enable_mouse"`
+	AI                  *AIConfig `json:"ai,omitempty"`
 
 	// Runtime-only fields (not persisted)
-	ConfigPath    string `json:"-"`
-	NeedsConfirm  bool   `json:"-"`
+	ConfigPath   string `json:"-"`
+	NeedsConfirm bool   `json:"-"`
 }
 
 const (
@@ -157,16 +169,159 @@ func legacyThemePath() (string, error) {
 	return filepath.Join(cfgHome, "go-pdf", "theme.toml"), nil
 }
 
+// DefaultAIConfig returns a ready-to-edit AIConfig with placeholder values so
+// every field appears in the saved JSON instead of being omitted.
+func DefaultAIConfig() *AIConfig {
+	return &AIConfig{
+		Provider:     "ollama",
+		Model:        "llama3.2",
+		APIKey:       "",
+		BaseURL:      "",
+		TopK:         3,
+		SystemPrompt: "",
+	}
+}
+
+// stripJSONComments removes // line comments and /* block comments */ so the
+// config file can be written as JSONC and still parsed by encoding/json.
+func stripJSONComments(src []byte) []byte {
+	var out bytes.Buffer
+	inStr := false
+	i := 0
+	for i < len(src) {
+		c := src[i]
+		if inStr {
+			out.WriteByte(c)
+			if c == '\\' && i+1 < len(src) {
+				i++
+				out.WriteByte(src[i])
+			} else if c == '"' {
+				inStr = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			out.WriteByte(c)
+			i++
+			continue
+		}
+		if c == '/' && i+1 < len(src) {
+			if src[i+1] == '/' {
+				for i < len(src) && src[i] != '\n' {
+					i++
+				}
+				continue
+			}
+			if src[i+1] == '*' {
+				i += 2
+				for i+1 < len(src) {
+					if src[i] == '*' && src[i+1] == '/' {
+						i += 2
+						break
+					}
+					i++
+				}
+				continue
+			}
+		}
+		out.WriteByte(c)
+		i++
+	}
+	return out.Bytes()
+}
+
+// writeDefaultConfig writes the initial config.json with inline comments so
+// new users see every option explained without having to read the docs.
+func writeDefaultConfig(path string, cfg *Config) error {
+	tmpl := `{
+  // Directory Gorae watches for documents (PDFs, EPUBs, Markdown).
+  "watch_dir": %q,
+
+  // Directory where metadata, the FTS index, notes, and the SQLite DB are stored.
+  "meta_dir": %q,
+
+  // Recently-added virtual folder inside watch_dir.
+  "recent_dir": %q,
+
+  // How many days back "recently added" looks.
+  "recent_days": %d,
+
+  // Recently-read virtual folder inside watch_dir.
+  "recently_opened_dir": %q,
+
+  // How many files to keep in the recently-read list.
+  "recently_opened_limit": %d,
+
+  // Text editor used for :config and metadata editing.
+  "editor": %q,
+
+  // PDF viewer command. Gorae auto-detects zathura/sioyek/open/xdg-open.
+  "pdf_viewer": %q,
+
+  // Directory for plain-text / Markdown notes (linked to documents).
+  "notes_dir": %q,
+
+  // Path to a custom theme.toml. Leave empty to use the built-in theme.
+  "theme_path": %q,
+
+  // Set to true to enable mouse support.
+  "enable_mouse": %v,
+
+  // ── AI chat (:gorae) ────────────────────────────────────────────────────────
+  "ai": {
+    // Provider: "openai" | "ollama" | "custom"
+    //   openai  → uses https://api.openai.com/v1
+    //   ollama  → uses http://localhost:11434/v1  (no api_key needed)
+    //   custom  → requires base_url
+    "provider": "ollama",
+
+    // Model name served by the provider.
+    //   Ollama examples : "llama3.2", "mistral", "gemma3"
+    //   OpenAI examples : "gpt-4o-mini", "gpt-4o"
+    "model": "llama3.2",
+
+    // API key — required for OpenAI / custom providers; leave empty for Ollama.
+    "api_key": "",
+
+    // Override the provider's default endpoint. Leave empty to use the default.
+    "base_url": "",
+
+    // Number of document chunks injected into every query as context (default 3).
+    "top_k": 3,
+
+    // Optional system prompt prepended before the RAG context block.
+    "system_prompt": ""
+  }
+}
+`
+	content := fmt.Sprintf(tmpl,
+		cfg.WatchDir,
+		cfg.MetaDir,
+		cfg.RecentlyAddedDir,
+		cfg.RecentlyAddedDays,
+		cfg.RecentlyOpenedDir,
+		cfg.RecentlyOpenedLimit,
+		cfg.Editor,
+		cfg.PDFViewer,
+		cfg.NotesDir,
+		cfg.ThemePath,
+		cfg.EnableMouse,
+	)
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
 func LoadOrInit() (*Config, error) {
 	path, err := defaultConfigPath()
 	if err != nil {
 		return nil, err
 	}
 
-	// existing config
+	// existing config — strip JSONC comments before parsing
 	if data, err := os.ReadFile(path); err == nil {
 		var cfg Config
-		if err := json.Unmarshal(data, &cfg); err != nil {
+		if err := json.Unmarshal(stripJSONComments(data), &cfg); err != nil {
 			return nil, err
 		}
 		cfg.ConfigPath = path
@@ -257,7 +412,7 @@ func LoadOrInit() (*Config, error) {
 		return nil, err
 	}
 
-	if err := writeConfig(path, cfg); err != nil {
+	if err := writeDefaultConfig(path, cfg); err != nil {
 		return nil, err
 	}
 

@@ -60,10 +60,19 @@ func renderMarkdownCustom(text string, width int, styles mdStyles) []panelLine {
 	result := make([]panelLine, 0, len(lines))
 
 	inFence := false
+	var tableBuf []string
+
+	flushTable := func() {
+		if len(tableBuf) > 0 {
+			result = append(result, renderMarkdownTable(tableBuf, width, styles)...)
+			tableBuf = nil
+		}
+	}
 
 	for _, raw := range lines {
 		// Fenced code block toggle
 		if strings.HasPrefix(raw, "```") {
+			flushTable()
 			inFence = !inFence
 			lang := strings.TrimSpace(strings.TrimPrefix(raw, "```"))
 			label := "─── code"
@@ -79,6 +88,14 @@ func renderMarkdownCustom(text string, width int, styles mdStyles) []panelLine {
 			result = append(result, panelLine{text: styles.CodeBlock.Render(mdTruncate(raw, width)), kind: panelLineImage})
 			continue
 		}
+
+		// Table rows — buffer consecutive lines that look like table rows
+		trimmed := strings.TrimSpace(raw)
+		if strings.HasPrefix(trimmed, "|") {
+			tableBuf = append(tableBuf, raw)
+			continue
+		}
+		flushTable()
 
 		// Headings
 		if strings.HasPrefix(raw, "###### ") || strings.HasPrefix(raw, "##### ") ||
@@ -99,7 +116,6 @@ func renderMarkdownCustom(text string, width int, styles mdStyles) []panelLine {
 		}
 
 		// Horizontal rules
-		trimmed := strings.TrimSpace(raw)
 		if trimmed == "---" || trimmed == "***" || trimmed == "___" ||
 			trimmed == "- - -" || trimmed == "* * *" {
 			hr := strings.Repeat("─", width)
@@ -119,7 +135,121 @@ func renderMarkdownCustom(text string, width int, styles mdStyles) []panelLine {
 		rendered := applyInlineStyles(raw, width, styles)
 		result = append(result, panelLine{text: rendered, kind: panelLineImage})
 	}
+	flushTable()
 
+	return result
+}
+
+// renderMarkdownTable parses and renders a slice of markdown table rows.
+func renderMarkdownTable(rows []string, width int, styles mdStyles) []panelLine {
+	parseRow := func(row string) []string {
+		row = strings.TrimSpace(row)
+		row = strings.Trim(row, "|")
+		cells := strings.Split(row, "|")
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+		return cells
+	}
+
+	isSepRow := func(cells []string) bool {
+		for _, c := range cells {
+			c = strings.Trim(c, ": ")
+			if len(c) == 0 {
+				return false
+			}
+			for _, ch := range c {
+				if ch != '-' {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	parsed := make([][]string, 0, len(rows))
+	for _, r := range rows {
+		parsed = append(parsed, parseRow(r))
+	}
+
+	// Find separator row
+	sepIdx := -1
+	for i, cells := range parsed {
+		if isSepRow(cells) {
+			sepIdx = i
+			break
+		}
+	}
+
+	// Max column count
+	cols := 0
+	for _, cells := range parsed {
+		if len(cells) > cols {
+			cols = len(cells)
+		}
+	}
+	if cols == 0 {
+		return nil
+	}
+
+	// Column widths
+	colW := make([]int, cols)
+	for _, cells := range parsed {
+		if len(cells) == 1 && isSepRow(cells) {
+			continue
+		}
+		for j, c := range cells {
+			if j < cols && len(c) > colW[j] {
+				colW[j] = len(c)
+			}
+		}
+	}
+	// Minimum width of 1
+	for j := range colW {
+		if colW[j] < 1 {
+			colW[j] = 1
+		}
+	}
+
+	pad := func(s string, w int) string {
+		if len(s) >= w {
+			return s
+		}
+		return s + strings.Repeat(" ", w-len(s))
+	}
+
+	var result []panelLine
+	for i, cells := range parsed {
+		if i == sepIdx {
+			// Draw separator line between header and body
+			var sb strings.Builder
+			for j := 0; j < cols; j++ {
+				if j > 0 {
+					sb.WriteString("─┼─")
+				}
+				sb.WriteString(strings.Repeat("─", colW[j]))
+			}
+			result = append(result, panelLine{text: styles.HR.Render(sb.String()), kind: panelLineImage})
+			continue
+		}
+		isHeader := sepIdx > 0 && i < sepIdx
+		var sb strings.Builder
+		for j := 0; j < cols; j++ {
+			if j > 0 {
+				sb.WriteString(" │ ")
+			}
+			cell := ""
+			if j < len(cells) {
+				cell = cells[j]
+			}
+			sb.WriteString(pad(cell, colW[j]))
+		}
+		if isHeader {
+			result = append(result, panelLine{text: styles.H3.Render(sb.String()), kind: panelLineImage})
+		} else {
+			result = append(result, panelLine{text: styles.Body.Render(sb.String()), kind: panelLineImage})
+		}
+	}
 	return result
 }
 

@@ -448,6 +448,48 @@ WHERE path LIKE ? ESCAPE '\'
 	return err
 }
 
+// NameMatch is a single result from SearchByName.
+type NameMatch struct {
+	Path  string
+	Title string // metadata title if available, otherwise stem of the filename
+}
+
+// SearchByName searches the metadata table for files whose title or filename
+// contains query (case-insensitive). Returns up to limit results.
+func (s *Store) SearchByName(ctx context.Context, query string, limit int) ([]NameMatch, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	pattern := "%" + escapeLike(strings.ToLower(query)) + "%"
+	rows, err := s.db.QueryContext(ctx, `
+SELECT path, title
+FROM   metadata
+WHERE  LOWER(title) LIKE ? ESCAPE '\'
+   OR  LOWER(path)  LIKE ? ESCAPE '\'
+ORDER BY
+  CASE WHEN LOWER(title) LIKE ? ESCAPE '\' THEN 0 ELSE 1 END,
+  title ASC
+LIMIT ?
+`, pattern, pattern, pattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NameMatch
+	for rows.Next() {
+		var m NameMatch
+		if err := rows.Scan(&m.Path, &m.Title); err != nil {
+			continue
+		}
+		if strings.TrimSpace(m.Title) == "" {
+			base := filepath.Base(m.Path)
+			m.Title = strings.TrimSuffix(base, filepath.Ext(base))
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func normalizeDirPrefix(path string) (string, error) {
 	cleaned := filepath.Clean(path)
 	if cleaned == "" || cleaned == "." {

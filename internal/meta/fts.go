@@ -72,6 +72,18 @@ ON CONFLICT(path) DO UPDATE SET file_size=excluded.file_size, indexed_at=exclude
 	return tx.Commit()
 }
 
+// GetFileContent returns the full indexed text for a path, or "" if not indexed.
+func (s *Store) GetFileContent(ctx context.Context, path string) (string, error) {
+	var body string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT body FROM fts_content WHERE path = ? LIMIT 1`, path,
+	).Scan(&body)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return body, err
+}
+
 // DeleteFromIndex removes path from both the FTS content table and index state.
 func (s *Store) DeleteFromIndex(ctx context.Context, path string) error {
 	tx, err := s.db.BeginTx(ctx, nil)

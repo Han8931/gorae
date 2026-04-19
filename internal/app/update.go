@@ -180,7 +180,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.setStatus("Config edit failed: " + msg.err.Error())
 		} else {
-			m.setStatus("Config edit finished")
+			if cfg, err := config.LoadOrInit(); err == nil {
+				m.cfg = cfg
+				m.aiClient = nil // force re-init on next :gorae
+			}
+			m.setStatus("Config reloaded")
 		}
 		return m, nil
 
@@ -367,8 +371,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case aiTokenMsg, aiSourcesMsg:
+		if m.state == stateGorae {
+			return m.updateGoraeChat(msg)
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		key := msg.String()
+
+		if m.state == stateGorae {
+			return m.updateGoraeChat(msg)
+		}
 
 		if m.state == stateHelp {
 			if handled, cmd := m.handleHelpKey(key); handled {
@@ -1794,6 +1808,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		return m.handleIndexCommand(args)
 	case "tags":
 		return m.handleTagsCommand(args)
+	case "gorae", "ai", "llm":
+		return m.enterGoraeChat()
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit
@@ -1909,6 +1925,11 @@ func (m *Model) launchConfigEditor() tea.Cmd {
 		m.setStatus("Failed to resolve config path: " + err.Error())
 		return nil
 	}
+	// Ensure the AI block is visible in the file even if never configured.
+	if m.cfg != nil && m.cfg.AI == nil {
+		m.cfg.AI = config.DefaultAIConfig()
+		_ = config.Save(m.cfg)
+	}
 	editor := m.configEditor()
 	cmd := exec.Command(editor, path)
 	cmd.Stdin = os.Stdin
@@ -1978,8 +1999,44 @@ func (m *Model) displayConfigSummary() {
 		"  " + editor,
 		"Configured PDF viewer:",
 		"  " + viewer,
-		"Use :config to edit it or :config editor <cmd> to change the editor.",
 	}
+
+	// AI config
+	lines = append(lines, "AI (Gorae):")
+	if m.cfg != nil && m.cfg.AI != nil {
+		ai := m.cfg.AI
+		provider := ai.Provider
+		if provider == "" {
+			provider = "openai"
+		}
+		model := ai.Model
+		if model == "" {
+			model = "(default)"
+		}
+		apiKey := "(not set)"
+		if ai.APIKey != "" {
+			apiKey = ai.APIKey[:min(6, len(ai.APIKey))] + "..."
+		}
+		baseURL := ai.BaseURL
+		if baseURL == "" {
+			baseURL = "(default for provider)"
+		}
+		topK := ai.TopK
+		if topK <= 0 {
+			topK = 3
+		}
+		lines = append(lines,
+			fmt.Sprintf("  provider : %s", provider),
+			fmt.Sprintf("  model    : %s", model),
+			fmt.Sprintf("  api_key  : %s", apiKey),
+			fmt.Sprintf("  base_url : %s", baseURL),
+			fmt.Sprintf("  top_k    : %d", topK),
+		)
+	} else {
+		lines = append(lines, "  (not configured — add an \"ai\" block to config.json)")
+	}
+	lines = append(lines, "", "Use :config to edit or :config editor <cmd> to change the editor.")
+
 	m.setCommandOutput(lines)
 	m.setPersistentStatus("Config info displayed (use :clear to hide)")
 }
@@ -2788,6 +2845,7 @@ var commandNames = []string{
 	"arxiv",
 	"autofetch",
 	"search",
+	"gorae",
 	"q", "quit",
 }
 

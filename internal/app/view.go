@@ -609,6 +609,9 @@ func (m Model) View() string {
 	if m.state == stateHelp {
 		return m.renderHelpView()
 	}
+	if m.state == stateGorae {
+		return m.renderGoraeView()
+	}
 	var b strings.Builder
 	var overlayLines []string
 

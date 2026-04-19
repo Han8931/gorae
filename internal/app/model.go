@@ -15,6 +15,7 @@ import (
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"gorae/internal/ai"
 	"gorae/internal/config"
 	"gorae/internal/meta"
 	"gorae/internal/theme"
@@ -48,6 +49,7 @@ const (
 	stateSearchResults
 	stateHelp
 	stateUnmarkPrompt
+	stateGorae
 )
 
 type quickFilterMode int
@@ -161,6 +163,24 @@ type Model struct {
 	metaEditingPath string        // path of file being edited
 	metaFieldIndex  int           // 0:title,1:author,2:year,...
 	metaDraft       meta.Metadata // draft being edited
+
+	// AI chat (:gorae)
+	aiMessages      []ai.Message // full conversation history
+	aiInput         textinput.Model
+	aiStreaming     bool
+	aiStreamBuf     string   // tokens accumulating for the current assistant turn
+	aiSources       []string // document paths cited in last answer
+	aiChatScroll    int
+	aiClient        *ai.Client
+	aiSearchResults   []meta.NameMatch     // last /search results
+	aiSearchSelecting bool                 // true while the user is picking from results
+	aiSearchCursor    int                  // highlighted row in the selection list
+	aiFocusedFile     string               // path selected; injected as context
+	aiCancelFunc      context.CancelFunc   // cancels the in-flight request
+	aiSpinnerFrame    int                  // current spinner animation frame
+	aiInputHistory    []string             // previously submitted user messages
+	aiHistoryCursor   int                  // -1 = at current draft; ≥0 = browsing history
+	aiHistoryDraft    string               // saved draft while browsing history
 
 	previewText     []string
 	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines

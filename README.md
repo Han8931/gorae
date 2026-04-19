@@ -225,6 +225,95 @@ Then set the viewer command in your config:
 
 If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can accept the default.
 
+## AI Chat (`:gorae`)
+
+Gorae has a built-in RAG chat assistant. Open it from anywhere with:
+
+```
+:gorae
+```
+
+It embeds relevant chunks from your indexed library into every query, so you can ask questions and get answers grounded in your own documents.
+
+### Setup
+
+Type `:config` to open the config file. Gorae will add an `"ai"` block automatically if one doesn't exist yet:
+
+```json
+"ai": {
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "api_key": "sk-...",
+  "base_url": "",
+  "top_k": 3,
+  "system_prompt": ""
+}
+```
+
+| Field | Description |
+|---|---|
+| `provider` | `"openai"`, `"ollama"`, or `"custom"` |
+| `model` | Model name, e.g. `gpt-4o`, `llama3.2`, `mistral` |
+| `api_key` | API key (OpenAI / custom). Leave empty for Ollama. |
+| `base_url` | Override endpoint. Defaults to provider's standard URL if empty. |
+| `top_k` | Number of document chunks injected as context (default `3`). |
+| `system_prompt` | Optional extra instruction prepended before the RAG context. |
+
+### Connecting to Ollama
+
+Make sure Ollama is running, then set:
+
+```json
+"ai": {
+  "provider": "ollama",
+  "model": "llama3.2"
+}
+```
+
+No `api_key` or `base_url` needed — Gorae defaults to `http://localhost:11434/v1`. Pull the model first if you haven't:
+
+```sh
+ollama pull llama3.2
+```
+
+Any model visible in `ollama list` works. Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
+
+### Connecting to OpenAI
+
+```json
+"ai": {
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "api_key": "sk-..."
+}
+```
+
+### Custom / OpenAI-compatible endpoint
+
+Set `provider` to `"custom"` and provide `base_url`:
+
+```json
+"ai": {
+  "provider": "custom",
+  "base_url": "https://api.together.xyz/v1",
+  "model": "meta-llama/Llama-3-8b-chat-hf",
+  "api_key": "..."
+}
+```
+
+### In-chat commands
+
+| Command | Description |
+|---|---|
+| `/clear` | Clear the conversation |
+| `/sources` | Show which document chunks were used |
+| `/export` | Export the conversation |
+| `/help` | Show help |
+
+> Run `:index` first so Gorae has content to search. Without an index the assistant still works but has no document context.
+
+---
+
 ## Roadmap
 
 ### Fix
@@ -245,16 +334,16 @@ If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can acc
 * [x] **Hierarchical multi-tag table** — normalized tags with prefix matching and `:tags` browser
 * [x] **Bidirectional links** — `[[wikilinks]]` in Markdown with backlinks in the info pane
 * [ ] **Semantic / vector search** — embeddings via local model (ollama) stored in SQLite
-* [ ] **AI Q&A over collection** — RAG: ask a question, get an answer citing your own documents
+* [x] **AI Q&A over collection** — RAG chat via `:gorae`, works with OpenAI, Ollama, or any OpenAI-compatible endpoint
 * [ ] **Citation network** — auto-fetch citation relationships from DOIs via Semantic Scholar
 
-### AI features (planned)
+### AI features
 
-* Audio reading
-* AI tagging and summarization
-* Text extraction (OCR) (see: [https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/))
-* RAG and knowledge graphs
-* Prompt management
+* [x] RAG chat (`:gorae`) — OpenAI, Ollama, custom endpoints
+* [ ] AI tagging and summarization
+* [ ] Semantic / vector search (embeddings)
+* [ ] Text extraction / OCR
+* [ ] Prompt management
 
 ## Uninstall
 

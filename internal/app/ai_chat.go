@@ -1,0 +1,585 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/cursor"
+	textinput "github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"gorae/internal/ai"
+	"gorae/internal/config"
+	"gorae/internal/meta"
+)
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+type goraeSpinnerTickMsg struct{}
+
+func goraeSpinnerTick() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg {
+		return goraeSpinnerTickMsg{}
+	})
+}
+
+// ── messages ──────────────────────────────────────────────────────────────────
+
+type aiTokenMsg struct {
+	text string
+	done bool
+	err  error
+	ch   <-chan ai.StreamToken
+}
+
+type aiSourcesMsg struct {
+	paths []string
+}
+
+// ── entry / exit ──────────────────────────────────────────────────────────────
+
+func (m *Model) enterGoraeChat() tea.Cmd {
+	// Always enter the chat view; errors are shown as chat messages so the
+	// user can see them clearly instead of a brief status-bar flash.
+	var welcomeMsg string
+
+	if m.cfg == nil || m.cfg.AI == nil {
+		welcomeMsg = "No AI config found.\n\n" +
+			"Add an \"ai\" block to your config.json, for example:\n\n" +
+			"  \"ai\": {\n" +
+			"    \"provider\": \"openai\",\n" +
+			"    \"model\": \"gpt-4o-mini\",\n" +
+			"    \"api_key\": \"sk-...\"\n" +
+			"  }\n\n" +
+			"For Ollama: set provider to \"ollama\" (no api_key needed).\n" +
+			"For any OpenAI-compatible API: set provider to \"custom\" and provide base_url.\n\n" +
+			"Press Esc to return."
+	} else {
+		client, err := ai.NewClient(m.cfg.AI)
+		if err != nil {
+			welcomeMsg = "AI config error: " + err.Error() + "\n\nPress Esc to return."
+		} else {
+			m.aiClient = client
+			if m.meta != nil {
+				if count, err2 := m.meta.IndexedCount(context.Background()); err2 == nil && count == 0 {
+					welcomeMsg = "Welcome to Gorae AI  (model: " + client.Model() + ")\n\n" +
+						"Tip: your library is not indexed yet — run :index first for\n" +
+						"document-aware answers. Ask anything to get started."
+				}
+			}
+		}
+	}
+
+	inp := textinput.New()
+	inp.Placeholder = " ask anything… (/help for commands)"
+	inp.CharLimit = 4096
+	inp.Cursor.SetMode(cursor.CursorStatic)
+	inp.Focus()
+	m.aiInput = inp
+	m.aiStreaming = false
+	m.aiStreamBuf = ""
+	m.aiMessages = nil
+	m.aiSources = nil
+	m.aiChatScroll = 0
+	m.aiHistoryCursor = -1
+	m.aiHistoryDraft = ""
+
+	if welcomeMsg != "" {
+		m.appendAISystem(welcomeMsg)
+	}
+
+	modelName := "not configured"
+	if m.aiClient != nil {
+		modelName = m.aiClient.Model()
+	}
+	m.state = stateGorae
+	m.updateGoraeStatus(modelName)
+	return nil
+}
+
+func (m *Model) goraeSelectCurrent() {
+	if len(m.aiSearchResults) == 0 {
+		return
+	}
+	chosen := m.aiSearchResults[m.aiSearchCursor]
+	m.aiFocusedFile = chosen.Path
+	m.aiSearchSelecting = false
+	if m.aiClient != nil {
+		m.updateGoraeStatus(m.aiClient.Model())
+	}
+	m.appendAISystem("Focused: " + chosen.Title + "\nQuestions will now use this file as primary context.")
+}
+
+func (m *Model) updateGoraeStatus(modelName string) {
+	status := "Gorae AI  model:" + modelName + "  Esc to exit"
+	if m.aiFocusedFile != "" {
+		status += "  focus:" + filepath.Base(m.aiFocusedFile)
+	}
+	m.setPersistentStatus(status)
+}
+
+func (m *Model) exitGoraeChat() {
+	m.state = stateNormal
+	m.aiStreaming = false
+	m.aiInput.Blur()
+	m.setPersistentStatus("")
+}
+
+// ── update ────────────────────────────────────────────────────────────────────
+
+func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if m.aiStreaming {
+			switch msg.String() {
+			case "esc", "ctrl+c":
+				if m.aiCancelFunc != nil {
+					m.aiCancelFunc()
+					m.aiCancelFunc = nil
+				}
+				m.aiStreaming = false
+				m.flushStreamBuf()
+			}
+			return m, nil
+		}
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			if m.aiSearchSelecting {
+				m.aiSearchSelecting = false
+				return m, nil
+			}
+			m.exitGoraeChat()
+			return m, nil
+		case "up":
+			if m.aiSearchSelecting {
+				if m.aiSearchCursor > 0 {
+					m.aiSearchCursor--
+				}
+				return m, nil
+			}
+			m.goraeHistoryBack()
+			return m, nil
+		case "down":
+			if m.aiSearchSelecting {
+				if m.aiSearchCursor < len(m.aiSearchResults)-1 {
+					m.aiSearchCursor++
+				}
+				return m, nil
+			}
+			m.goraeHistoryForward()
+			return m, nil
+		case "ctrl+p":
+			m.aiChatScroll--
+			if m.aiChatScroll < 0 {
+				m.aiChatScroll = 0
+			}
+			return m, nil
+		case "ctrl+n":
+			m.aiChatScroll++
+			return m, nil
+		case "pgup":
+			m.aiChatScroll -= m.viewportHeight / 2
+			if m.aiChatScroll < 0 {
+				m.aiChatScroll = 0
+			}
+			return m, nil
+		case "pgdown":
+			m.aiChatScroll += m.viewportHeight / 2
+			return m, nil
+		case "tab":
+			m.goraeAutocomplete()
+			return m, nil
+		case "enter":
+			if m.aiSearchSelecting {
+				m.goraeSelectCurrent()
+				return m, nil
+			}
+			raw := strings.TrimSpace(m.aiInput.Value())
+			if raw == "" {
+				return m, nil
+			}
+			m.aiInput.SetValue("")
+			if strings.HasPrefix(raw, "/") {
+				return m, m.handleGoraeSlashCommand(raw)
+			}
+			return m, m.submitGoraeMessage(raw)
+		}
+
+	case aiTokenMsg:
+		return m, m.handleAIToken(msg)
+
+	case aiSourcesMsg:
+		m.aiSources = msg.paths
+		return m, nil
+
+	case goraeSpinnerTickMsg:
+		if m.aiStreaming {
+			m.aiSpinnerFrame = (m.aiSpinnerFrame + 1) % len(spinnerFrames)
+			return m, goraeSpinnerTick()
+		}
+		return m, nil
+	}
+
+	var inputCmd tea.Cmd
+	m.aiInput, inputCmd = m.aiInput.Update(msg)
+	cmds = append(cmds, inputCmd)
+	return m, tea.Batch(cmds...)
+}
+
+// ── slash commands ────────────────────────────────────────────────────────────
+
+var goraeSlashCommands = []string{"/find", "/select", "/clear", "/export", "/sources", "/help"}
+
+func (m *Model) goraeAutocomplete() {
+	val := m.aiInput.Value()
+	if !strings.HasPrefix(val, "/") {
+		return
+	}
+	// Only complete when no space yet (completing the command name itself).
+	if strings.ContainsRune(val, ' ') {
+		return
+	}
+	lower := strings.ToLower(val)
+	var matches []string
+	for _, cmd := range goraeSlashCommands {
+		if strings.HasPrefix(cmd, lower) {
+			matches = append(matches, cmd)
+		}
+	}
+	if len(matches) == 0 {
+		return
+	}
+	// Find longest common prefix among matches.
+	lcp := matches[0]
+	for _, m := range matches[1:] {
+		for !strings.HasPrefix(m, lcp) {
+			lcp = lcp[:len(lcp)-1]
+		}
+	}
+	if len(matches) == 1 {
+		m.aiInput.SetValue(lcp + " ")
+	} else {
+		m.aiInput.SetValue(lcp)
+	}
+	m.aiInput.CursorEnd()
+}
+
+func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
+	parts := strings.Fields(raw)
+	cmd := strings.ToLower(parts[0])
+	switch cmd {
+	case "/find":
+		query := strings.TrimSpace(strings.TrimPrefix(raw, parts[0]))
+		if query == "" {
+			m.appendAISystem("Usage: /find <keyword or title>")
+			return nil
+		}
+		if m.meta == nil {
+			m.appendAISystem("Metadata store not available.")
+			return nil
+		}
+		matches, err := m.meta.SearchByName(context.Background(), query, 20)
+		if err != nil {
+			m.appendAISystem("Search error: " + err.Error())
+			return nil
+		}
+		if len(matches) == 0 {
+			m.appendAISystem(fmt.Sprintf("No files found matching %q.", query))
+			return nil
+		}
+		m.aiSearchResults = matches
+		m.aiSearchCursor = 0
+		m.aiSearchSelecting = true
+		m.aiChatScroll = 1<<31 - 1 // scroll to bottom so list is visible
+		return nil
+
+	case "/select":
+		if m.aiFocusedFile == "" {
+			m.appendAISystem("No file focused. Use /find to pick a file.")
+		} else {
+			m.aiFocusedFile = ""
+			if m.aiClient != nil {
+				m.updateGoraeStatus(m.aiClient.Model())
+			}
+			m.appendAISystem("File focus cleared.")
+		}
+		return nil
+	case "/clear":
+		m.aiMessages = nil
+		m.aiSources = nil
+		m.aiChatScroll = 0
+		m.setStatus("Chat history cleared")
+	case "/export":
+		return m.exportGoraeChat()
+	case "/sources":
+		if len(m.aiSources) == 0 {
+			m.appendAISystem("No sources were cited in the last answer.")
+		} else {
+			var sb strings.Builder
+			sb.WriteString("Sources used in last answer:\n")
+			for _, p := range m.aiSources {
+				sb.WriteString("  • " + filepath.Base(p) + "\n")
+			}
+			m.appendAISystem(strings.TrimRight(sb.String(), "\n"))
+		}
+	case "/help":
+		m.appendAISystem(goraeHelpText())
+	default:
+		m.appendAISystem(fmt.Sprintf("Unknown command: %s\nType /help for a list.", cmd))
+	}
+	return nil
+}
+
+func goraeHelpText() string {
+	return strings.TrimSpace(`
+Gorae AI slash commands:
+  /find <q>  — find files; use ↑/↓/Enter to select, Esc to cancel
+  /select      — clear the current file focus
+  /clear       — clear chat history
+  /export      — save conversation to a markdown file
+  /sources     — show documents cited in the last answer
+  /help        — this help text
+
+Press Esc or Ctrl+C to exit.`)
+}
+
+// ── input history ─────────────────────────────────────────────────────────────
+
+func (m *Model) goraeHistoryBack() {
+	if len(m.aiInputHistory) == 0 {
+		return
+	}
+	if m.aiHistoryCursor == -1 {
+		m.aiHistoryDraft = m.aiInput.Value()
+		m.aiHistoryCursor = len(m.aiInputHistory) - 1
+	} else if m.aiHistoryCursor > 0 {
+		m.aiHistoryCursor--
+	}
+	m.aiInput.SetValue(m.aiInputHistory[m.aiHistoryCursor])
+	m.aiInput.CursorEnd()
+}
+
+func (m *Model) goraeHistoryForward() {
+	if m.aiHistoryCursor == -1 {
+		return
+	}
+	m.aiHistoryCursor++
+	if m.aiHistoryCursor >= len(m.aiInputHistory) {
+		m.aiHistoryCursor = -1
+		m.aiInput.SetValue(m.aiHistoryDraft)
+	} else {
+		m.aiInput.SetValue(m.aiInputHistory[m.aiHistoryCursor])
+	}
+	m.aiInput.CursorEnd()
+}
+
+// ── message submission + RAG ──────────────────────────────────────────────────
+
+func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
+	if m.aiClient == nil {
+		m.appendAISystem("No AI provider configured. Add an \"ai\" block to config.json and restart.")
+		return nil
+	}
+	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: userText})
+	m.aiInputHistory = append(m.aiInputHistory, userText)
+	m.aiHistoryCursor = -1
+	m.aiHistoryDraft = ""
+	m.aiChatScroll = 1<<31 - 1 // scroll to bottom
+	m.aiStreaming = true
+	m.aiStreamBuf = ""
+	m.aiSpinnerFrame = 0
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.aiCancelFunc = cancel
+
+	client := m.aiClient
+	store := m.meta
+	cfg := m.cfg
+	history := make([]ai.Message, len(m.aiMessages))
+	copy(history, m.aiMessages)
+
+	focusedFile := m.aiFocusedFile
+
+	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
+
+		sources, docContext := goraeRetrieveContext(ctx, store, cfg, userText)
+
+		// Prepend focused file content if set.
+		if focusedFile != "" && store != nil {
+			if body, err := store.GetFileContent(ctx, focusedFile); err == nil && body != "" {
+				focused := fmt.Sprintf("[Focused file: %s]\n%s", filepath.Base(focusedFile), body)
+				if docContext != "" {
+					docContext = focused + "\n\n" + docContext
+				} else {
+					docContext = focused
+				}
+				if len(sources) == 0 || sources[0] != focusedFile {
+					sources = append([]string{focusedFile}, sources...)
+				}
+			}
+		}
+
+		systemMsg := ai.Message{
+			Role:    ai.RoleSystem,
+			Content: goraeSystemPrompt(cfg, docContext),
+		}
+		msgs := make([]ai.Message, 0, len(history)+1)
+		msgs = append(msgs, systemMsg)
+		msgs = append(msgs, history...)
+
+		ch := client.StreamChat(ctx, msgs)
+
+		return tea.Batch(
+			func() tea.Msg { return aiSourcesMsg{paths: sources} },
+			pumpTokenCmd(ch),
+		)()
+	})
+}
+
+func pumpTokenCmd(ch <-chan ai.StreamToken) tea.Cmd {
+	return func() tea.Msg {
+		tok, ok := <-ch
+		if !ok {
+			return aiTokenMsg{done: true}
+		}
+		return aiTokenMsg{text: tok.Text, done: tok.Done, err: tok.Err, ch: ch}
+	}
+}
+
+// ── streaming token handler ───────────────────────────────────────────────────
+
+func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
+	if tok.err != nil {
+		m.aiStreaming = false
+		m.aiCancelFunc = nil
+		m.flushStreamBuf()
+		if !isContextCancelled(tok.err) {
+			m.appendAISystem("Error: " + tok.err.Error())
+		}
+		return nil
+	}
+	if tok.done {
+		m.aiStreaming = false
+		m.aiCancelFunc = nil
+		m.flushStreamBuf()
+		return nil
+	}
+	m.aiStreamBuf += tok.text
+	return pumpTokenCmd(tok.ch)
+}
+
+func (m *Model) flushStreamBuf() {
+	if m.aiStreamBuf == "" {
+		return
+	}
+	m.aiMessages = append(m.aiMessages, ai.Message{
+		Role:    ai.RoleAssistant,
+		Content: m.aiStreamBuf,
+	})
+	m.aiStreamBuf = ""
+}
+
+func (m *Model) appendAISystem(text string) {
+	m.aiMessages = append(m.aiMessages, ai.Message{
+		Role:    ai.RoleAssistant,
+		Content: text,
+	})
+}
+
+// ── RAG helpers ───────────────────────────────────────────────────────────────
+
+func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string) ([]string, string) {
+	if store == nil {
+		return nil, ""
+	}
+	topK := 3
+	if cfg != nil && cfg.AI != nil && cfg.AI.TopK > 0 {
+		topK = cfg.AI.TopK
+	}
+	results, err := store.SearchFTS(ctx, query, topK)
+	if err != nil || len(results) == 0 {
+		return nil, ""
+	}
+	seen := map[string]bool{}
+	var sources []string
+	var sb strings.Builder
+	for _, r := range results {
+		if !seen[r.Path] {
+			seen[r.Path] = true
+			sources = append(sources, r.Path)
+		}
+		sb.WriteString(fmt.Sprintf("[Source: %s]\n%s\n\n", filepath.Base(r.Path), strings.TrimSpace(r.Snippet)))
+	}
+	return sources, strings.TrimRight(sb.String(), "\n")
+}
+
+func goraeSystemPrompt(cfg *config.Config, docContext string) string {
+	base := "You are Gorae, a helpful research and knowledge-base assistant."
+	if cfg != nil && cfg.AI != nil && strings.TrimSpace(cfg.AI.SystemPrompt) != "" {
+		base = strings.TrimSpace(cfg.AI.SystemPrompt)
+	}
+	var parts []string
+	parts = append(parts, base)
+	if docContext != "" {
+		parts = append(parts,
+			"\nRelevant excerpts from the user's document library are provided below.",
+			"Answer using these excerpts when relevant.",
+			"If the answer is not in the excerpts, answer from general knowledge and say so.\n",
+			docContext,
+		)
+	} else {
+		parts = append(parts, "\nNo relevant documents were found in the library for this query. Answer from general knowledge.")
+	}
+	return strings.Join(parts, "\n")
+}
+
+// ── export ────────────────────────────────────────────────────────────────────
+
+func (m *Model) exportGoraeChat() tea.Cmd {
+	if len(m.aiMessages) == 0 {
+		m.setStatus("Nothing to export")
+		return nil
+	}
+	var sb strings.Builder
+	sb.WriteString("# Gorae Chat Export\n\n")
+	for _, msg := range m.aiMessages {
+		switch msg.Role {
+		case ai.RoleUser:
+			sb.WriteString("**You:** " + msg.Content + "\n\n")
+		case ai.RoleAssistant:
+			sb.WriteString("**Gorae:** " + msg.Content + "\n\n")
+		}
+	}
+	if len(m.aiSources) > 0 {
+		sb.WriteString("---\n**Sources**\n")
+		for _, p := range m.aiSources {
+			sb.WriteString("- " + filepath.Base(p) + "\n")
+		}
+	}
+	notesDir := ""
+	if m.cfg != nil {
+		notesDir = strings.TrimSpace(m.cfg.NotesDir)
+	}
+	if notesDir == "" {
+		m.setStatus("No notes_dir configured — cannot export")
+		return nil
+	}
+	filename := filepath.Join(notesDir, "gorae-chat-export.md")
+	if err := os.WriteFile(filename, []byte(sb.String()), 0o644); err != nil {
+		m.setStatus("Export failed: " + err.Error())
+		return nil
+	}
+	m.setStatus("Exported to " + filename)
+	return nil
+}
+
+func isContextCancelled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
