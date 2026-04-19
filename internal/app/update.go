@@ -52,6 +52,10 @@ type noteEditFinishedMsg struct {
 	targetPath string
 }
 
+type markdownEditFinishedMsg struct {
+	err error
+}
+
 type arxivUpdateMsg struct {
 	arxivID      string
 	updatedPaths []string
@@ -187,6 +191,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noteEditFinishedMsg:
 		m.handleNoteEditorFinished(msg)
 		return m, nil
+
+	case markdownEditFinishedMsg:
+		m.setPersistentStatus("")
+		if msg.err != nil {
+			m.setStatus("Editor exited with error: " + msg.err.Error())
+		}
+		return m, m.updateTextPreviewAsync()
 
 	case arxivUpdateMsg:
 		if msg.err != nil {
@@ -565,6 +576,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "n":
+				if isMarkdown(m.metaEditingPath) {
+					return m, nil
+				}
 				if cmd := m.launchNoteEditor(); cmd != nil {
 					return m, cmd
 				}
@@ -961,6 +975,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadEntries()
 				m.clearStatus()
 				return m, m.updateTextPreviewAsync()
+			} else if isMarkdown(entry.Name()) {
+				openPath := full
+				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
+					openPath = canonicalPath(full)
+				}
+				editor := m.configEditor()
+				editorCmd := exec.Command(editor, openPath)
+				editorCmd.Stdin = os.Stdin
+				editorCmd.Stdout = os.Stdout
+				editorCmd.Stderr = os.Stderr
+				m.setPersistentStatus(fmt.Sprintf("Editing %s with %s (exit editor to return)", filepath.Base(openPath), editor))
+				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+					return markdownEditFinishedMsg{err: err}
+				})
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") || strings.HasSuffix(strings.ToLower(entry.Name()), ".epub") {
 				openPath := full
 				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {

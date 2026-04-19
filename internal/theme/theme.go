@@ -123,7 +123,36 @@ bg = "palette.bg"
 
 [components.meta_overlay]
 fg = "palette.fg"
-bg = "palette.bg"`
+bg = "palette.bg"
+
+[components.markdown]
+[components.markdown.h1]
+fg = "palette.accent"
+bold = true
+
+[components.markdown.h2]
+fg = "palette.success"
+bold = true
+
+[components.markdown.h3]
+fg = "palette.warning"
+bold = true
+
+[components.markdown.code]
+fg = "palette.warning"
+
+[components.markdown.code_block]
+fg = "palette.fg"
+
+[components.markdown.blockquote]
+fg = "palette.muted"
+italic = true
+
+[components.markdown.link]
+fg = "palette.selection"
+
+[components.markdown.hr]
+fg = "palette.muted"`
 
 type Meta struct {
 	Name    string `toml:"name" json:"name"`
@@ -154,27 +183,39 @@ type StyleSpec struct {
 	Faint  bool   `toml:"faint" json:"faint"`
 }
 
+type MarkdownStyle struct {
+	H1         StyleSpec `toml:"h1" json:"h1"`
+	H2         StyleSpec `toml:"h2" json:"h2"`
+	H3         StyleSpec `toml:"h3" json:"h3"`
+	Code       StyleSpec `toml:"code" json:"code"`
+	CodeBlock  StyleSpec `toml:"code_block" json:"code_block"`
+	Blockquote StyleSpec `toml:"blockquote" json:"blockquote"`
+	Link       StyleSpec `toml:"link" json:"link"`
+	HR         StyleSpec `toml:"hr" json:"hr"`
+}
+
 type ComponentStyles struct {
-	AppHeader        StyleSpec `toml:"app_header" json:"app_header"`
-	TreeHeader       StyleSpec `toml:"tree_header" json:"tree_header"`
-	TreeBody         StyleSpec `toml:"tree_body" json:"tree_body"`
-	TreeActive       StyleSpec `toml:"tree_active" json:"tree_active"`
-	TreeInfo         StyleSpec `toml:"tree_info" json:"tree_info"`
-	ListHeader       StyleSpec `toml:"list_header" json:"list_header"`
-	ListBody         StyleSpec `toml:"list_body" json:"list_body"`
-	ListSelected     StyleSpec `toml:"list_selected" json:"list_selected"`
-	ListCursor       StyleSpec `toml:"list_cursor" json:"list_cursor"`
-	ListCursorSelect StyleSpec `toml:"list_cursor_selected" json:"list_cursor_selected"`
-	PreviewHeader    StyleSpec `toml:"preview_header" json:"preview_header"`
-	PreviewBody      StyleSpec `toml:"preview_body" json:"preview_body"`
-	PreviewInfo      StyleSpec `toml:"preview_info" json:"preview_info"`
-	Separator        StyleSpec `toml:"separator" json:"separator"`
-	StatusBar        StyleSpec `toml:"status_bar" json:"status_bar"`
-	StatusLabel      StyleSpec `toml:"status_label" json:"status_label"`
-	StatusValue      StyleSpec `toml:"status_value" json:"status_value"`
-	PromptLabel      StyleSpec `toml:"prompt_label" json:"prompt_label"`
-	PromptValue      StyleSpec `toml:"prompt_value" json:"prompt_value"`
-	MetaOverlay      StyleSpec `toml:"meta_overlay" json:"meta_overlay"`
+	AppHeader        StyleSpec    `toml:"app_header" json:"app_header"`
+	TreeHeader       StyleSpec    `toml:"tree_header" json:"tree_header"`
+	TreeBody         StyleSpec    `toml:"tree_body" json:"tree_body"`
+	TreeActive       StyleSpec    `toml:"tree_active" json:"tree_active"`
+	TreeInfo         StyleSpec    `toml:"tree_info" json:"tree_info"`
+	ListHeader       StyleSpec    `toml:"list_header" json:"list_header"`
+	ListBody         StyleSpec    `toml:"list_body" json:"list_body"`
+	ListSelected     StyleSpec    `toml:"list_selected" json:"list_selected"`
+	ListCursor       StyleSpec    `toml:"list_cursor" json:"list_cursor"`
+	ListCursorSelect StyleSpec    `toml:"list_cursor_selected" json:"list_cursor_selected"`
+	PreviewHeader    StyleSpec    `toml:"preview_header" json:"preview_header"`
+	PreviewBody      StyleSpec    `toml:"preview_body" json:"preview_body"`
+	PreviewInfo      StyleSpec    `toml:"preview_info" json:"preview_info"`
+	Separator        StyleSpec    `toml:"separator" json:"separator"`
+	StatusBar        StyleSpec    `toml:"status_bar" json:"status_bar"`
+	StatusLabel      StyleSpec    `toml:"status_label" json:"status_label"`
+	StatusValue      StyleSpec    `toml:"status_value" json:"status_value"`
+	PromptLabel      StyleSpec    `toml:"prompt_label" json:"prompt_label"`
+	PromptValue      StyleSpec    `toml:"prompt_value" json:"prompt_value"`
+	MetaOverlay      StyleSpec    `toml:"meta_overlay" json:"meta_overlay"`
+	Markdown         MarkdownStyle `toml:"markdown" json:"markdown"`
 }
 
 type Icons struct {
@@ -263,6 +304,16 @@ func Default() Theme {
 			PromptLabel: StyleSpec{FG: "#1e1e2e", BG: "#cba6f7", Bold: true},
 			PromptValue: StyleSpec{FG: "#f5e0dc", BG: "#1e1e2e"},
 			MetaOverlay: StyleSpec{FG: "#f2cdcd", BG: "#312244"},
+			Markdown: MarkdownStyle{
+				H1:         StyleSpec{FG: "#cba6f7", Bold: true},
+				H2:         StyleSpec{FG: "#a6e3a1", Bold: true},
+				H3:         StyleSpec{FG: "#f9e2af", Bold: true},
+				Code:       StyleSpec{FG: "#f9e2af"},
+				CodeBlock:  StyleSpec{FG: "#cdd6f4"},
+				Blockquote: StyleSpec{FG: "#7f8ca3", Italic: true},
+				Link:       StyleSpec{FG: "#89dceb"},
+				HR:         StyleSpec{FG: "#585b70"},
+			},
 		},
 	}
 }

@@ -162,8 +162,9 @@ type Model struct {
 	metaFieldIndex  int           // 0:title,1:author,2:year,...
 	metaDraft       meta.Metadata // draft being edited
 
-	previewText []string
-	previewPath string
+	previewText     []string
+	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines
+	previewPath     string
 
 	// Terminal image preview using kitty/iTerm2/sixel escape sequences. This is
 	// the preferred PDF preview mode when the terminal supports it.
@@ -1120,6 +1121,7 @@ func (m *Model) ensureCursorVisible() {
 func (m *Model) updateTextPreview() {
 	m.previewSeq++ // Invalidate any in-flight async preview for this entry.
 	m.previewText = nil
+	m.previewRawLines = nil
 	// previewImage is managed per-branch below; clearing it here unconditionally
 	// would invalidate the PDF cache on every cursor move, so individual
 	// branches are responsible for clearing it when appropriate.
@@ -1167,16 +1169,19 @@ func (m *Model) updateTextPreview() {
 		return
 	}
 
-	// For non-PDF files with titled metadata, skip text preview — the view
-	// already shows the full metadata block.
-	if m.currentMeta != nil && m.currentMetaPath == canonical {
-		title := strings.TrimSpace(m.currentMeta.Title)
-		if title != "" {
-			m.previewPath = full
-			m.previewGraphic = ""
-			m.previewGraphicClear = true
-			m.previewImage = nil
-			return
+	// For non-PDF, non-Markdown files with titled metadata, skip text preview
+	// — the view already shows the full metadata block. Markdown always shows
+	// its own content regardless of metadata.
+	if !isMarkdown(name) {
+		if m.currentMeta != nil && m.currentMetaPath == canonical {
+			title := strings.TrimSpace(m.currentMeta.Title)
+			if title != "" {
+				m.previewPath = full
+				m.previewGraphic = ""
+				m.previewGraphicClear = true
+				m.previewImage = nil
+				return
+			}
 		}
 	}
 
@@ -1206,6 +1211,35 @@ func (m *Model) updateTextPreview() {
 			return
 		}
 		m.previewText = lines
+		return
+	}
+
+	// Markdown preview
+	if isMarkdown(name) {
+		if m.previewPath == full && len(m.previewRawLines) > 0 {
+			m.previewGraphic = ""
+			m.previewGraphicClear = true
+			m.previewImage = nil
+			return
+		}
+		m.previewPath = full
+		m.previewGraphic = ""
+		m.previewGraphicClear = true
+		m.previewImage = nil
+		_, _, rightW := m.panelWidths()
+		renderWidth := rightW - 4
+		if renderWidth < 20 {
+			renderWidth = 20
+		}
+		lines, err := renderMarkdownPreview(full, renderWidth, m.styles.Markdown)
+		if err != nil {
+			m.previewText = []string{
+				"Preview error:",
+				"  " + err.Error(),
+			}
+			return
+		}
+		m.previewRawLines = lines
 		return
 	}
 

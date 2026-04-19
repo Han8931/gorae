@@ -18,6 +18,18 @@ type panelStyles struct {
 	CursorSelected lipgloss.Style
 }
 
+type mdStyles struct {
+	H1         lipgloss.Style
+	H2         lipgloss.Style
+	H3         lipgloss.Style
+	Code       lipgloss.Style
+	CodeBlock  lipgloss.Style
+	Blockquote lipgloss.Style
+	Link       lipgloss.Style
+	HR         lipgloss.Style
+	Body       lipgloss.Style
+}
+
 type viewStyles struct {
 	AppHeader   lipgloss.Style
 	Tree        panelStyles
@@ -32,6 +44,7 @@ type viewStyles struct {
 	MetaOverlay lipgloss.Style
 	Border      lipgloss.Style
 	SepChar     string
+	Markdown    mdStyles
 }
 
 type borderCharset struct {
@@ -72,8 +85,19 @@ func newViewStyles(th theme.Theme) viewStyles {
 		PromptValue: styleFromSpec(palette, th.Components.PromptValue),
 		Separator:   styleFromSpec(palette, th.Components.Separator),
 		MetaOverlay: styleFromSpec(palette, th.Components.MetaOverlay),
-		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette))),
-		SepChar:     borderCharsetFor(th.Borders.Style).Vertical,
+		Border:  lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette))),
+		SepChar: borderCharsetFor(th.Borders.Style).Vertical,
+		Markdown: mdStyles{
+			H1:         styleFromSpec(palette, th.Components.Markdown.H1),
+			H2:         styleFromSpec(palette, th.Components.Markdown.H2),
+			H3:         styleFromSpec(palette, th.Components.Markdown.H3),
+			Code:       styleFromSpec(palette, th.Components.Markdown.Code),
+			CodeBlock:  styleFromSpec(palette, th.Components.Markdown.CodeBlock),
+			Blockquote: styleFromSpec(palette, th.Components.Markdown.Blockquote),
+			Link:       styleFromSpec(palette, th.Components.Markdown.Link),
+			HR:         styleFromSpec(palette, th.Components.Markdown.HR),
+			Body:       styleFromSpec(palette, th.Components.PreviewBody),
+		},
 	}
 }
 

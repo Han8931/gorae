@@ -182,7 +182,7 @@ func (m Model) renderImagePreviewPanel(width, height, innerWidth int) []string {
 	}
 
 	if len(metaSection) == 0 {
-		return m.renderPanelBlock("Preview", imgLines, width, height, m.styles.Preview)
+		return m.renderPanelBlock("", imgLines, width, height, m.styles.Preview)
 	}
 
 	// Reserve the lower half (min 6 rows) for metadata.
@@ -225,7 +225,7 @@ func (m Model) renderImagePreviewPanel(width, height, innerWidth int) []string {
 	}
 	lines = append(lines, metaSection[:metaCount]...)
 
-	return m.renderPanelBlock("Preview", lines, width, height, m.styles.Preview)
+	return m.renderPanelBlock("", lines, width, height, m.styles.Preview)
 }
 
 func (m Model) renderPreviewPanel(width, height int) []string {
@@ -240,13 +240,18 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 	// Pixel-based previews are drawn as a terminal overlay after the textual
 	// frame is rendered, so the panel itself stays blank and acts as the canvas.
 	if m.previewGraphic != "" {
-		return m.renderPanelBlock("Preview", nil, width, height, m.styles.Preview)
+		return m.renderPanelBlock("", nil, width, height, m.styles.Preview)
 	}
 
 	// When a symbol-art preview is available, show it in the upper portion of
 	// the panel and let metadata (if any) appear below.
 	if len(m.previewImage) > 0 {
 		return m.renderImagePreviewPanel(width, height, innerWidth)
+	}
+
+	// Pre-styled lines (e.g. markdown with ANSI colors) bypass panelizeLines.
+	if len(m.previewRawLines) > 0 {
+		return m.renderPanelBlock("", m.previewRawLines, width, height, m.styles.Preview)
 	}
 
 	// Keep the metadata-only layout whenever metadata is available and there is
@@ -509,23 +514,28 @@ func (m Model) metaPopupContentLines(width int) []string {
 		popupLines = append(popupLines, fmt.Sprintf("%s%s: %s", prefix, fieldLabel, value))
 	}
 
-	popupLines = append(popupLines, "", "Note preview:")
-	note := strings.TrimSpace(m.currentNote)
-	if note == "" {
-		popupLines = append(popupLines, "    (none - press 'n' to edit)")
-	} else {
-		for _, line := range wrapTextToWidth(note, wrapWidth) {
-			popupLines = append(popupLines, "    "+line)
+	if !isMarkdown(m.metaEditingPath) {
+		popupLines = append(popupLines, "", "Note preview:")
+		note := strings.TrimSpace(m.currentNote)
+		if note == "" {
+			popupLines = append(popupLines, "    (none - press 'n' to edit)")
+		} else {
+			for _, line := range wrapTextToWidth(note, wrapWidth) {
+				popupLines = append(popupLines, "    "+line)
+			}
 		}
 	}
 
-	popupLines = append(popupLines,
+	hintLines := []string{
 		"",
 		"Use ↑/↓ or PgUp/PgDn to scroll fields.",
 		"Press 'e' to edit fields in your editor.",
-		"Press 'n' to edit the note in your editor.",
-		"Press 'Esc' or 'q' to close.",
-	)
+	}
+	if !isMarkdown(m.metaEditingPath) {
+		hintLines = append(hintLines, "Press 'n' to edit the note in your editor.")
+	}
+	hintLines = append(hintLines, "Press 'Esc' or 'q' to close.")
+	popupLines = append(popupLines, hintLines...)
 
 	box := renderPopupBox("Metadata Editor", popupLines, width)
 	box = strings.TrimRight(box, "\n")
@@ -813,7 +823,7 @@ func (m Model) renderSearchResultsView() string {
 	b.WriteString("\n")
 
 	detailLines := panelizeLines(m.searchResultDetailLines(detailHeight, width))
-	for _, line := range m.renderPanelBlock("Preview", detailLines, width, detailHeight+3, m.styles.Preview) {
+	for _, line := range m.renderPanelBlock("", detailLines, width, detailHeight+3, m.styles.Preview) {
 		b.WriteString(line + "\n")
 	}
 
@@ -1075,21 +1085,23 @@ func (m Model) metadataPreviewLines(width int) []string {
 	lines = append(lines,
 		fmt.Sprintf("  Reading  : %s %s", m.readingStateIcon(md.ReadingState), readingStateLabel(md.ReadingState)))
 	lines = append(lines, "")
-	noteWidth := contentWidth - 2 // account for indent
-	if noteWidth < 10 {
-		noteWidth = contentWidth
-	}
-	noteLabel := m.previewLabel("Note")
-	if noteLabel == "" {
-		noteLabel = "Note:"
-	}
-	lines = append(lines, noteLabel)
-	note := strings.TrimSpace(m.currentNote)
-	if note == "" {
-		lines = append(lines, "  (none - press 'n' to edit in your editor)")
-	} else {
-		for _, wrapped := range wrapTextToWidth(note, noteWidth) {
-			lines = append(lines, "  "+wrapped)
+	if !isMarkdown(m.currentMetaPath) {
+		noteWidth := contentWidth - 2 // account for indent
+		if noteWidth < 10 {
+			noteWidth = contentWidth
+		}
+		noteLabel := m.previewLabel("Note")
+		if noteLabel == "" {
+			noteLabel = "Note:"
+		}
+		lines = append(lines, noteLabel)
+		note := strings.TrimSpace(m.currentNote)
+		if note == "" {
+			lines = append(lines, "  (none - press 'n' to edit in your editor)")
+		} else {
+			for _, wrapped := range wrapTextToWidth(note, noteWidth) {
+				lines = append(lines, "  "+wrapped)
+			}
 		}
 	}
 	if len(tailFields) > 0 {
@@ -1486,12 +1498,25 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 	top := m.styles.Border.Render(m.borderChars.TopLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.TopRight)
 	result := []string{top}
 
-	header := panelContent(innerWidth, title)
-	headerLine := fallbackStyle(styles.Header, lipgloss.NewStyle()).Render(header)
-	result = append(result, m.borderRow(headerLine, width))
+	// When title is non-empty, reserve the first body row for the header.
+	// When empty, skip the header row entirely and give that line to content.
+	bodyRows := bodyHeight - 1
+	if title != "" {
+		header := panelContent(innerWidth, title)
+		headerLine := fallbackStyle(styles.Header, lipgloss.NewStyle()).Render(header)
+		result = append(result, m.borderRow(headerLine, width))
+	} else {
+		bodyRows = bodyHeight
+	}
+
+	// usable width for image lines: innerWidth minus 1-space margin on each side
+	imageUsable := innerWidth - 2
+	if imageUsable < 0 {
+		imageUsable = 0
+	}
 
 	bodyIndex := 0
-	for i := 0; i < bodyHeight-1; i++ {
+	for i := 0; i < bodyRows; i++ {
 		text := ""
 		kind := panelLineBody
 		if bodyIndex < len(lines) {
@@ -1502,10 +1527,9 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 		}
 		var styled string
 		if kind == panelLineImage {
-			// Image lines already contain ANSI art sized to the panel's usable
-			// width. Adding one space on each side gives the standard margin
-			// without running the text through the ANSI-unsafe trim pipeline.
-			styled = " " + text + " "
+			// Pad to imageUsable so the right border always aligns.
+			padded := padStyledLine(text, imageUsable)
+			styled = " " + padded + " "
 		} else {
 			content := panelContent(innerWidth, text)
 			styled = m.styleForPanelLine(styles, kind).Render(content)
