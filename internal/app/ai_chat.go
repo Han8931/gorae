@@ -235,7 +235,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/clear", "/export", "/sources", "/help"}
+var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/export", "/sources", "/help"}
 
 func (m *Model) goraeAutocomplete() {
 	val := m.aiInput.Value()
@@ -300,6 +300,9 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiChatScroll = 1<<31 - 1 // scroll to bottom so list is visible
 		return nil
 
+	case "/summarize":
+		return m.startSummarize()
+
 	case "/select":
 		if m.aiFocusedFile == "" {
 			m.appendAISystem("No file focused. Use /find to pick a file.")
@@ -340,14 +343,111 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 func goraeHelpText() string {
 	return strings.TrimSpace(`
 Gorae AI slash commands:
-  /find <q>  — find files; use ↑/↓/Enter to select, Esc to cancel
-  /select      — clear the current file focus
-  /clear       — clear chat history
-  /export      — save conversation to a markdown file
-  /sources     — show documents cited in the last answer
-  /help        — this help text
+  /find <q>   — find files; use ↑/↓/Enter to select, Esc to cancel
+  /select     — clear the current file focus
+  /summarize  — summarize focused file and save to its note
+  /clear      — clear chat history
+  /export     — save conversation to a markdown file
+  /sources    — show documents cited in the last answer
+  /help       — this help text
 
 Press Esc or Ctrl+C to exit.`)
+}
+
+// ── summarize ────────────────────────────────────────────────────────────────
+
+func (m *Model) startSummarize() tea.Cmd {
+	if m.aiClient == nil {
+		m.appendAISystem("No AI provider configured.")
+		return nil
+	}
+	if m.aiFocusedFile == "" {
+		m.appendAISystem("No file focused. Use /find to select a file first.")
+		return nil
+	}
+	if m.meta == nil {
+		m.appendAISystem("Metadata store not available.")
+		return nil
+	}
+	body, err := m.meta.GetFileContent(context.Background(), m.aiFocusedFile)
+	if err != nil || strings.TrimSpace(body) == "" {
+		m.appendAISystem("No indexed content found for this file. Run :index first.")
+		return nil
+	}
+
+	title := filepath.Base(m.aiFocusedFile)
+	if md, err2 := m.meta.Get(context.Background(), m.aiFocusedFile); err2 == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+		title = md.Title
+	}
+
+	systemPrompt := "You are a precise academic summarizer. " +
+		"Produce a concise but complete summary that captures all key contributions, " +
+		"methods, results, and conclusions. Do not omit important technical details. " +
+		"Use plain prose; avoid bullet points."
+
+	userMsg := fmt.Sprintf("Summarize the following document titled %q:\n\n%s", title, body)
+
+	m.aiSummarizeTarget = m.aiFocusedFile
+	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: "/summarize " + title})
+	m.aiInputHistory = append(m.aiInputHistory, "/summarize")
+	m.aiHistoryCursor = -1
+	m.aiChatScroll = 1<<31 - 1
+	m.aiStreaming = true
+	m.aiStreamBuf = ""
+	m.aiSpinnerFrame = 0
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.aiCancelFunc = cancel
+
+	client := m.aiClient
+	msgs := []ai.Message{
+		{Role: ai.RoleSystem, Content: systemPrompt},
+		{Role: ai.RoleUser, Content: userMsg},
+	}
+
+	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
+		ch := client.StreamChat(ctx, msgs)
+		return pumpTokenCmd(ch)()
+	})
+}
+
+func (m *Model) saveSummaryToNote(filePath, summary string) {
+	notePath, err := m.noteFilePath(filePath)
+	if err != nil {
+		m.setStatus("Summary generated but note path unavailable: " + err.Error())
+		return
+	}
+
+	// Read existing note
+	existing := ""
+	if data, err2 := os.ReadFile(notePath); err2 == nil {
+		existing = string(data)
+	}
+
+	header := "## Gorae Paper Summary\n*" + time.Now().Format("2006-01-02") + "*"
+	block := "\n\n" + header + "\n\n" + strings.TrimSpace(summary) + "\n"
+
+	var content string
+	const marker = "## Gorae Paper Summary"
+	if idx := strings.Index(existing, marker); idx >= 0 {
+		// Replace existing summary section
+		end := strings.Index(existing[idx:], "\n\n## ")
+		if end == -1 {
+			content = existing[:idx] + strings.TrimLeft(block, "\n")
+		} else {
+			content = existing[:idx] + strings.TrimLeft(block, "\n") + "\n\n" + existing[idx+end+4:]
+		}
+	} else {
+		content = strings.TrimRight(existing, "\n") + block
+	}
+
+	if err := os.MkdirAll(filepath.Dir(notePath), 0o755); err == nil {
+		if err2 := os.WriteFile(notePath, []byte(content), 0o644); err2 == nil {
+			m.setStatus("Summary saved to note for " + filepath.Base(filePath))
+			return
+		}
+	}
+	m.setStatus("Summary generated but failed to write note.")
 }
 
 // ── input history ─────────────────────────────────────────────────────────────
@@ -479,11 +579,16 @@ func (m *Model) flushStreamBuf() {
 	if m.aiStreamBuf == "" {
 		return
 	}
+	content := m.aiStreamBuf
 	m.aiMessages = append(m.aiMessages, ai.Message{
 		Role:    ai.RoleAssistant,
-		Content: m.aiStreamBuf,
+		Content: content,
 	})
 	m.aiStreamBuf = ""
+	if m.aiSummarizeTarget != "" {
+		m.saveSummaryToNote(m.aiSummarizeTarget, content)
+		m.aiSummarizeTarget = ""
+	}
 }
 
 func (m *Model) appendAISystem(text string) {

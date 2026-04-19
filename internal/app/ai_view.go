@@ -86,6 +86,7 @@ func (m Model) renderGoraeView() string {
 var goraeCommandDescs = []struct{ name, desc string }{
 	{"/find", "find files by title or filename"},
 	{"/select", "clear focused file"},
+	{"/summarize", "summarize focused file and save to its note"},
 	{"/clear", "clear chat history"},
 	{"/export", "save conversation to a file"},
 	{"/sources", "show documents cited in last answer"},

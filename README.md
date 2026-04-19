@@ -233,19 +233,32 @@ Gorae has a built-in RAG chat assistant. Open it from anywhere with:
 :gorae
 ```
 
-It embeds relevant chunks from your indexed library into every query, so you can ask questions and get answers grounded in your own documents.
+It automatically retrieves relevant chunks from your indexed library and injects them into every query, so answers are grounded in your own documents. Responses stream in real time with a live spinner; press **Esc** at any time to stop generation.
+
+> Run `:index` first so Gorae has content to search. Without an index the assistant still works but has no document context.
 
 ### Setup
 
-Type `:config` to open the config file. Gorae will add an `"ai"` block automatically if one doesn't exist yet:
+Type `:config` to open the config file. Gorae will add an `"ai"` block automatically if one doesn't exist yet. The config file supports `//` comments:
 
-```json
+```jsonc
 "ai": {
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "api_key": "sk-...",
+  // Provider: "openai" | "ollama" | "custom"
+  "provider": "ollama",
+
+  // Model name — e.g. "llama3.2", "gpt-4o-mini", "mistral"
+  "model": "llama3.2",
+
+  // API key — leave empty for Ollama
+  "api_key": "",
+
+  // Base URL — leave empty to use the provider default
   "base_url": "",
+
+  // Number of document chunks injected as context (default 3)
   "top_k": 3,
+
+  // Optional system prompt prepended before the RAG context
   "system_prompt": ""
 }
 ```
@@ -254,10 +267,12 @@ Type `:config` to open the config file. Gorae will add an `"ai"` block automatic
 |---|---|
 | `provider` | `"openai"`, `"ollama"`, or `"custom"` |
 | `model` | Model name, e.g. `gpt-4o`, `llama3.2`, `mistral` |
-| `api_key` | API key (OpenAI / custom). Leave empty for Ollama. |
-| `base_url` | Override endpoint. Defaults to provider's standard URL if empty. |
-| `top_k` | Number of document chunks injected as context (default `3`). |
-| `system_prompt` | Optional extra instruction prepended before the RAG context. |
+| `api_key` | Required for OpenAI / custom. Leave empty for Ollama. |
+| `base_url` | Override endpoint. Defaults: OpenAI → `https://api.openai.com/v1`, Ollama → `http://localhost:11434/v1`. |
+| `top_k` | Document chunks injected per query (default `3`). |
+| `system_prompt` | Extra instruction prepended before RAG context. |
+
+Changes to `:config` are picked up immediately — no restart needed.
 
 ### Connecting to Ollama
 
@@ -270,13 +285,13 @@ Make sure Ollama is running, then set:
 }
 ```
 
-No `api_key` or `base_url` needed — Gorae defaults to `http://localhost:11434/v1`. Pull the model first if you haven't:
+No `api_key` or `base_url` needed. Pull the model first if you haven't:
 
 ```sh
 ollama pull llama3.2
 ```
 
-Any model visible in `ollama list` works. Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
+Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
 
 ### Connecting to OpenAI
 
@@ -290,8 +305,6 @@ Any model visible in `ollama list` works. Good picks for document Q&A: `llama3.2
 
 ### Custom / OpenAI-compatible endpoint
 
-Set `provider` to `"custom"` and provide `base_url`:
-
 ```json
 "ai": {
   "provider": "custom",
@@ -301,16 +314,37 @@ Set `provider` to `"custom"` and provide `base_url`:
 }
 ```
 
+### In-chat keybindings
+
+| Key | Action |
+|---|---|
+| `Enter` | Send message |
+| `↑` / `↓` | Browse input history (previously sent messages) |
+| `Tab` | Autocomplete `/` command |
+| `Esc` | Stop streaming · cancel file picker · exit |
+| `Ctrl+P` / `Ctrl+N` | Scroll chat up / down |
+| `PgUp` / `PgDn` | Scroll chat half a page |
+
 ### In-chat commands
+
+Type `/` to see a live filtered list of available commands.
 
 | Command | Description |
 |---|---|
-| `/clear` | Clear the conversation |
-| `/sources` | Show which document chunks were used |
-| `/export` | Export the conversation |
+| `/find <query>` | Find files by title or filename; navigate results with ↑/↓, select with Enter |
+| `/select` | Clear the currently focused file |
+| `/sources` | Show documents cited in the last answer |
+| `/clear` | Clear conversation history |
+| `/export` | Save conversation to a Markdown file in `notes_dir` |
 | `/help` | Show help |
 
-> Run `:index` first so Gorae has content to search. Without an index the assistant still works but has no document context.
+### Focusing a file
+
+`/find` opens an interactive file picker. Once a file is selected it becomes the **focused file**: its full indexed text is injected as primary context for every subsequent question, in addition to the normal RAG results. The status bar shows `focus: filename.pdf` while a file is focused. Use `/select` to clear it.
+
+### Markdown rendering
+
+AI responses are rendered with terminal Markdown: **bold**, `code`, headings, blockquotes, fenced code blocks, and tables all display with theme-appropriate colors.
 
 ---
 
@@ -337,12 +371,13 @@ Set `provider` to `"custom"` and provide `base_url`:
 * [x] **AI Q&A over collection** — RAG chat via `:gorae`, works with OpenAI, Ollama, or any OpenAI-compatible endpoint
 * [ ] **Citation network** — auto-fetch citation relationships from DOIs via Semantic Scholar
 
-### AI features
+### Gorae AI features
 
-* [x] RAG chat (`:gorae`) — OpenAI, Ollama, custom endpoints
-* [ ] AI tagging and summarization
-* [ ] Semantic / vector search (embeddings)
 * [ ] Text extraction / OCR
+* [ ] TTS
+* [ ] AI chat session management
+* [ ] /summarize command summarize and adds output to a note directly
+* [ ] Semantic search in Gorae mode
 * [ ] Prompt management
 
 ## Uninstall

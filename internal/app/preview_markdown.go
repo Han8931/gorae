@@ -131,9 +131,10 @@ func renderMarkdownCustom(text string, width int, styles mdStyles) []panelLine {
 			continue
 		}
 
-		// Regular body line with inline styles
-		rendered := applyInlineStyles(raw, width, styles)
-		result = append(result, panelLine{text: rendered, kind: panelLineImage})
+		// Regular body line — word-wrap then apply inline styles per segment
+		for _, segment := range wrapTextToWidth(raw, width) {
+			result = append(result, panelLine{text: applyInlineStyles(segment, width, styles), kind: panelLineImage})
+		}
 	}
 	flushTable()
 

@@ -176,8 +176,9 @@ type Model struct {
 	aiSearchSelecting bool                 // true while the user is picking from results
 	aiSearchCursor    int                  // highlighted row in the selection list
 	aiFocusedFile     string               // path selected; injected as context
-	aiCancelFunc      context.CancelFunc   // cancels the in-flight request
-	aiSpinnerFrame    int                  // current spinner animation frame
+	aiCancelFunc        context.CancelFunc   // cancels the in-flight request
+	aiSpinnerFrame      int                  // current spinner animation frame
+	aiSummarizeTarget   string               // if set, flush writes summary to this file's note
 	aiInputHistory    []string             // previously submitted user messages
 	aiHistoryCursor   int                  // -1 = at current draft; ≥0 = browsing history
 	aiHistoryDraft    string               // saved draft while browsing history
