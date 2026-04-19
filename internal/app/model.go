@@ -628,8 +628,28 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		scheduleAutoMetadataScan(autoMetadataInitialScanDelay),
+		m.autoIndexIfEmpty(),
 	)
 }
+
+// autoIndexIfEmpty triggers a full index on first run (when IndexedCount == 0).
+func (m Model) autoIndexIfEmpty() tea.Cmd {
+	store := m.meta
+	root := m.root
+	if store == nil || root == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		count, err := store.IndexedCount(context.Background())
+		if err != nil || count > 0 {
+			return nil
+		}
+		// Return a sentinel that triggers indexing in the update loop.
+		return autoIndexMsg{}
+	}
+}
+
+type autoIndexMsg struct{}
 
 func (m *Model) setStatus(msg string) {
 	m.status = msg

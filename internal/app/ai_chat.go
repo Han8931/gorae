@@ -104,6 +104,9 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.aiStreamBuf = ""
 	m.aiMessages = nil
 	m.aiSources = nil
+	// Ensure any active kitty/iTerm2 image is cleared when entering chat.
+	m.previewGraphic = ""
+	m.previewGraphicClear = true
 	m.aiChatScroll = 0
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""

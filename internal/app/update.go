@@ -330,6 +330,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, scheduleAutoMetadataScan(autoMetadataScanInterval))
 		return m, tea.Batch(cmds...)
 
+	case autoIndexMsg:
+		m.setPersistentStatus("First run: indexing documents…")
+		return m, m.handleIndexCommand(nil)
+
 	case indexCompleteMsg:
 		parts := []string{}
 		if msg.indexed > 0 {

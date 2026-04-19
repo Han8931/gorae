@@ -11,7 +11,7 @@ import (
 	"gorae/internal/ai"
 )
 
-func (m Model) renderGoraeView() string {
+func (m *Model) renderGoraeView() string {
 	width := m.width
 	height := m.viewportHeight
 	if width <= 0 {
@@ -69,6 +69,14 @@ func (m Model) renderGoraeView() string {
 	}
 
 	var b strings.Builder
+
+	// Emit kitty/iTerm2 delete sequence once when transitioning into this view.
+	if m.previewGraphicClear {
+		if m.previewGraphicFmt == "kitty" || terminalGraphicFormat() == "kitty" {
+			b.WriteString(kittyDeletePreviewSequence())
+		}
+		m.previewGraphicClear = false
+	}
 
 	// Chat area
 	for _, line := range visible {
