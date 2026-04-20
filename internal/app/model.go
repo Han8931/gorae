@@ -968,7 +968,8 @@ func (m *Model) searchResultsHeights() (int, int) {
 	if detail < 3 {
 		detail = 3
 	}
-	list := height - detail - 4
+	// Overhead: 1 header + 1 query + 1 controls + 1 blank + 3 list-panel borders + 3 detail-panel borders = 10
+	list := height - detail - 10
 	if list < 4 {
 		needed := 4 - list
 		list = 4
