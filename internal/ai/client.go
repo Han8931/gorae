@@ -39,6 +39,7 @@ type Client struct {
 	baseURL    string
 	apiKey     string
 	model      string
+	provider   string
 	httpClient *http.Client
 }
 
@@ -47,9 +48,10 @@ func NewClient(cfg *config.AIConfig) (*Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("no AI config found — add an \"ai\" block to config.json")
 	}
+	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if baseURL == "" {
-		switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+		switch provider {
 		case "ollama":
 			baseURL = defaultOllamaBase
 		case "openai", "":
@@ -63,9 +65,10 @@ func NewClient(cfg *config.AIConfig) (*Client, error) {
 		model = defaultModel
 	}
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  strings.TrimSpace(cfg.APIKey),
-		model:   model,
+		baseURL:  baseURL,
+		apiKey:   strings.TrimSpace(cfg.APIKey),
+		model:    model,
+		provider: provider,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -73,6 +76,75 @@ func NewClient(cfg *config.AIConfig) (*Client, error) {
 }
 
 func (c *Client) Model() string { return c.model }
+
+// GetEmbedding returns a vector embedding for text using the given model.
+// Supports Ollama (/api/embeddings) and OpenAI-compatible (/v1/embeddings) APIs.
+func (c *Client) GetEmbedding(ctx context.Context, embModel, text string) ([]float32, error) {
+	if c.provider == "ollama" {
+		return c.ollamaEmbedding(ctx, embModel, text)
+	}
+	return c.openaiEmbedding(ctx, embModel, text)
+}
+
+func (c *Client) ollamaEmbedding(ctx context.Context, model, text string) ([]float32, error) {
+	// Ollama base is http://localhost:11434/v1 — strip the /v1 for native API
+	base := strings.TrimSuffix(c.baseURL, "/v1")
+	reqBody, _ := json.Marshal(map[string]string{"model": model, "prompt": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/embeddings", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama embeddings: status %d", resp.StatusCode)
+	}
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Embedding, nil
+}
+
+func (c *Client) openaiEmbedding(ctx context.Context, model, text string) ([]float32, error) {
+	reqBody, _ := json.Marshal(map[string]string{"model": model, "input": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openai embeddings: status %d", resp.StatusCode)
+	}
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("openai embeddings: empty response")
+	}
+	return result.Data[0].Embedding, nil
+}
 
 type StreamToken struct {
 	Text string

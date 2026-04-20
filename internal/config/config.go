@@ -24,12 +24,14 @@ const (
 
 // AIConfig holds settings for the AI chat feature (:gorae).
 type AIConfig struct {
-	Provider     string `json:"provider,omitempty"`
-	Model        string `json:"model,omitempty"`
-	APIKey       string `json:"api_key"`
-	BaseURL      string `json:"base_url"`
-	TopK         int    `json:"top_k,omitempty"`
-	SystemPrompt string `json:"system_prompt"`
+	Provider       string `json:"provider,omitempty"`
+	Model          string `json:"model,omitempty"`
+	APIKey         string `json:"api_key"`
+	BaseURL        string `json:"base_url"`
+	TopK           int    `json:"top_k,omitempty"`
+	SystemPrompt   string `json:"system_prompt"`
+	VectorSearch   bool   `json:"vector_search"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
 type Config struct {
@@ -173,12 +175,14 @@ func legacyThemePath() (string, error) {
 // every field appears in the saved JSON instead of being omitted.
 func DefaultAIConfig() *AIConfig {
 	return &AIConfig{
-		Provider:     "ollama",
-		Model:        "llama3.2",
-		APIKey:       "",
-		BaseURL:      "",
-		TopK:         3,
-		SystemPrompt: "",
+		Provider:       "ollama",
+		Model:          "llama3.2",
+		APIKey:         "",
+		BaseURL:        "",
+		TopK:           3,
+		SystemPrompt:   "",
+		VectorSearch:   false,
+		EmbeddingModel: "nomic-embed-text",
 	}
 }
 
@@ -292,7 +296,17 @@ func writeDefaultConfig(path string, cfg *Config) error {
     "top_k": 3,
 
     // Optional system prompt prepended before the RAG context block.
-    "system_prompt": ""
+    "system_prompt": "",
+
+    // Set to true to use semantic (vector) search instead of keyword FTS.
+    // Requires running :index after enabling. Slower to index but finds
+    // conceptually related content even when exact keywords don't match.
+    "vector_search": false,
+
+    // Embedding model used when vector_search is true.
+    // Ollama: "nomic-embed-text", "mxbai-embed-large"
+    // OpenAI: "text-embedding-3-small", "text-embedding-3-large"
+    "embedding_model": "nomic-embed-text"
   }
 }
 `

@@ -588,7 +588,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 		var sources []string
 		var docContext string
 		if needsRAG(userText) {
-			sources, docContext = goraeRetrieveContext(ctx, store, cfg, userText)
+			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, userText)
 		}
 
 		// Prepend focused file content if set.
@@ -738,7 +738,7 @@ func needsRAG(text string) bool {
 	return true
 }
 
-func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string) ([]string, string) {
+func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, client *ai.Client, query string) ([]string, string) {
 	if store == nil {
 		return nil, ""
 	}
@@ -746,10 +746,27 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 	if cfg != nil && cfg.AI != nil && cfg.AI.TopK > 0 {
 		topK = cfg.AI.TopK
 	}
-	results, err := store.SearchFTS(ctx, query, topK)
-	if err != nil || len(results) == 0 {
+
+	var results []meta.FTSMatch
+
+	if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch && client != nil {
+		embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
+		if embModel == "" {
+			embModel = "nomic-embed-text"
+		}
+		if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
+			results, _ = store.SearchSemantic(ctx, vec, topK)
+		}
+	}
+
+	if len(results) == 0 {
+		results, _ = store.SearchFTS(ctx, query, topK)
+	}
+
+	if len(results) == 0 {
 		return nil, ""
 	}
+
 	seen := map[string]bool{}
 	var sources []string
 	var sb strings.Builder

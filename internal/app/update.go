@@ -3064,7 +3064,7 @@ func (m *Model) handleIndexCommand(args []string) tea.Cmd {
 		return nil
 	}
 	m.setPersistentStatus(fmt.Sprintf("Indexing documents under %s...", root))
-	return indexAllCmd(root, m.meta, m.searchSkipDirs())
+	return indexAllCmd(root, m.meta, m.searchSkipDirs(), m.cfg)
 }
 
 func (m *Model) handleTagsCommand(args []string) tea.Cmd {
