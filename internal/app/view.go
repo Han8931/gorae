@@ -628,6 +628,9 @@ func (m Model) View() string {
 	if m.state == stateGorae {
 		return m.renderGoraeView()
 	}
+	if m.state == stateSessionList {
+		return m.renderSessionList()
+	}
 	var b strings.Builder
 	var overlayLines []string
 

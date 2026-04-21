@@ -50,6 +50,7 @@ const (
 	stateHelp
 	stateUnmarkPrompt
 	stateGorae
+	stateSessionList
 )
 
 type quickFilterMode int
@@ -186,6 +187,9 @@ type Model struct {
 	aiInputHistory    []string             // previously submitted user messages
 	aiHistoryCursor   int                  // -1 = at current draft; ≥0 = browsing history
 	aiHistoryDraft    string               // saved draft while browsing history
+	aiSessionID       int64                // active session ID; 0 = ephemeral (not yet persisted)
+	aiSessionList     []meta.ChatSession   // sessions shown in stateSessionList
+	aiSessionCursor   int                  // cursor in the session list
 
 	previewText     []string
 	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines

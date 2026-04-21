@@ -113,6 +113,30 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 
+	// Load persisted messages and focused file when resuming a saved session.
+	if m.aiSessionID > 0 && m.meta != nil {
+		// Restore focused file.
+		if sessions, err := m.meta.ListSessions(context.Background()); err == nil {
+			for _, s := range sessions {
+				if s.ID == m.aiSessionID && s.FocusedFile != "" {
+					m.aiFocusedFile = s.FocusedFile
+					break
+				}
+			}
+		}
+		if msgs, err := m.meta.LoadMessages(context.Background(), m.aiSessionID); err == nil && len(msgs) > 0 {
+			for _, cm := range msgs {
+				m.aiMessages = append(m.aiMessages, ai.Message{
+					Role:     ai.Role(cm.Role),
+					Content:  cm.Content,
+					Thinking: cm.Thinking,
+				})
+			}
+			welcomeMsg = fmt.Sprintf("Resumed session — %d message(s) loaded. Type /new for a fresh session.", len(msgs))
+			m.aiChatScroll = 1<<31 - 1
+		}
+	}
+
 	if welcomeMsg != "" {
 		m.appendAISystem(welcomeMsg)
 	}
@@ -140,6 +164,9 @@ func (m *Model) goraeSelectCurrent() {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
 	m.appendAISystem("Focused: " + chosen.Title + "\nQuestions will now use this file as primary context.")
+	if m.aiSessionID > 0 && m.meta != nil {
+		_ = m.meta.UpdateSessionFocusedFile(context.Background(), m.aiSessionID, chosen.Path)
+	}
 }
 
 func (m *Model) updateGoraeStatus(modelName string) {
@@ -230,7 +257,9 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiChatScroll += m.viewportHeight / 2
 			return m, nil
 		case "tab":
-			m.goraeAutocomplete()
+			if cmd := m.goraeAutocomplete(); cmd != nil {
+				return m, cmd
+			}
 			return m, nil
 		case "enter":
 			if m.aiSearchSelecting {
@@ -301,16 +330,16 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/export", "/sources", "/help"}
+var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/export", "/sources", "/sessions", "/new", "/help"}
 
-func (m *Model) goraeAutocomplete() {
+func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiInput.Value()
 	if !strings.HasPrefix(val, "/") {
-		return
+		return nil
 	}
 	// Only complete when no space yet (completing the command name itself).
 	if strings.ContainsRune(val, ' ') {
-		return
+		return nil
 	}
 	lower := strings.ToLower(val)
 	var matches []string
@@ -320,7 +349,7 @@ func (m *Model) goraeAutocomplete() {
 		}
 	}
 	if len(matches) == 0 {
-		return
+		return nil
 	}
 	// Find longest common prefix among matches.
 	lcp := matches[0]
@@ -335,6 +364,13 @@ func (m *Model) goraeAutocomplete() {
 		m.aiInput.SetValue(lcp)
 	}
 	m.aiInput.CursorEnd()
+
+	// When Tab uniquely resolves to /sessions, open the list immediately.
+	if len(matches) == 1 && lcp == "/sessions" {
+		m.aiInput.SetValue("")
+		return m.enterSessionList()
+	}
+	return nil
 }
 
 func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
@@ -384,7 +420,22 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiMessages = nil
 		m.aiSources = nil
 		m.aiChatScroll = 0
+		if m.aiSessionID > 0 && m.meta != nil {
+			_ = m.meta.ClearSessionMessages(context.Background(), m.aiSessionID)
+		}
 		m.setStatus("Chat history cleared")
+	case "/sessions":
+		return m.enterSessionList()
+	case "/new":
+		m.aiSessionID = 0
+		m.aiMessages = nil
+		m.aiSources = nil
+		m.aiChatScroll = 0
+		m.setStatus("New session started")
+		if m.aiClient != nil {
+			m.updateGoraeStatus(m.aiClient.Model())
+		}
+		return nil
 	case "/export":
 		return m.exportGoraeChat()
 	case "/sources":
@@ -412,9 +463,11 @@ Gorae AI slash commands:
   /find <q>   — find files; use ↑/↓/Enter to select, Esc to cancel
   /select     — clear the current file focus
   /summarize  — summarize focused file and save to its note
-  /clear      — clear chat history
+  /clear      — clear chat history (also removes from saved session)
   /export     — save conversation to a markdown file
   /sources    — show documents cited in the last answer
+  /sessions   — open session picker to load or manage past conversations
+  /new        — start a new session (current session stays saved)
   /help       — this help text
 
 Keyboard shortcuts:
@@ -565,6 +618,23 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	}
 	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: userText})
 	m.aiInputHistory = append(m.aiInputHistory, userText)
+
+	// Persist to session — create one lazily on the first message.
+	if m.meta != nil {
+		if m.aiSessionID == 0 {
+			title := userText
+			runes := []rune(title)
+			if len(runes) > 60 {
+				title = string(runes[:59]) + "…"
+			}
+			if id, err := m.meta.CreateSession(context.Background(), title); err == nil {
+				m.aiSessionID = id
+			}
+		}
+		if m.aiSessionID > 0 {
+			_ = m.meta.SaveMessage(context.Background(), m.aiSessionID, string(ai.RoleUser), userText, "")
+		}
+	}
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 	m.aiChatScroll = 1<<31 - 1 // scroll to bottom
@@ -669,6 +739,9 @@ func (m *Model) flushStreamBuf() {
 		Content:  display,
 		Thinking: thinking,
 	})
+	if m.aiSessionID > 0 && m.meta != nil {
+		_ = m.meta.SaveMessage(context.Background(), m.aiSessionID, string(ai.RoleAssistant), display, thinking)
+	}
 	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
 	m.aiThinkBuf = ""
@@ -946,13 +1019,75 @@ func (m *Model) exportGoraeChat() tea.Cmd {
 		m.setStatus("No notes_dir configured — cannot export")
 		return nil
 	}
-	filename := filepath.Join(notesDir, "gorae-chat-export.md")
+	if err := os.MkdirAll(notesDir, 0o755); err != nil {
+		m.setStatus("Export failed: " + err.Error())
+		return nil
+	}
+	filename := filepath.Join(notesDir, m.goraeExportFilename())
 	if err := os.WriteFile(filename, []byte(sb.String()), 0o644); err != nil {
 		m.setStatus("Export failed: " + err.Error())
 		return nil
 	}
 	m.setStatus("Exported to " + filename)
 	return nil
+}
+
+// goraeExportFilename builds a unique export filename from the session title
+// (when available) and the current timestamp.
+// Format: gorae-chat-<slug>-YYYYMMDD-HHMMSS.md
+func (m *Model) goraeExportFilename() string {
+	slug := ""
+	// Derive slug from the active session's title or from the first user message.
+	title := ""
+	if m.aiSessionID > 0 && m.meta != nil {
+		if sessions, err := m.meta.ListSessions(context.Background()); err == nil {
+			for _, s := range sessions {
+				if s.ID == m.aiSessionID {
+					title = s.Title
+					break
+				}
+			}
+		}
+	}
+	if title == "" {
+		for _, msg := range m.aiMessages {
+			if msg.Role == ai.RoleUser {
+				title = msg.Content
+				break
+			}
+		}
+	}
+	if title != "" {
+		slug = slugify(title)
+	}
+	ts := time.Now().Format("20060102-150405")
+	if slug == "" {
+		return "gorae-chat-" + ts + ".md"
+	}
+	return "gorae-chat-" + slug + "-" + ts + ".md"
+}
+
+// slugify converts a string into a lowercase URL/filename-safe slug.
+func slugify(s string) string {
+	runes := []rune(strings.ToLower(strings.TrimSpace(s)))
+	if len(runes) > 40 {
+		runes = runes[:40]
+	}
+	var b strings.Builder
+	prevDash := false
+	for _, r := range runes {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash && b.Len() > 0 {
+				b.WriteRune('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }
 
 func isContextCancelled(err error) bool {

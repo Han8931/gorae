@@ -388,6 +388,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateGoraeChat(msg)
 		}
 
+		if m.state == stateSessionList {
+			return m.updateSessionList(msg)
+		}
+
 		if m.state == stateHelp {
 			if handled, cmd := m.handleHelpKey(key); handled {
 				return m, cmd
@@ -1813,7 +1817,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 	case "tags":
 		return m.handleTagsCommand(args)
 	case "gorae", "ai", "llm":
-		return m.enterGoraeChat()
+		return m.enterSessionList()
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit

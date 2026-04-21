@@ -151,6 +151,8 @@ var goraeCommandDescs = []struct{ name, desc string }{
 	{"/clear", "clear chat history"},
 	{"/export", "save conversation to a file"},
 	{"/sources", "show documents cited in last answer"},
+	{"/sessions", "open session picker — load or manage past conversations"},
+	{"/new", "start a new session (current session stays saved)"},
 	{"/help", "show help"},
 }
 
