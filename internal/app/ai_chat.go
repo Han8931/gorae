@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"gorae/internal/ai"
 	"gorae/internal/config"
 	"gorae/internal/meta"
+	"gorae/internal/search"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -587,8 +589,9 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 		var sources []string
 		var docContext string
-		if needsRAG(userText) {
-			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, userText)
+		plan := planRetrieval(ctx, userText, cfg, client)
+		if plan.local || plan.web {
+			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, userText, plan)
 		}
 
 		// Prepend focused file content if set.
@@ -710,19 +713,28 @@ func (m *Model) appendAISystem(text string) {
 	})
 }
 
-// ── RAG helpers ───────────────────────────────────────────────────────────────
+// ── retrieval planning ────────────────────────────────────────────────────────
 
-// needsRAG returns false for short conversational messages that don't benefit
-// from document retrieval (greetings, thanks, simple yes/no replies, etc.).
-// Skipping RAG for these eliminates the FTS search latency and keeps the
-// prompt small, so time-to-first-token is much faster.
-func needsRAG(text string) bool {
-	words := strings.Fields(text)
+type retrievalPlan struct {
+	local bool
+	web   bool
+}
+
+// planRetrieval decides which retrieval paths to activate for a query.
+// Phase 1 — rule-based: handles obvious conversational, local-only, and
+// web-only signals cheaply with no extra API calls.
+// Phase 2 — LLM classifier: fires only when web search is enabled and no
+// strong rule signal was found. Uses a short 3-second timeout so a slow model
+// never blocks the main response for long.
+func planRetrieval(ctx context.Context, query string, cfg *config.Config, client *ai.Client) retrievalPlan {
+	words := strings.Fields(query)
 	if len(words) <= 3 {
-		return false
+		return retrievalPlan{}
 	}
-	// Common purely-conversational patterns
-	lower := strings.ToLower(strings.TrimRight(text, "!?."))
+
+	lower := strings.ToLower(strings.TrimRight(query, "!?."))
+
+	// Purely conversational — skip all retrieval.
 	conversational := []string{
 		"hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
 		"sure", "yes", "no", "nope", "yep", "got it", "i see",
@@ -732,50 +744,153 @@ func needsRAG(text string) bool {
 	}
 	for _, phrase := range conversational {
 		if lower == phrase {
-			return false
+			return retrievalPlan{}
 		}
 	}
-	return true
+
+	webEnabled := cfg != nil && cfg.WebSearch != nil && cfg.WebSearch.Enabled
+
+	// Strong local signals → local only, never web.
+	localSignals := []string{
+		"my notes", "my library", "i highlighted", "i read", "i saved",
+		"my document", "in my papers", "my books", "i annotated",
+		"in my library", "my collection",
+	}
+	for _, sig := range localSignals {
+		if strings.Contains(lower, sig) {
+			return retrievalPlan{local: true}
+		}
+	}
+
+	// Strong web signals → local + web (local context is still useful).
+	if webEnabled {
+		webSignals := []string{
+			"latest", "recent", "current", "today", "news", "breaking",
+			"just announced", "as of", "right now", "this week", "this month",
+			"this year", "new research", "new study", "new paper",
+		}
+		for _, sig := range webSignals {
+			if strings.Contains(lower, sig) {
+				return retrievalPlan{local: true, web: true}
+			}
+		}
+
+		// Ambiguous and substantial — ask the LLM to classify.
+		if client != nil && len(words) > 5 {
+			if plan, ok := llmClassifyRetrieval(ctx, query, client); ok {
+				// Always keep local=true if the query is substantial.
+				plan.local = true
+				return plan
+			}
+		}
+	}
+
+	// Default: local retrieval only.
+	return retrievalPlan{local: true}
 }
 
-func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, client *ai.Client, query string) ([]string, string) {
-	if store == nil {
-		return nil, ""
-	}
-	topK := 3
-	if cfg != nil && cfg.AI != nil && cfg.AI.TopK > 0 {
-		topK = cfg.AI.TopK
-	}
+// llmClassifyRetrieval sends a tiny classification prompt to the LLM and
+// parses a JSON {local, web} response. It uses a 3-second timeout so a slow
+// model never stalls the main answer for long.
+func llmClassifyRetrieval(ctx context.Context, query string, client *ai.Client) (retrievalPlan, bool) {
+	classCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 
-	var results []meta.FTSMatch
+	prompt := "You are a routing assistant. Classify this user query.\n" +
+		"Reply with JSON only, no explanation: {\"local\": bool, \"web\": bool}\n" +
+		"  local = true  → query is about the user's personal documents / saved library\n" +
+		"  web   = true  → query needs current / real-time information from the internet\n" +
+		"Query: \"" + query + "\""
 
-	if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch && client != nil {
-		embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
-		if embModel == "" {
-			embModel = "nomic-embed-text"
+	ch := client.StreamChat(classCtx, []ai.Message{{Role: ai.RoleUser, Content: prompt}})
+	var buf strings.Builder
+	for tok := range ch {
+		if tok.Err != nil {
+			return retrievalPlan{}, false
 		}
-		if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
-			results, _ = store.SearchSemantic(ctx, vec, topK)
+		buf.WriteString(tok.Text)
+		if tok.Done {
+			break
 		}
 	}
 
-	if len(results) == 0 {
-		results, _ = store.SearchFTS(ctx, query, topK)
+	raw := buf.String()
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return retrievalPlan{}, false
 	}
-
-	if len(results) == 0 {
-		return nil, ""
+	var result struct {
+		Local bool `json:"local"`
+		Web   bool `json:"web"`
 	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &result); err != nil {
+		return retrievalPlan{}, false
+	}
+	return retrievalPlan{local: result.Local, web: result.Web}, true
+}
 
-	seen := map[string]bool{}
+// ── RAG retrieval ─────────────────────────────────────────────────────────────
+
+func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, client *ai.Client, query string, plan retrievalPlan) ([]string, string) {
 	var sources []string
 	var sb strings.Builder
-	for _, r := range results {
-		if !seen[r.Path] {
-			seen[r.Path] = true
-			sources = append(sources, r.Path)
+
+	// Local retrieval (FTS or vector).
+	if plan.local && store != nil {
+		topK := 3
+		if cfg != nil && cfg.AI != nil && cfg.AI.TopK > 0 {
+			topK = cfg.AI.TopK
 		}
-		sb.WriteString(fmt.Sprintf("[Source: %s]\n%s\n\n", filepath.Base(r.Path), strings.TrimSpace(r.Snippet)))
+
+		var results []meta.FTSMatch
+		if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch && client != nil {
+			embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
+			if embModel == "" {
+				embModel = "nomic-embed-text"
+			}
+			if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
+				results, _ = store.SearchSemantic(ctx, vec, topK)
+			}
+		}
+		if len(results) == 0 {
+			results, _ = store.SearchFTS(ctx, query, topK)
+		}
+
+		seen := map[string]bool{}
+		for _, r := range results {
+			if !seen[r.Path] {
+				seen[r.Path] = true
+				sources = append(sources, r.Path)
+			}
+			sb.WriteString(fmt.Sprintf("[Local: %s]\n%s\n\n", filepath.Base(r.Path), strings.TrimSpace(r.Snippet)))
+		}
+	}
+
+	// Web retrieval.
+	if plan.web && cfg != nil && cfg.WebSearch != nil && cfg.WebSearch.Enabled {
+		limit := cfg.WebSearch.Results
+		if limit <= 0 {
+			limit = 5
+		}
+		ws, err := search.NewWebSearcher(cfg.WebSearch.Provider, cfg.WebSearch.APIKey)
+		if err == nil {
+			webResults, err := ws.Search(ctx, query, limit)
+			if err == nil {
+				for _, r := range webResults {
+					sources = append(sources, r.URL)
+					snippet := strings.TrimSpace(r.Snippet)
+					if len(snippet) > 500 {
+						snippet = snippet[:500] + "…"
+					}
+					sb.WriteString(fmt.Sprintf("[Web: %s]\n%s\n\n", r.Title, snippet))
+				}
+			}
+		}
+	}
+
+	if sb.Len() == 0 {
+		return nil, ""
 	}
 	return sources, strings.TrimRight(sb.String(), "\n")
 }
@@ -789,13 +904,13 @@ func goraeSystemPrompt(cfg *config.Config, docContext string) string {
 	parts = append(parts, base)
 	if docContext != "" {
 		parts = append(parts,
-			"\nRelevant excerpts from the user's document library are provided below.",
+			"\nRelevant excerpts are provided below. [Local] entries are from the user's personal library; [Web] entries are live web results.",
 			"Answer using these excerpts when relevant.",
 			"If the answer is not in the excerpts, answer from general knowledge and say so.\n",
 			docContext,
 		)
 	} else {
-		parts = append(parts, "\nNo relevant documents were found in the library for this query. Answer from general knowledge.")
+		parts = append(parts, "\nNo relevant documents were found for this query. Answer from general knowledge.")
 	}
 	return strings.Join(parts, "\n")
 }

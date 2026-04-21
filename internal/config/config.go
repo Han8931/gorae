@@ -22,6 +22,14 @@ const (
 	colorBold  = "\033[1m"
 )
 
+// WebSearchConfig holds settings for the web search feature.
+type WebSearchConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"`        // "brave" | "tavily"
+	APIKey   string `json:"api_key"`
+	Results  int    `json:"results,omitempty"` // default 5
+}
+
 // AIConfig holds settings for the AI chat feature (:gorae).
 type AIConfig struct {
 	Provider       string `json:"provider,omitempty"`
@@ -47,6 +55,8 @@ type Config struct {
 	ThemePath           string    `json:"theme_path,omitempty"`
 	EnableMouse         bool      `json:"enable_mouse"`
 	AI                  *AIConfig `json:"ai,omitempty"`
+
+	WebSearch *WebSearchConfig `json:"web_search,omitempty"`
 
 	// Runtime-only fields (not persisted)
 	ConfigPath   string `json:"-"`
@@ -307,6 +317,25 @@ func writeDefaultConfig(path string, cfg *Config) error {
     // Ollama: "nomic-embed-text", "mxbai-embed-large"
     // OpenAI: "text-embedding-3-small", "text-embedding-3-large"
     "embedding_model": "nomic-embed-text"
+  },
+
+  // ── Web search ──────────────────────────────────────────────────────────────
+  // Augments AI answers with live web results. Disabled by default.
+  // Gorae uses a routing node to decide when web search is needed,
+  // so it is only called for queries that genuinely require current information.
+  "web_search": {
+    "enabled": false,
+
+    // Provider: "brave" | "tavily"
+    //   brave  → https://api.search.brave.com/ (2 000 free req/month)
+    //   tavily → https://tavily.com/           (1 000 free req/month, AI-optimised)
+    "provider": "tavily",
+
+    // API key for the chosen provider.
+    "api_key": "",
+
+    // Number of web results injected per query (default 5).
+    "results": 5
   }
 }
 `

@@ -392,11 +392,14 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 * [ ] Text extraction / OCR
 * [ ] TTS
 * [ ] AI chat session management
+* [ ] Add skills
 * [x] `/summarize` command — streams summary and saves to the file's note
 * [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
 * [x] Live `/find` file picker — fzf-style, results update as you type
 * [ ] Semantic search in Gorae mode
 * [ ] Prompt management
+* [x] Web search integration — Brave / Tavily with hybrid routing node (rules + LLM classifier)
+* [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics
 
 ## Uninstall
 
