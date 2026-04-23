@@ -97,6 +97,10 @@ func (m *Model) renderGoraeView() string {
 		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
 		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
 		b.WriteString(m.styles.StatusValue.Render(" Thinking…  Esc to stop"))
+	} else if m.aiCompacting {
+		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
+		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
+		b.WriteString(m.styles.StatusValue.Render(" Compacting…"))
 	} else {
 		b.WriteString(m.styles.StatusLabel.Render(" YOU "))
 		b.WriteString(" " + m.aiInput.View())
@@ -149,6 +153,7 @@ var goraeCommandDescs = []struct{ name, desc string }{
 	{"/select", "clear focused file"},
 	{"/summarize", "summarize focused file and save to its note"},
 	{"/clear", "clear chat history"},
+	{"/compact", "summarise old messages to free up context window"},
 	{"/export", "save conversation to a file"},
 	{"/sources", "show documents cited in last answer"},
 	{"/sessions", "open session picker — load or manage past conversations"},
@@ -187,14 +192,24 @@ func (m Model) buildChatLines(width int) []string {
 				}
 				lines = append(lines, "")
 			case ai.RoleAssistant:
-				lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
-				if msg.Thinking != "" {
-					lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
+				if msg.IsSummary {
+					compactStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+					lines = append(lines, compactStyle.Render("  ╌╌╌ context summary ╌╌╌"))
+					for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
+						lines = append(lines, "   "+compactStyle.Render(pl.text))
+					}
+					lines = append(lines, compactStyle.Render("  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"))
+					lines = append(lines, "")
+				} else {
+					lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
+					if msg.Thinking != "" {
+						lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
+					}
+					for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
+						lines = append(lines, "   "+pl.text)
+					}
+					lines = append(lines, "")
 				}
-				for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
-					lines = append(lines, "   "+pl.text)
-				}
-				lines = append(lines, "")
 			}
 		}
 

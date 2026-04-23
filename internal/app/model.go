@@ -190,6 +190,7 @@ type Model struct {
 	aiSessionID       int64                // active session ID; 0 = ephemeral (not yet persisted)
 	aiSessionList     []meta.ChatSession   // sessions shown in stateSessionList
 	aiSessionCursor   int                  // cursor in the session list
+	aiCompacting      bool                 // true while a /compact summarisation is in flight
 
 	previewText     []string
 	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines

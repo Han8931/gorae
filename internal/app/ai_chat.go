@@ -43,6 +43,14 @@ type aiSourcesMsg struct {
 	paths []string
 }
 
+type aiCompactDoneMsg struct {
+	summary string
+	kept    int
+	err     error
+}
+
+const autoCompactThreshold = 40 // auto-compact after this many messages
+
 type aiLiveFindMsg struct {
 	query   string
 	results []meta.NameMatch
@@ -193,7 +201,32 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case aiCompactDoneMsg:
+		m.aiCompacting = false
+		if msg.err != nil {
+			m.setStatus("Compact failed: " + msg.err.Error())
+			return m, nil
+		}
+		n := len(m.aiMessages)
+		keep := msg.kept
+		if keep > n {
+			keep = n
+		}
+		compacted := n - keep
+		summaryMsg := ai.Message{
+			Role:      ai.RoleAssistant,
+			Content:   msg.summary,
+			IsSummary: true,
+		}
+		m.aiMessages = append([]ai.Message{summaryMsg}, m.aiMessages[n-keep:]...)
+		m.aiChatScroll = 0
+		m.setStatus(fmt.Sprintf("Compacted %d messages → summary + last %d kept verbatim", compacted, keep))
+		return m, nil
+
 	case tea.KeyMsg:
+		if m.aiCompacting {
+			return m, nil
+		}
 		if m.aiStreaming {
 			switch msg.String() {
 			case "esc", "ctrl+c":
@@ -296,7 +329,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case goraeSpinnerTickMsg:
-		if m.aiStreaming {
+		if m.aiStreaming || m.aiCompacting {
 			m.aiSpinnerFrame = (m.aiSpinnerFrame + 1) % len(spinnerFrames)
 			return m, goraeSpinnerTick()
 		}
@@ -330,7 +363,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/export", "/sources", "/sessions", "/new", "/help"}
+var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/help"}
 
 func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiInput.Value()
@@ -424,6 +457,8 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 			_ = m.meta.ClearSessionMessages(context.Background(), m.aiSessionID)
 		}
 		m.setStatus("Chat history cleared")
+	case "/compact":
+		return m.compactChat()
 	case "/sessions":
 		return m.enterSessionList()
 	case "/new":
@@ -464,6 +499,7 @@ Gorae AI slash commands:
   /select     — clear the current file focus
   /summarize  — summarize focused file and save to its note
   /clear      — clear chat history (also removes from saved session)
+  /compact    — summarise old messages to free up context window
   /export     — save conversation to a markdown file
   /sources    — show documents cited in the last answer
   /sessions   — open session picker to load or manage past conversations
@@ -722,6 +758,9 @@ func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
 		m.aiStreaming = false
 		m.aiCancelFunc = nil
 		m.flushStreamBuf()
+		if len(m.aiMessages) >= autoCompactThreshold && !m.aiCompacting {
+			return m.compactChat()
+		}
 		return nil
 	}
 	m.aiRawBuf += tok.text
@@ -749,6 +788,80 @@ func (m *Model) flushStreamBuf() {
 		m.saveSummaryToNote(m.aiSummarizeTarget, display)
 		m.aiSummarizeTarget = ""
 	}
+}
+
+// ── /compact ──────────────────────────────────────────────────────────────────
+
+func (m *Model) compactChat() tea.Cmd {
+	if m.aiClient == nil {
+		m.appendAISystem("No AI provider configured.")
+		return nil
+	}
+	n := len(m.aiMessages)
+	const keepLast = 6
+	toSummarise := n - keepLast
+	if toSummarise < 4 {
+		m.appendAISystem(fmt.Sprintf(
+			"Not enough history to compact — need at least %d messages, have %d.", keepLast+4, n))
+		return nil
+	}
+
+	var sb strings.Builder
+	for _, msg := range m.aiMessages[:toSummarise] {
+		switch msg.Role {
+		case ai.RoleUser:
+			sb.WriteString("User: ")
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		case ai.RoleAssistant:
+			if msg.IsSummary {
+				sb.WriteString("[Earlier summary]: ")
+			} else {
+				sb.WriteString("Assistant: ")
+			}
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		}
+	}
+
+	client := m.aiClient
+	sessionID := m.aiSessionID
+	store := m.meta
+
+	m.aiCompacting = true
+	m.aiSpinnerFrame = 0
+
+	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+
+		prompt := "Summarise the following conversation excerpt concisely.\n" +
+			"Preserve: key questions, answers given, document references, and any conclusions.\n" +
+			"Write in third-person past tense. This summary will replace the original messages " +
+			"as context for an ongoing conversation — be complete but brief.\n\n" +
+			"Conversation:\n" + sb.String()
+
+		ch := client.StreamChat(ctx, []ai.Message{{Role: ai.RoleUser, Content: prompt}})
+		var buf strings.Builder
+		for tok := range ch {
+			if tok.Err != nil {
+				return aiCompactDoneMsg{err: tok.Err}
+			}
+			buf.WriteString(tok.Text)
+			if tok.Done {
+				break
+			}
+		}
+
+		summary := strings.TrimSpace(buf.String())
+		if summary == "" {
+			return aiCompactDoneMsg{err: fmt.Errorf("model returned an empty summary")}
+		}
+		if sessionID > 0 && store != nil {
+			_ = store.CompactSession(context.Background(), sessionID, summary, keepLast)
+		}
+		return aiCompactDoneMsg{summary: summary, kept: keepLast}
+	})
 }
 
 // parseThinkBlocks splits raw streamed text into display content (outside

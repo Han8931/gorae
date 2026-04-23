@@ -17,9 +17,10 @@ type ChatSession struct {
 
 // ChatMessage is a single persisted message within a session.
 type ChatMessage struct {
-	Role     string
-	Content  string
-	Thinking string
+	Role      string
+	Content   string
+	Thinking  string
+	IsSummary bool
 }
 
 func (s *Store) initSessions() error {
@@ -35,17 +36,22 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 	}
 	// Migration: add focused_file for DBs created before this column existed.
 	s.db.Exec(`ALTER TABLE chat_sessions ADD COLUMN focused_file TEXT NOT NULL DEFAULT ''`)
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS chat_messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	session_id INTEGER NOT NULL,
 	role       TEXT    NOT NULL,
 	content    TEXT    NOT NULL DEFAULT '',
 	thinking   TEXT    NOT NULL DEFAULT '',
+	is_summary INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL,
 	FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-)`)
-	return err
+)`); err != nil {
+		return err
+	}
+	// Migration: add is_summary for DBs created before this column existed.
+	s.db.Exec(`ALTER TABLE chat_messages ADD COLUMN is_summary INTEGER NOT NULL DEFAULT 0`)
+	return nil
 }
 
 // CreateSession inserts a new session and returns its ID.
@@ -123,7 +129,7 @@ func (s *Store) SaveMessage(ctx context.Context, sessionID int64, role, content,
 // LoadMessages returns all messages for a session in chronological order.
 func (s *Store) LoadMessages(ctx context.Context, sessionID int64) ([]ChatMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT role, content, thinking
+SELECT role, content, thinking, is_summary
 FROM   chat_messages
 WHERE  session_id = ?
 ORDER BY created_at ASC, id ASC
@@ -136,12 +142,62 @@ ORDER BY created_at ASC, id ASC
 	var out []ChatMessage
 	for rows.Next() {
 		var cm ChatMessage
-		if err := rows.Scan(&cm.Role, &cm.Content, &cm.Thinking); err != nil {
+		var isSummary int
+		if err := rows.Scan(&cm.Role, &cm.Content, &cm.Thinking, &isSummary); err != nil {
 			return nil, err
 		}
+		cm.IsSummary = isSummary != 0
 		out = append(out, cm)
 	}
 	return out, rows.Err()
+}
+
+// CompactSession replaces the oldest messages with a summary, keeping the
+// most recent keepLast messages verbatim.
+func (s *Store) CompactSession(ctx context.Context, sessionID int64, summary string, keepLast int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Find the created_at of the oldest message to keep, so we know the cutoff.
+	var cutoff int64
+	err = tx.QueryRowContext(ctx, `
+SELECT created_at FROM chat_messages
+WHERE  session_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1 OFFSET ?
+`, sessionID, keepLast-1).Scan(&cutoff)
+	if err != nil {
+		return err
+	}
+
+	// Record the earliest timestamp so the summary sorts before everything else.
+	var earliest int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT MIN(created_at) FROM chat_messages WHERE session_id = ?`, sessionID,
+	).Scan(&earliest); err != nil {
+		return err
+	}
+
+	// Delete the messages that are being summarised (older than the cutoff).
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM chat_messages
+WHERE  session_id = ? AND created_at < ?
+`, sessionID, cutoff); err != nil {
+		return err
+	}
+
+	// Insert the summary before the remaining messages.
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO chat_messages (session_id, role, content, thinking, is_summary, created_at)
+VALUES (?, 'assistant', ?, '', 1, ?)
+`, sessionID, summary, earliest-1); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // ClearSessionMessages deletes all messages in a session without deleting the session itself.

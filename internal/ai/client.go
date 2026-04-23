@@ -30,9 +30,10 @@ const (
 )
 
 type Message struct {
-	Role     Role   `json:"role"`
-	Content  string `json:"content"`
-	Thinking string `json:"-"` // reasoning content from <think>…</think>; not sent to API
+	Role      Role   `json:"role"`
+	Content   string `json:"content"`
+	Thinking  string `json:"-"` // reasoning content from <think>…</think>; not sent to API
+	IsSummary bool   `json:"-"` // true for compacted context summary messages
 }
 
 type Client struct {

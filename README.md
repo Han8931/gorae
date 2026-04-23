@@ -400,6 +400,8 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 * [ ] Prompt management
 * [x] Web search integration — Brave / Tavily with hybrid routing node (rules + LLM classifier)
 * [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics
+* [ ] Multifile Handling
+* [ ] Session renaming
 
 ## Uninstall
 
