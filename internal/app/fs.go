@@ -115,9 +115,8 @@ const (
 	badgeColumnWidth = 1
 )
 
-func formatEntryColumns(state, favorite, toRead, year, title string) string {
+func formatEntryColumns(state, toRead, year, title string) string {
 	state = formatStateField(state)
-	favorite = formatBadgeField(favorite)
 	toRead = formatBadgeField(toRead)
 	year = strings.TrimSpace(year)
 	if year == "" {
@@ -127,7 +126,7 @@ func formatEntryColumns(state, favorite, toRead, year, title string) string {
 	if title == "" {
 		title = "-"
 	}
-	parts := []string{state, favorite, toRead, year, title}
+	parts := []string{state, toRead, year, title}
 	return strings.Join(parts, " ")
 }
 
@@ -241,15 +240,11 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 		if entryInfo != nil {
 			if data, ok := entryInfo[full]; ok {
 				icon := m.readingStateIcon(data.state)
-				favIcon := ""
 				toReadIcon := ""
-				if data.favorite {
-					favIcon = m.favoriteIcon()
-				}
 				if data.toRead {
 					toReadIcon = m.toReadIcon()
 				}
-				m.entryTitles[full] = formatEntryColumns(icon, favIcon, toReadIcon, data.year, data.title)
+				m.entryTitles[full] = formatEntryColumns(icon, toReadIcon, data.year, data.title)
 				continue
 			}
 		}
@@ -258,7 +253,7 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 			continue
 		}
 		name := m.normalizedEntryBase(e.Name(), full)
-		m.entryTitles[full] = formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
+		m.entryTitles[full] = formatEntryColumns(m.readingStateIcon(""), "", "-", name)
 	}
 }
 
@@ -277,13 +272,13 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	}
 	name := m.normalizedEntryBase(baseName, fullPath)
 	if m.meta == nil {
-		return formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
+		return formatEntryColumns(m.readingStateIcon(""), "", "-", name)
 	}
 
 	path := canonicalPath(fullPath)
 	md, err := m.meta.Get(ctx, path)
 	if err != nil || md == nil {
-		return formatEntryColumns(m.readingStateIcon(""), "", "", "-", name)
+		return formatEntryColumns(m.readingStateIcon(""), "", "-", name)
 	}
 	stateIcon := m.readingStateIcon(md.ReadingState)
 	title := strings.TrimSpace(md.Title)
@@ -294,15 +289,11 @@ func (m *Model) resolveEntryTitle(ctx context.Context, fullPath string, entry fs
 	if year == "" {
 		year = "-"
 	}
-	favIcon := ""
 	toReadIcon := ""
-	if md.Favorite {
-		favIcon = m.favoriteIcon()
-	}
 	if md.ToRead {
 		toReadIcon = m.toReadIcon()
 	}
-	return formatEntryColumns(stateIcon, favIcon, toReadIcon, year, title)
+	return formatEntryColumns(stateIcon, toReadIcon, year, title)
 }
 
 func (m *Model) resortEntries() {

@@ -1048,10 +1048,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Sort: 't' by title, 'y' by year")
 			return m, nil
 
-		case "f":
-			m.toggleMetadataFlag(metadataFlagFavorite)
-			return m, nil
-
 		case "t":
 			if seq := m.yankSequence("t"); seq == "yt" {
 				if err := m.copyTitleAuthorYearToClipboard(); err != nil {

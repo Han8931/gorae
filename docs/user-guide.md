@@ -31,7 +31,6 @@ You can edit the config from inside the app:
 Gorae can maintain helper folders under your library so you can browse curated subsets
 from **any file manager** (not only inside Gorae):
 
-- `Favorites/`
 - `To Read/`
 - `Recently Added/`
 - `Recently Read/`
@@ -55,7 +54,7 @@ cp themes/fancy-dark.toml ~/.config/gorae/theme.toml
 ### Theme structure
 
 * `[palette]` defines base colors.
-* `[icons]` defines glyphs for the UI (favorite/to-read/read states, etc.).
+* `[icons]` defines glyphs for the UI (to-read/read states, etc.).
 * `[components.*]` defines styles for specific UI elements.
 
 Supported style keys:
@@ -157,10 +156,9 @@ The command relies on `pdftotext` (Poppler) to read the PDF text. Make sure Popp
 
 ---
 
-## Favorites, To-read, and reading states
+## To-read and reading states
 
 Flags:
-* `f`  toggle Favorite
 * `t`  toggle To-read
 * `u`  clear flags (opens a prompt)
 
@@ -193,7 +191,6 @@ Results view:
 
 Quick filters:
 
-* `F`  Show favorites papers
 * `T`  Show to-read papers
 * `O`  Show recently read papers (DB history)
 
@@ -212,6 +209,6 @@ Quick filters:
 * Keep Poppler updated for faster previews and better text extraction.
 * Kitty uses native image previews for the first PDF page. Install `chafa` only if you want the fallback image/text-art preview path in other terminals.
 * Back up `meta_dir` regularly to preserve annotations and reading states.
-* Use helper folders (`Favorites/`, `To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
+* Use helper folders (`To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
 
 Enjoy exploring your papers with Gorae! If you run into issues or have feature ideas, please open a GitHub issuewe'd love to hear from fellow readers.
