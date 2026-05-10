@@ -10,7 +10,7 @@
 
 
 <p align="center">
-  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="650">
+  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="800">
 </p>
 
 ## ✨ Highlights
