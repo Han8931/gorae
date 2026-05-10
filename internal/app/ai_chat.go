@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -120,6 +121,11 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.aiChatScroll = 0
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
+
+	// Load user-defined skills.
+	if skills, err := loadSkills(m.skillsDir); err == nil {
+		m.aiUserSkills = skills
+	}
 
 	// Load persisted messages and focused file when resuming a saved session.
 	if m.aiSessionID > 0 && m.meta != nil {
@@ -363,7 +369,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/help"}
+var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
 
 func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiInput.Value()
@@ -379,6 +385,12 @@ func (m *Model) goraeAutocomplete() tea.Cmd {
 	for _, cmd := range goraeSlashCommands {
 		if strings.HasPrefix(cmd, lower) {
 			matches = append(matches, cmd)
+		}
+	}
+	for _, sk := range m.aiUserSkills {
+		skillCmd := "/" + sk.Name
+		if strings.HasPrefix(skillCmd, lower) {
+			matches = append(matches, skillCmd)
 		}
 	}
 	if len(matches) == 0 {
@@ -484,9 +496,22 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 			}
 			m.appendAISystem(strings.TrimRight(sb.String(), "\n"))
 		}
+	case "/skills":
+		return m.handleSkillsCommand(raw, parts)
 	case "/help":
 		m.appendAISystem(goraeHelpText())
 	default:
+		// Check user-defined skills before giving up.
+		skillName := strings.TrimPrefix(cmd, "/")
+		for _, skill := range m.aiUserSkills {
+			if skill.Name == skillName {
+				extraArgs := ""
+				if len(parts) > 1 {
+					extraArgs = strings.Join(parts[1:], " ")
+				}
+				return m.invokeUserSkill(skill, extraArgs)
+			}
+		}
 		m.appendAISystem(fmt.Sprintf("Unknown command: %s\nType /help for a list.", cmd))
 	}
 	return nil
@@ -504,6 +529,7 @@ Gorae AI slash commands:
   /sources    — show documents cited in the last answer
   /sessions   — open session picker to load or manage past conversations
   /new        — start a new session (current session stays saved)
+  /skills     — manage custom prompt templates (edit / list)
   /help       — this help text
 
 Keyboard shortcuts:
@@ -1205,4 +1231,137 @@ func slugify(s string) string {
 
 func isContextCancelled(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// ── user skills ───────────────────────────────────────────────────────────────
+
+func (m *Model) handleSkillsCommand(raw string, parts []string) tea.Cmd {
+	if len(parts) < 2 {
+		m.appendAISystem(skillsHelpText())
+		return nil
+	}
+	sub := strings.ToLower(parts[1])
+	switch sub {
+	case "edit":
+		if len(parts) < 3 {
+			if len(m.aiUserSkills) == 0 {
+				m.appendAISystem("No skills yet.\n\nCreate a .md file in " + m.skillsDir)
+				return nil
+			}
+			if len(m.aiUserSkills) == 1 {
+				return m.openSkillEditor(m.aiUserSkills[0].Name)
+			}
+			var names []string
+			for _, s := range m.aiUserSkills {
+				names = append(names, s.Name)
+			}
+			m.appendAISystem("Which skill?\n\n  /skills edit <name>\n\nAvailable: " + strings.Join(names, ", "))
+			return nil
+		}
+		name := strings.ToLower(parts[2])
+		return m.openSkillEditor(name)
+
+	case "list":
+		if len(m.aiUserSkills) == 0 {
+			m.appendAISystem("No skills yet.\n\nCreate a .md file in " + m.skillsDir)
+			return nil
+		}
+		var sb strings.Builder
+		sb.WriteString("Your skills:\n")
+		for _, s := range m.aiUserSkills {
+			desc := s.Description
+			if desc == "" {
+				desc = s.Prompt
+			}
+			if len([]rune(desc)) > 60 {
+				desc = string([]rune(desc)[:59]) + "…"
+			}
+			sb.WriteString(fmt.Sprintf("\n  /%s\n    %s\n    %s\n", s.Name, desc, s.FilePath))
+		}
+		m.appendAISystem(strings.TrimRight(sb.String(), "\n"))
+		return nil
+
+	default:
+		m.appendAISystem(skillsHelpText())
+		return nil
+	}
+}
+
+func (m *Model) openSkillEditor(name string) tea.Cmd {
+	if err := os.MkdirAll(m.skillsDir, 0o755); err != nil {
+		m.appendAISystem("Cannot create skills directory: " + err.Error())
+		return nil
+	}
+	path := filepath.Join(m.skillsDir, name+".md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.WriteFile(path, []byte(skillTemplate), 0o644); err != nil {
+			m.appendAISystem("Failed to create skill file: " + err.Error())
+			return nil
+		}
+	}
+	editor := m.configEditor()
+	cmd := exec.Command(editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	m.setPersistentStatus(fmt.Sprintf("Editing skill %q with %s (save and exit to return)", name, editor))
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return skillEditFinishedMsg{err: err}
+	})
+}
+
+func (m *Model) invokeUserSkill(skill UserSkill, extraArgs string) tea.Cmd {
+	prompt := skill.Prompt
+	prompt = strings.ReplaceAll(prompt, "{input}", extraArgs)
+
+	needsFile := strings.Contains(prompt, "{focused_file}") || strings.Contains(prompt, "{title}")
+	if needsFile {
+		if m.aiFocusedFile == "" {
+			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused file. Use /find to select one first.", skill.Name))
+			return nil
+		}
+		if m.meta != nil {
+			if body, err := m.meta.GetFileContent(context.Background(), m.aiFocusedFile); err == nil {
+				prompt = strings.ReplaceAll(prompt, "{focused_file}", body)
+			}
+			title := filepath.Base(m.aiFocusedFile)
+			if md, err := m.meta.Get(context.Background(), m.aiFocusedFile); err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+				title = md.Title
+			}
+			prompt = strings.ReplaceAll(prompt, "{title}", title)
+		}
+	}
+
+	return m.submitGoraeMessage(prompt)
+}
+
+func (m *Model) reloadUserSkills() {
+	if skills, err := loadSkills(m.skillsDir); err == nil {
+		m.aiUserSkills = skills
+	}
+}
+
+func skillsHelpText() string {
+	return strings.TrimSpace(`
+Skills — custom prompt templates stored as .md files.
+
+  /skills edit [name]   open a skill file in $EDITOR (creates if new)
+  /skills list          show all skills
+
+Placeholders:
+  {input}         text typed after the skill name
+  {focused_file}  full content of the focused file (use /find first)
+  {title}         title of the focused file`)
+}
+
+func isValidSkillName(name string) bool {
+	if name == "" || len(name) > 30 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
 }

@@ -157,6 +157,7 @@ var goraeCommandDescs = []struct{ name, desc string }{
 	{"/export", "save conversation to a file"},
 	{"/sources", "show documents cited in last answer"},
 	{"/sessions", "open session picker — load or manage past conversations"},
+	{"/skills", "manage custom prompt templates (edit / list)"},
 	{"/new", "start a new session (current session stays saved)"},
 	{"/help", "show help"},
 }
@@ -268,6 +269,17 @@ func (m Model) goraeCommandHint(muted, accent, bright lipgloss.Style) []string {
 	for _, c := range goraeCommandDescs {
 		if strings.HasPrefix(c.name, lower) {
 			matched = append(matched, c)
+		}
+	}
+	// Include user-defined skills.
+	for _, sk := range m.aiUserSkills {
+		skillCmd := "/" + sk.Name
+		if strings.HasPrefix(skillCmd, lower) {
+			desc := sk.Prompt
+			if len([]rune(desc)) > 45 {
+				desc = string([]rune(desc)[:44]) + "…"
+			}
+			matched = append(matched, struct{ name, desc string }{skillCmd, desc})
 		}
 	}
 	if len(matched) == 0 {

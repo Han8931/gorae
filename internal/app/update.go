@@ -56,6 +56,10 @@ type markdownEditFinishedMsg struct {
 	err error
 }
 
+type skillEditFinishedMsg struct {
+	err error
+}
+
 type arxivUpdateMsg struct {
 	arxivID      string
 	updatedPaths []string
@@ -202,6 +206,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Editor exited with error: " + msg.err.Error())
 		}
 		return m, m.updateTextPreviewAsync()
+
+	case skillEditFinishedMsg:
+		m.setPersistentStatus("")
+		if msg.err != nil {
+			m.setStatus("Skill editor exited with error: " + msg.err.Error())
+		}
+		m.reloadUserSkills()
+		if m.state == stateGorae {
+			m.updateGoraeStatus(m.aiClient.Model())
+		}
+		return m, nil
 
 	case arxivUpdateMsg:
 		if msg.err != nil {
