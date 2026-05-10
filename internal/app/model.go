@@ -1623,7 +1623,7 @@ func (m *Model) directoryEntryLine(ctx context.Context, dir string, entry os.Dir
 		if icon == "" {
 			icon = "DIR"
 		}
-		return formatEntryColumns(icon, "", "", "-", name+"/")
+		return formatEntryColumns(icon, "", "-", name+"/")
 	}
 	state := m.readingStateIcon("")
 	year := "-"
@@ -1631,7 +1631,6 @@ func (m *Model) directoryEntryLine(ctx context.Context, dir string, entry os.Dir
 	if title == "" {
 		title = name
 	}
-	favIcon := ""
 	toReadIcon := ""
 	if ctx != nil && m.meta != nil {
 		canonical := canonicalPath(full)
@@ -1644,13 +1643,10 @@ func (m *Model) directoryEntryLine(ctx context.Context, dir string, entry os.Dir
 				year = y
 			}
 			state = m.readingStateIcon(md.ReadingState)
-			if md.Favorite {
-				favIcon = m.favoriteIcon()
-			}
 			if md.ToRead {
 				toReadIcon = m.toReadIcon()
 			}
 		}
 	}
-	return formatEntryColumns(state, favIcon, toReadIcon, year, title)
+	return formatEntryColumns(state, toReadIcon, year, title)
 }

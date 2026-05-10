@@ -16,7 +16,7 @@
 ## ✨ Highlights
 
 - 🤖 **File-based AI assistant**: chat, summarize, and RAG Q&A against your own library, right in the terminal.
-- ⚡ **Vim-style browsing** with favorites, to-read queue, and reading states.
+- ⚡ **Vim-style browsing** with a to-read queue and reading states.
 - 🔎 **Instant FTS5 search**: ranked metadata + full-text search, no `pdftotext` per query.
 - 🏷️ **Hierarchical tags** with prefix matching (`ml/` → `ml/cnn`, `ml/transformers`).
 - 🔗 **Bidirectional links**: `[[wikilinks]]` in Markdown with auto backlinks.
@@ -34,7 +34,7 @@
 | ------------------ | --------- |
 | Move / enter / up  | `j/k`, `l/h` |
 | Select             | `Space`   |
-| Favorite / To-read | `f` / `t` |
+| To-read            | `t`       |
 | Reading state      | `r`       |
 | Edit metadata      | `ee`      |
 | Search             | `/`       |
@@ -362,12 +362,6 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 * [ ] Trash
 
 ### Knowledge base (in progress)
-
-* [x] **FTS5 full-text index** — instant ranked content search via `:index`
-* [x] **Hierarchical multi-tag table** — normalized tags with prefix matching and `:tags` browser
-* [x] **Bidirectional links** — `[[wikilinks]]` in Markdown with backlinks in the info pane
-* [ ] **Semantic / vector search** — embeddings via local model (ollama) stored in SQLite
-* [x] **AI Q&A over collection** — RAG chat via `:gorae`, works with OpenAI, Ollama, or any OpenAI-compatible endpoint
 * [ ] **Citation network** — auto-fetch citation relationships from DOIs via Semantic Scholar
 
 ### Gorae AI features
@@ -375,11 +369,10 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 * [ ] Text extraction / OCR
 * [ ] TTS
 * [ ] AI chat session management
+* [ ] Prompt management
 * [x] `/summarize` command — streams summary and saves to the file's note
 * [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
 * [x] Live `/find` file picker — fzf-style, results update as you type
-* [ ] Semantic search in Gorae mode
-* [ ] Prompt management
 
 ## Uninstall
 

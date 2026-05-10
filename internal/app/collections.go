@@ -17,9 +17,6 @@ func (m *Model) syncCollectionDirectories() error {
 		return nil
 	}
 	ctx := context.Background()
-	if err := syncMetadataLinkDirectory(ctx, m.favoritesDir, m.meta.ListFavorites); err != nil {
-		return err
-	}
 	if err := syncMetadataLinkDirectory(ctx, m.toReadDir, m.meta.ListToRead); err != nil {
 		return err
 	}
