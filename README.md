@@ -4,7 +4,7 @@
   <img src="assets/gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown**—fast browsing, solid metadata, instant full-text search, bidirectional links, and mouse support—built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
+**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown** with a built-in **file-based AI assistant in the CLI**—chat, summarize, and Q&A directly against your own documents without leaving the terminal. Combined with fast browsing, solid metadata, instant full-text search, bidirectional links, and mouse support, it's built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
 
 > The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
 
@@ -15,18 +15,14 @@
 
 ## ✨ Highlights
 
-- ⚡ **Vim-style browsing**: fast file navigation with a cozy TUI feel.
-- ⭐ **Favorites**: keep your best papers one keystroke away.
-- 📌 **To-read queue**: stash papers for later.
-- 🕮 **Reading states**: *Unread / Reading / Read* tracked via metadata.
-- 🔎 **Search**: metadata + full-text search with previews/snippets.
-- ⚡ **FTS5 instant search**: index your library once with `:index`; content search becomes instant and ranked, no `pdftotext` on every query.
-- 🏷️ **Hierarchical tags**: multi-tag support with prefix matching (`ml/` matches `ml/cnn`, `ml/transformers`).
-- 🔗 **Bidirectional links**: write `[[document name]]` in any Markdown note to link documents; backlinks appear in the info pane automatically.
-- 🖼️ **PDF image preview**: first-page previews inside the preview pane, with terminal-aware rendering paths.
-- 🧾 **Auto metadata import**: detect **DOI / arXiv IDs** inside PDFs and fetch info.
-- ✍️ **In-app editing**: edit metadata, import from arXiv, copy **BibTeX**.
-- 🎨 **Themeable UI**: colors, glyphs, borders — plus helper folders usable in any file manager.
+- 🤖 **File-based AI assistant**: chat, summarize, and RAG Q&A against your own library, right in the terminal.
+- ⚡ **Vim-style browsing** with favorites, to-read queue, and reading states.
+- 🔎 **Instant FTS5 search**: ranked metadata + full-text search, no `pdftotext` per query.
+- 🏷️ **Hierarchical tags** with prefix matching (`ml/` → `ml/cnn`, `ml/transformers`).
+- 🔗 **Bidirectional links**: `[[wikilinks]]` in Markdown with auto backlinks.
+- 🖼️ **PDF image preview**: first-page previews with terminal-aware rendering.
+- 🧾 **Auto metadata**: detect **DOI / arXiv IDs**, edit in-app, copy **BibTeX**.
+- 🎨 **Themeable UI**: colors, glyphs, borders, and mouse support.
 
 
 <!-- TODO: Add a screenshot / GIF / asciinema link -->
@@ -37,16 +33,17 @@
 
 | Action             | Key       |
 | ------------------ | --------- |
-| Move               | `j/k`     |
-| Enter dir / up     | `l` / `h` |
+| Move / enter / up  | `j/k`, `l/h` |
 | Select             | `Space`   |
 | Favorite / To-read | `f` / `t` |
 | Reading state      | `r`       |
 | Edit metadata      | `ee`      |
 | Search             | `/`       |
+| AI chat            | `:gorae`  |
+| Index library      | `:index`  |
 | Help               | `:help`   |
 
-> **Arrow keys and mouse** input are also supported.
+> Arrow keys and mouse input are also supported.
 
 ### Preview support
 
