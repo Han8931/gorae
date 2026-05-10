@@ -109,10 +109,7 @@ In any Markdown file, write `[[filename]]` to link to another document by name. 
 
 ## Install
 
-For Arch Linux users:
-```sh
-yay -S gorae
-```
+> **Arch Linux (AUR):** `yay -S gorae` currently installs an **older version** and is no longer in sync with this repo. I plan to refresh the AUR package soon — until then, please use **Option A** (pre-built binary) or **Option B** (build from source) below.
 
 ### Option A) Run the pre-built executable (no Go required)
 
