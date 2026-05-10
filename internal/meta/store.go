@@ -134,7 +134,10 @@ CREATE TABLE IF NOT EXISTS metadata (
 	if err := s.initLinks(); err != nil {
 		return err
 	}
-	return s.initEmbeddings()
+	if err := s.initEmbeddings(); err != nil {
+		return err
+	}
+	return s.initSessions()
 }
 
 func (s *Store) ensureColumn(name, typ string) error {

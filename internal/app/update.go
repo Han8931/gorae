@@ -56,6 +56,10 @@ type markdownEditFinishedMsg struct {
 	err error
 }
 
+type skillEditFinishedMsg struct {
+	err error
+}
+
 type arxivUpdateMsg struct {
 	arxivID      string
 	updatedPaths []string
@@ -202,6 +206,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Editor exited with error: " + msg.err.Error())
 		}
 		return m, m.updateTextPreviewAsync()
+
+	case skillEditFinishedMsg:
+		m.setPersistentStatus("")
+		if msg.err != nil {
+			m.setStatus("Skill editor exited with error: " + msg.err.Error())
+		}
+		m.reloadUserSkills()
+		if m.state == stateGorae {
+			m.updateGoraeStatus(m.aiClient.Model())
+		}
+		return m, nil
 
 	case arxivUpdateMsg:
 		if msg.err != nil {
@@ -375,7 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case aiTokenMsg, aiSourcesMsg, goraeSpinnerTickMsg, aiLiveFindMsg:
+	case aiTokenMsg, aiSourcesMsg, goraeSpinnerTickMsg, aiLiveFindMsg, aiCompactDoneMsg:
 		if m.state == stateGorae {
 			return m.updateGoraeChat(msg)
 		}
@@ -386,6 +401,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.state == stateGorae {
 			return m.updateGoraeChat(msg)
+		}
+
+		if m.state == stateSessionList {
+			return m.updateSessionList(msg)
 		}
 
 		if m.state == stateHelp {
@@ -1809,7 +1828,7 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 	case "tags":
 		return m.handleTagsCommand(args)
 	case "gorae", "ai", "llm":
-		return m.enterGoraeChat()
+		return m.enterSessionList()
 	case "q", "quit":
 		m.setStatus("Quitting...")
 		return tea.Quit

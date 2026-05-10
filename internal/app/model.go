@@ -50,6 +50,7 @@ const (
 	stateHelp
 	stateUnmarkPrompt
 	stateGorae
+	stateSessionList
 )
 
 type quickFilterMode int
@@ -186,6 +187,12 @@ type Model struct {
 	aiInputHistory    []string             // previously submitted user messages
 	aiHistoryCursor   int                  // -1 = at current draft; ≥0 = browsing history
 	aiHistoryDraft    string               // saved draft while browsing history
+	aiSessionID       int64                // active session ID; 0 = ephemeral (not yet persisted)
+	aiSessionList     []meta.ChatSession   // sessions shown in stateSessionList
+	aiSessionCursor   int                  // cursor in the session list
+	aiCompacting      bool                 // true while a /compact summarisation is in flight
+	aiUserSkills      []UserSkill          // user-defined prompt templates loaded from skillsDir
+	skillsDir         string               // directory containing *.md skill files
 
 	previewText     []string
 	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines
@@ -549,6 +556,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		toReadDir:             toReadDir,
 		toReadDirCanonical:    toReadDir,
 		notesDir:              strings.TrimSpace(cfg.NotesDir),
+		skillsDir:             filepath.Join(strings.TrimSpace(cfg.MetaDir), "skills"),
 	}
 
 	m.applyTheme(th)

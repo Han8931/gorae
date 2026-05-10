@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,6 +43,14 @@ type aiTokenMsg struct {
 type aiSourcesMsg struct {
 	paths []string
 }
+
+type aiCompactDoneMsg struct {
+	summary string
+	kept    int
+	err     error
+}
+
+const autoCompactThreshold = 40 // auto-compact after this many messages
 
 type aiLiveFindMsg struct {
 	query   string
@@ -113,6 +122,35 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 
+	// Load user-defined skills.
+	if skills, err := loadSkills(m.skillsDir); err == nil {
+		m.aiUserSkills = skills
+	}
+
+	// Load persisted messages and focused file when resuming a saved session.
+	if m.aiSessionID > 0 && m.meta != nil {
+		// Restore focused file.
+		if sessions, err := m.meta.ListSessions(context.Background()); err == nil {
+			for _, s := range sessions {
+				if s.ID == m.aiSessionID && s.FocusedFile != "" {
+					m.aiFocusedFile = s.FocusedFile
+					break
+				}
+			}
+		}
+		if msgs, err := m.meta.LoadMessages(context.Background(), m.aiSessionID); err == nil && len(msgs) > 0 {
+			for _, cm := range msgs {
+				m.aiMessages = append(m.aiMessages, ai.Message{
+					Role:     ai.Role(cm.Role),
+					Content:  cm.Content,
+					Thinking: cm.Thinking,
+				})
+			}
+			welcomeMsg = fmt.Sprintf("Resumed session — %d message(s) loaded. Type /new for a fresh session.", len(msgs))
+			m.aiChatScroll = 1<<31 - 1
+		}
+	}
+
 	if welcomeMsg != "" {
 		m.appendAISystem(welcomeMsg)
 	}
@@ -140,6 +178,9 @@ func (m *Model) goraeSelectCurrent() {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
 	m.appendAISystem("Focused: " + chosen.Title + "\nQuestions will now use this file as primary context.")
+	if m.aiSessionID > 0 && m.meta != nil {
+		_ = m.meta.UpdateSessionFocusedFile(context.Background(), m.aiSessionID, chosen.Path)
+	}
 }
 
 func (m *Model) updateGoraeStatus(modelName string) {
@@ -166,7 +207,32 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case aiCompactDoneMsg:
+		m.aiCompacting = false
+		if msg.err != nil {
+			m.setStatus("Compact failed: " + msg.err.Error())
+			return m, nil
+		}
+		n := len(m.aiMessages)
+		keep := msg.kept
+		if keep > n {
+			keep = n
+		}
+		compacted := n - keep
+		summaryMsg := ai.Message{
+			Role:      ai.RoleAssistant,
+			Content:   msg.summary,
+			IsSummary: true,
+		}
+		m.aiMessages = append([]ai.Message{summaryMsg}, m.aiMessages[n-keep:]...)
+		m.aiChatScroll = 0
+		m.setStatus(fmt.Sprintf("Compacted %d messages → summary + last %d kept verbatim", compacted, keep))
+		return m, nil
+
 	case tea.KeyMsg:
+		if m.aiCompacting {
+			return m, nil
+		}
 		if m.aiStreaming {
 			switch msg.String() {
 			case "esc", "ctrl+c":
@@ -230,7 +296,9 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiChatScroll += m.viewportHeight / 2
 			return m, nil
 		case "tab":
-			m.goraeAutocomplete()
+			if cmd := m.goraeAutocomplete(); cmd != nil {
+				return m, cmd
+			}
 			return m, nil
 		case "enter":
 			if m.aiSearchSelecting {
@@ -267,7 +335,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case goraeSpinnerTickMsg:
-		if m.aiStreaming {
+		if m.aiStreaming || m.aiCompacting {
 			m.aiSpinnerFrame = (m.aiSpinnerFrame + 1) % len(spinnerFrames)
 			return m, goraeSpinnerTick()
 		}
@@ -301,16 +369,16 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/export", "/sources", "/help"}
+var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
 
-func (m *Model) goraeAutocomplete() {
+func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiInput.Value()
 	if !strings.HasPrefix(val, "/") {
-		return
+		return nil
 	}
 	// Only complete when no space yet (completing the command name itself).
 	if strings.ContainsRune(val, ' ') {
-		return
+		return nil
 	}
 	lower := strings.ToLower(val)
 	var matches []string
@@ -319,8 +387,14 @@ func (m *Model) goraeAutocomplete() {
 			matches = append(matches, cmd)
 		}
 	}
+	for _, sk := range m.aiUserSkills {
+		skillCmd := "/" + sk.Name
+		if strings.HasPrefix(skillCmd, lower) {
+			matches = append(matches, skillCmd)
+		}
+	}
 	if len(matches) == 0 {
-		return
+		return nil
 	}
 	// Find longest common prefix among matches.
 	lcp := matches[0]
@@ -335,6 +409,13 @@ func (m *Model) goraeAutocomplete() {
 		m.aiInput.SetValue(lcp)
 	}
 	m.aiInput.CursorEnd()
+
+	// When Tab uniquely resolves to /sessions, open the list immediately.
+	if len(matches) == 1 && lcp == "/sessions" {
+		m.aiInput.SetValue("")
+		return m.enterSessionList()
+	}
+	return nil
 }
 
 func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
@@ -384,7 +465,24 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiMessages = nil
 		m.aiSources = nil
 		m.aiChatScroll = 0
+		if m.aiSessionID > 0 && m.meta != nil {
+			_ = m.meta.ClearSessionMessages(context.Background(), m.aiSessionID)
+		}
 		m.setStatus("Chat history cleared")
+	case "/compact":
+		return m.compactChat()
+	case "/sessions":
+		return m.enterSessionList()
+	case "/new":
+		m.aiSessionID = 0
+		m.aiMessages = nil
+		m.aiSources = nil
+		m.aiChatScroll = 0
+		m.setStatus("New session started")
+		if m.aiClient != nil {
+			m.updateGoraeStatus(m.aiClient.Model())
+		}
+		return nil
 	case "/export":
 		return m.exportGoraeChat()
 	case "/sources":
@@ -398,9 +496,22 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 			}
 			m.appendAISystem(strings.TrimRight(sb.String(), "\n"))
 		}
+	case "/skills":
+		return m.handleSkillsCommand(raw, parts)
 	case "/help":
 		m.appendAISystem(goraeHelpText())
 	default:
+		// Check user-defined skills before giving up.
+		skillName := strings.TrimPrefix(cmd, "/")
+		for _, skill := range m.aiUserSkills {
+			if skill.Name == skillName {
+				extraArgs := ""
+				if len(parts) > 1 {
+					extraArgs = strings.Join(parts[1:], " ")
+				}
+				return m.invokeUserSkill(skill, extraArgs)
+			}
+		}
 		m.appendAISystem(fmt.Sprintf("Unknown command: %s\nType /help for a list.", cmd))
 	}
 	return nil
@@ -412,9 +523,13 @@ Gorae AI slash commands:
   /find <q>   — find files; use ↑/↓/Enter to select, Esc to cancel
   /select     — clear the current file focus
   /summarize  — summarize focused file and save to its note
-  /clear      — clear chat history
+  /clear      — clear chat history (also removes from saved session)
+  /compact    — summarise old messages to free up context window
   /export     — save conversation to a markdown file
   /sources    — show documents cited in the last answer
+  /sessions   — open session picker to load or manage past conversations
+  /new        — start a new session (current session stays saved)
+  /skills     — manage custom prompt templates (edit / list)
   /help       — this help text
 
 Keyboard shortcuts:
@@ -565,6 +680,23 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	}
 	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: userText})
 	m.aiInputHistory = append(m.aiInputHistory, userText)
+
+	// Persist to session — create one lazily on the first message.
+	if m.meta != nil {
+		if m.aiSessionID == 0 {
+			title := userText
+			runes := []rune(title)
+			if len(runes) > 60 {
+				title = string(runes[:59]) + "…"
+			}
+			if id, err := m.meta.CreateSession(context.Background(), title); err == nil {
+				m.aiSessionID = id
+			}
+		}
+		if m.aiSessionID > 0 {
+			_ = m.meta.SaveMessage(context.Background(), m.aiSessionID, string(ai.RoleUser), userText, "")
+		}
+	}
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 	m.aiChatScroll = 1<<31 - 1 // scroll to bottom
@@ -652,6 +784,9 @@ func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
 		m.aiStreaming = false
 		m.aiCancelFunc = nil
 		m.flushStreamBuf()
+		if len(m.aiMessages) >= autoCompactThreshold && !m.aiCompacting {
+			return m.compactChat()
+		}
 		return nil
 	}
 	m.aiRawBuf += tok.text
@@ -669,6 +804,9 @@ func (m *Model) flushStreamBuf() {
 		Content:  display,
 		Thinking: thinking,
 	})
+	if m.aiSessionID > 0 && m.meta != nil {
+		_ = m.meta.SaveMessage(context.Background(), m.aiSessionID, string(ai.RoleAssistant), display, thinking)
+	}
 	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
 	m.aiThinkBuf = ""
@@ -676,6 +814,80 @@ func (m *Model) flushStreamBuf() {
 		m.saveSummaryToNote(m.aiSummarizeTarget, display)
 		m.aiSummarizeTarget = ""
 	}
+}
+
+// ── /compact ──────────────────────────────────────────────────────────────────
+
+func (m *Model) compactChat() tea.Cmd {
+	if m.aiClient == nil {
+		m.appendAISystem("No AI provider configured.")
+		return nil
+	}
+	n := len(m.aiMessages)
+	const keepLast = 6
+	toSummarise := n - keepLast
+	if toSummarise < 4 {
+		m.appendAISystem(fmt.Sprintf(
+			"Not enough history to compact — need at least %d messages, have %d.", keepLast+4, n))
+		return nil
+	}
+
+	var sb strings.Builder
+	for _, msg := range m.aiMessages[:toSummarise] {
+		switch msg.Role {
+		case ai.RoleUser:
+			sb.WriteString("User: ")
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		case ai.RoleAssistant:
+			if msg.IsSummary {
+				sb.WriteString("[Earlier summary]: ")
+			} else {
+				sb.WriteString("Assistant: ")
+			}
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		}
+	}
+
+	client := m.aiClient
+	sessionID := m.aiSessionID
+	store := m.meta
+
+	m.aiCompacting = true
+	m.aiSpinnerFrame = 0
+
+	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+
+		prompt := "Summarise the following conversation excerpt concisely.\n" +
+			"Preserve: key questions, answers given, document references, and any conclusions.\n" +
+			"Write in third-person past tense. This summary will replace the original messages " +
+			"as context for an ongoing conversation — be complete but brief.\n\n" +
+			"Conversation:\n" + sb.String()
+
+		ch := client.StreamChat(ctx, []ai.Message{{Role: ai.RoleUser, Content: prompt}})
+		var buf strings.Builder
+		for tok := range ch {
+			if tok.Err != nil {
+				return aiCompactDoneMsg{err: tok.Err}
+			}
+			buf.WriteString(tok.Text)
+			if tok.Done {
+				break
+			}
+		}
+
+		summary := strings.TrimSpace(buf.String())
+		if summary == "" {
+			return aiCompactDoneMsg{err: fmt.Errorf("model returned an empty summary")}
+		}
+		if sessionID > 0 && store != nil {
+			_ = store.CompactSession(context.Background(), sessionID, summary, keepLast)
+		}
+		return aiCompactDoneMsg{summary: summary, kept: keepLast}
+	})
 }
 
 // parseThinkBlocks splits raw streamed text into display content (outside
@@ -946,7 +1158,11 @@ func (m *Model) exportGoraeChat() tea.Cmd {
 		m.setStatus("No notes_dir configured — cannot export")
 		return nil
 	}
-	filename := filepath.Join(notesDir, "gorae-chat-export.md")
+	if err := os.MkdirAll(notesDir, 0o755); err != nil {
+		m.setStatus("Export failed: " + err.Error())
+		return nil
+	}
+	filename := filepath.Join(notesDir, m.goraeExportFilename())
 	if err := os.WriteFile(filename, []byte(sb.String()), 0o644); err != nil {
 		m.setStatus("Export failed: " + err.Error())
 		return nil
@@ -955,6 +1171,197 @@ func (m *Model) exportGoraeChat() tea.Cmd {
 	return nil
 }
 
+// goraeExportFilename builds a unique export filename from the session title
+// (when available) and the current timestamp.
+// Format: gorae-chat-<slug>-YYYYMMDD-HHMMSS.md
+func (m *Model) goraeExportFilename() string {
+	slug := ""
+	// Derive slug from the active session's title or from the first user message.
+	title := ""
+	if m.aiSessionID > 0 && m.meta != nil {
+		if sessions, err := m.meta.ListSessions(context.Background()); err == nil {
+			for _, s := range sessions {
+				if s.ID == m.aiSessionID {
+					title = s.Title
+					break
+				}
+			}
+		}
+	}
+	if title == "" {
+		for _, msg := range m.aiMessages {
+			if msg.Role == ai.RoleUser {
+				title = msg.Content
+				break
+			}
+		}
+	}
+	if title != "" {
+		slug = slugify(title)
+	}
+	ts := time.Now().Format("20060102-150405")
+	if slug == "" {
+		return "gorae-chat-" + ts + ".md"
+	}
+	return "gorae-chat-" + slug + "-" + ts + ".md"
+}
+
+// slugify converts a string into a lowercase URL/filename-safe slug.
+func slugify(s string) string {
+	runes := []rune(strings.ToLower(strings.TrimSpace(s)))
+	if len(runes) > 40 {
+		runes = runes[:40]
+	}
+	var b strings.Builder
+	prevDash := false
+	for _, r := range runes {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash && b.Len() > 0 {
+				b.WriteRune('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
+}
+
 func isContextCancelled(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// ── user skills ───────────────────────────────────────────────────────────────
+
+func (m *Model) handleSkillsCommand(raw string, parts []string) tea.Cmd {
+	if len(parts) < 2 {
+		m.appendAISystem(skillsHelpText())
+		return nil
+	}
+	sub := strings.ToLower(parts[1])
+	switch sub {
+	case "edit":
+		if len(parts) < 3 {
+			if len(m.aiUserSkills) == 0 {
+				m.appendAISystem("No skills yet.\n\nCreate a .md file in " + m.skillsDir)
+				return nil
+			}
+			if len(m.aiUserSkills) == 1 {
+				return m.openSkillEditor(m.aiUserSkills[0].Name)
+			}
+			var names []string
+			for _, s := range m.aiUserSkills {
+				names = append(names, s.Name)
+			}
+			m.appendAISystem("Which skill?\n\n  /skills edit <name>\n\nAvailable: " + strings.Join(names, ", "))
+			return nil
+		}
+		name := strings.ToLower(parts[2])
+		return m.openSkillEditor(name)
+
+	case "list":
+		if len(m.aiUserSkills) == 0 {
+			m.appendAISystem("No skills yet.\n\nCreate a .md file in " + m.skillsDir)
+			return nil
+		}
+		var sb strings.Builder
+		sb.WriteString("Your skills:\n")
+		for _, s := range m.aiUserSkills {
+			desc := s.Description
+			if desc == "" {
+				desc = s.Prompt
+			}
+			if len([]rune(desc)) > 60 {
+				desc = string([]rune(desc)[:59]) + "…"
+			}
+			sb.WriteString(fmt.Sprintf("\n  /%s\n    %s\n    %s\n", s.Name, desc, s.FilePath))
+		}
+		m.appendAISystem(strings.TrimRight(sb.String(), "\n"))
+		return nil
+
+	default:
+		m.appendAISystem(skillsHelpText())
+		return nil
+	}
+}
+
+func (m *Model) openSkillEditor(name string) tea.Cmd {
+	if err := os.MkdirAll(m.skillsDir, 0o755); err != nil {
+		m.appendAISystem("Cannot create skills directory: " + err.Error())
+		return nil
+	}
+	path := filepath.Join(m.skillsDir, name+".md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.WriteFile(path, []byte(skillTemplate), 0o644); err != nil {
+			m.appendAISystem("Failed to create skill file: " + err.Error())
+			return nil
+		}
+	}
+	editor := m.configEditor()
+	cmd := exec.Command(editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	m.setPersistentStatus(fmt.Sprintf("Editing skill %q with %s (save and exit to return)", name, editor))
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return skillEditFinishedMsg{err: err}
+	})
+}
+
+func (m *Model) invokeUserSkill(skill UserSkill, extraArgs string) tea.Cmd {
+	prompt := skill.Prompt
+	prompt = strings.ReplaceAll(prompt, "{input}", extraArgs)
+
+	needsFile := strings.Contains(prompt, "{focused_file}") || strings.Contains(prompt, "{title}")
+	if needsFile {
+		if m.aiFocusedFile == "" {
+			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused file. Use /find to select one first.", skill.Name))
+			return nil
+		}
+		if m.meta != nil {
+			if body, err := m.meta.GetFileContent(context.Background(), m.aiFocusedFile); err == nil {
+				prompt = strings.ReplaceAll(prompt, "{focused_file}", body)
+			}
+			title := filepath.Base(m.aiFocusedFile)
+			if md, err := m.meta.Get(context.Background(), m.aiFocusedFile); err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+				title = md.Title
+			}
+			prompt = strings.ReplaceAll(prompt, "{title}", title)
+		}
+	}
+
+	return m.submitGoraeMessage(prompt)
+}
+
+func (m *Model) reloadUserSkills() {
+	if skills, err := loadSkills(m.skillsDir); err == nil {
+		m.aiUserSkills = skills
+	}
+}
+
+func skillsHelpText() string {
+	return strings.TrimSpace(`
+Skills — custom prompt templates stored as .md files.
+
+  /skills edit [name]   open a skill file in $EDITOR (creates if new)
+  /skills list          show all skills
+
+Placeholders:
+  {input}         text typed after the skill name
+  {focused_file}  full content of the focused file (use /find first)
+  {title}         title of the focused file`)
+}
+
+func isValidSkillName(name string) bool {
+	if name == "" || len(name) > 30 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
 }

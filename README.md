@@ -321,7 +321,11 @@ Type `/` to see a live-filtered command list at the bottom of the screen.
 | `/summarize` | Summarize the focused file and save to its note |
 | `/sources` | Show documents cited in the last answer |
 | `/clear` | Clear conversation history |
+| `/compact` | Summarize old messages to free up context window |
 | `/export` | Save conversation to a Markdown file in `notes_dir` |
+| `/sessions` | Open session picker — load or manage past conversations |
+| `/new` | Start a new session (current session stays saved) |
+| `/skills` | Manage custom prompt templates (see [Skills](#skills)) |
 | `/help` | Show help and all keybindings |
 
 ### Live file finder (`/find`)
@@ -344,6 +348,50 @@ Standard models (GPT-4o, Llama, Mistral, etc.) that do not emit `<think>` blocks
 ### Markdown rendering
 
 AI responses are rendered with terminal Markdown: **bold**, `code`, headings, blockquotes, fenced code blocks, and tables all display with theme-appropriate colors. Long lines are word-wrapped to fit the terminal width.
+
+### Sessions
+
+Conversations are saved automatically. Open the session picker with `/sessions` to resume a past conversation or start fresh with `/new`. Sessions are exported as `gorae-chat-<slug>-YYYYMMDD-HHMMSS.md` when you use `/export`.
+
+Use `/compact` to summarize old messages when a conversation gets long — it keeps the last several exchanges verbatim and condenses the rest, freeing up context window space. Compaction also triggers automatically after 40 messages.
+
+### Skills
+
+Skills are custom prompt templates stored as Markdown files. Each skill becomes a slash command you can invoke directly in chat.
+
+**Create or edit a skill:**
+
+```
+/skills edit <name>
+```
+
+This opens `$EDITOR` with a template. If the file doesn't exist yet it's created automatically. The skill name becomes the slash command (e.g. name `summarize` → invoke as `/summarize`).
+
+**Skill file format** (`~/.local/share/gorae/skills/summarize.md`):
+
+```markdown
+---
+description: Summarize a document concisely
+---
+
+Summarize the following in 3 bullet points: {input}
+```
+
+**Placeholders:**
+
+| Placeholder | Replaced with |
+|---|---|
+| `{input}` | Text typed after the skill name |
+| `{focused_file}` | Full content of the focused file (use `/find` first) |
+| `{title}` | Title of the focused file |
+
+**Example usage:**
+
+```
+/summarize Large language models are trained on vast amounts of text…
+```
+
+List all skills with `/skills list`. Delete a skill by removing its `.md` file from the skills directory.
 
 ---
 
@@ -368,16 +416,16 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 
 * [ ] Text extraction / OCR
 * [ ] TTS
-* [ ] AI chat session management
-* [ ] Add skills
-* [ ] Semantic search in Gorae mode
-* [ ] Prompt management
-* [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics
-* [ ] Prompt management
+* [x] **AI chat sessions** — persist and resume conversations; `/sessions` picker, `/new`, `/compact`, `/export`
+* [x] **Skills** — user-defined prompt templates as `.md` files, invoked as slash commands
 * [x] `/summarize` command — streams summary and saves to the file's note
 * [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
 * [x] Live `/find` file picker — fzf-style, results update as you type
+* [ ] Semantic search in Gorae mode
 * [x] Web search integration — Brave / Tavily with hybrid routing node (rules + LLM classifier)
+* [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics
+* [ ] Multifile Handling
+* [ ] Session renaming
 
 ## Uninstall
 
