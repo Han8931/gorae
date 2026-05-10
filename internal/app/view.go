@@ -261,12 +261,12 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 
 	metaSection := panelizeLines(m.metadataPanelLines(width))
 	if showMetadataOnly && len(metaSection) > 0 {
-		return m.renderPanelBlock("Details", metaSection, width, height, m.styles.Preview)
+		return m.renderPanelBlock("", metaSection, width, height, m.styles.Preview)
 	}
 
 	previewSection := panelizeLines(m.previewPanelLines(innerWidth))
 	if len(metaSection) == 0 {
-		return m.renderPanelBlock("Details", previewSection, width, height, m.styles.Preview)
+		return m.renderPanelBlock("", previewSection, width, height, m.styles.Preview)
 	}
 
 	reservedMeta := height / 2
@@ -310,7 +310,7 @@ func (m Model) renderPreviewPanel(width, height int) []string {
 	}
 	lines = append(lines, metaSection[:metaCount]...)
 
-	return m.renderPanelBlock("Details", lines, width, height, m.styles.Preview)
+	return m.renderPanelBlock("", lines, width, height, m.styles.Preview)
 }
 
 // // wrapLinesToWidth wraps each line so that no visual line exceeds `width` runes.
@@ -813,6 +813,13 @@ func (m Model) renderSearchResultsView() string {
 	listHeight, detailHeight := m.searchResultsHeights()
 
 	var b strings.Builder
+
+	// Clear any leftover Kitty preview image from the previous view, since this
+	// path bypasses graphicPreviewOverlay() and Kitty images persist until deleted.
+	if m.previewGraphic != "" && (m.previewGraphicFmt == "kitty" || terminalGraphicFormat() == "kitty") {
+		b.WriteString(kittyDeletePreviewSequence())
+	}
+
 	header := strings.TrimSpace(m.searchSummary)
 	if header == "" {
 		header = fmt.Sprintf("%s search results", m.lastSearchMode.displayName())
@@ -882,6 +889,12 @@ func (m Model) renderHelpView() string {
 	}
 
 	var b strings.Builder
+
+	// Clear any leftover Kitty preview image from the previous view.
+	if m.previewGraphic != "" && (m.previewGraphicFmt == "kitty" || terminalGraphicFormat() == "kitty") {
+		b.WriteString(kittyDeletePreviewSequence())
+	}
+
 	header := fmt.Sprintf("Gorae Help — %d lines", total)
 	b.WriteString(m.styles.AppHeader.Render(padStyledLine(header, width)) + "\n")
 	controls := "Controls: j/k scroll • PgUp/PgDn jump • g g top • G/end bottom • Esc/q close • Ctrl+C quit"

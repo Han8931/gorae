@@ -46,16 +46,7 @@
 
 ### Preview support
 
-Gorae includes first-page PDF image previews in the right preview pane.
-
-- **Kitty**: native graphic preview path via `pdftocairo`
-- **iTerm2**: terminal image preview support is included
-- **Fallback path**: `chafa`-based symbol/image preview when terminal graphics are unavailable or not desired
-
-Tested terminals for the image preview feature:
-
-- **Kitty** on Linux
-- **iTerm2** on macOS
+Gorae shows first-page PDF previews in the right pane. Tested on **Kitty** (Linux) and **iTerm2** (macOS); other terminals fall back to `chafa`-based rendering.
 
 ### 🔎 Search tips
 
