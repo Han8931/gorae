@@ -11,25 +11,26 @@ import (
 )
 
 const defaultThemeFile = `# Gorae color theme.
+# "Gorae Deep" — vibrant ocean-toned dark default.
 # Update the values below to customize the UI.
 
 [meta]
-name = "Gorae Default"
+name = "Gorae Deep"
 version = 1
 
 [palette]
-bg = "#1e1e2e"
-fg = "#f2d5cf"
-muted = "#7f8ca3"
-accent = "#cba6f7"
-success = "#a6e3a1"
-warning = "#f9e2af"
-danger = "#f38ba8"
-selection = "#89dceb"
+bg = "#0a0f14"
+fg = "#eef1f6"
+muted = "#8693a5"
+accent = "#5cc8ff"
+success = "#a3e635"
+warning = "#fbbf24"
+danger = "#fb7185"
+selection = "#5eead4"
 
 [borders]
 style = "rounded"
-color = "palette.muted"
+color = "#2d3a4a"
 
 [icons]
 mode = "unicode"
@@ -44,115 +45,115 @@ selected = "✔"
 selection = "▌"
 
 [components.app_header]
-fg = "palette.fg"
-bg = "palette.bg"
+fg = "#eef1f6"
+bg = "#0a0f14"
 bold = true
 
 [components.tree_header]
-fg = "palette.success"
-bg = "palette.bg"
+fg = "#a3e635"
+bg = "#11181f"
 bold = true
 
 [components.tree_body]
-fg = "palette.fg"
+fg = "#dde3ec"
 
 [components.tree_active]
-fg = "palette.warning"
+fg = "#fbbf24"
 bold = true
 
 [components.tree_info]
-fg = "palette.muted"
+fg = "#8693a5"
 italic = true
 
 [components.list_header]
-fg = "palette.fg"
-bg = "palette.bg"
+fg = "#eef1f6"
+bg = "#161f29"
 bold = true
 
 [components.list_body]
-fg = "palette.fg"
+fg = "#eef1f6"
 
 [components.list_selected]
-fg = "palette.selection"
+fg = "#5eead4"
 bold = true
 
 [components.list_cursor]
-fg = "palette.bg"
-bg = "palette.warning"
+fg = "#0a0f14"
+bg = "#fbbf24"
 bold = true
 
 [components.list_cursor_selected]
-fg = "palette.bg"
-bg = "palette.danger"
+fg = "#0a0f14"
+bg = "#5eead4"
 bold = true
 
 [components.preview_header]
-fg = "palette.accent"
-bg = "palette.bg"
+fg = "#5cc8ff"
+bg = "#11181f"
 bold = true
 
 [components.preview_body]
-fg = "palette.fg"
+fg = "#eef1f6"
 
 [components.preview_info]
-fg = "palette.accent"
+fg = "#5cc8ff"
 bold = true
 
 [components.separator]
-fg = "palette.muted"
+fg = "#2d3a4a"
 
 [components.status_bar]
-fg = "palette.fg"
-bg = "palette.bg"
+fg = "#eef1f6"
+bg = "#070a0f"
 
 [components.status_label]
-fg = "palette.accent"
+fg = "#5eead4"
 bold = true
 
 [components.status_value]
-fg = "palette.warning"
+fg = "#fbbf24"
 
 [components.prompt_label]
-fg = "palette.bg"
-bg = "palette.accent"
+fg = "#0a0f14"
+bg = "#5cc8ff"
 bold = true
 
 [components.prompt_value]
-fg = "palette.fg"
-bg = "palette.bg"
+fg = "#eef1f6"
+bg = "#0a0f14"
 
 [components.meta_overlay]
-fg = "palette.fg"
-bg = "palette.bg"
+fg = "#eef1f6"
+bg = "#11181f"
 
 [components.markdown]
 [components.markdown.h1]
-fg = "palette.accent"
+fg = "#5cc8ff"
 bold = true
 
 [components.markdown.h2]
-fg = "palette.success"
+fg = "#a3e635"
 bold = true
 
 [components.markdown.h3]
-fg = "palette.warning"
+fg = "#fbbf24"
 bold = true
 
 [components.markdown.code]
-fg = "palette.warning"
+fg = "#fbbf24"
 
 [components.markdown.code_block]
-fg = "palette.fg"
+fg = "#eef1f6"
 
 [components.markdown.blockquote]
-fg = "palette.muted"
+fg = "#8693a5"
 italic = true
 
 [components.markdown.link]
-fg = "palette.selection"
+fg = "#5eead4"
 
 [components.markdown.hr]
-fg = "palette.muted"`
+fg = "#2d3a4a"`
 
 type Meta struct {
 	Name    string `toml:"name" json:"name"`
@@ -253,20 +254,20 @@ type Theme struct {
 
 func Default() Theme {
 	return Theme{
-		Meta: Meta{Name: "Gorae Default", Version: 1},
+		Meta: Meta{Name: "Gorae Deep", Version: 1},
 		Palette: Palette{
-			BG:        "#1e1e2e",
-			FG:        "#f2d5cf",
-			Muted:     "#7f8ca3",
-			Accent:    "#cba6f7",
-			Success:   "#a6e3a1",
-			Warning:   "#f9e2af",
-			Danger:    "#f38ba8",
-			Selection: "#89dceb",
+			BG:        "#0a0f14",
+			FG:        "#eef1f6",
+			Muted:     "#8693a5",
+			Accent:    "#5cc8ff",
+			Success:   "#a3e635",
+			Warning:   "#fbbf24",
+			Danger:    "#fb7185",
+			Selection: "#5eead4",
 		},
 		Borders: Borders{
 			Style: "rounded",
-			Color: "#585b70",
+			Color: "#2d3a4a",
 		},
 		Icons: Icons{
 			Mode:      "unicode",
@@ -276,43 +277,43 @@ func Default() Theme {
 			Reading:   "▶",
 			Unread:    "○",
 			Folder:    "▸",
-			PDF:       "§",
+			PDF:       "▣",
 			Selected:  "✔",
 			Selection: "▌",
 		},
 		Components: ComponentStyles{
-			AppHeader:  StyleSpec{FG: "#f5e0dc", BG: "#1e1e2e", Bold: true},
-			TreeHeader: StyleSpec{FG: "#a6e3a1", BG: "#1b2430", Bold: true},
-			TreeBody:   StyleSpec{FG: "#b4c2f8"},
-			TreeActive: StyleSpec{FG: "#f9e2af", Bold: true},
-			TreeInfo:   StyleSpec{FG: "#7f8ca3", Italic: true},
+			AppHeader:  StyleSpec{FG: "#eef1f6", BG: "#0a0f14", Bold: true},
+			TreeHeader: StyleSpec{FG: "#a3e635", BG: "#11181f", Bold: true},
+			TreeBody:   StyleSpec{FG: "#dde3ec"},
+			TreeActive: StyleSpec{FG: "#fbbf24", Bold: true},
+			TreeInfo:   StyleSpec{FG: "#8693a5", Italic: true},
 
-			ListHeader:       StyleSpec{FG: "#f5e0dc", BG: "#2a2438", Bold: true},
-			ListBody:         StyleSpec{FG: "#f2d5cf"},
-			ListSelected:     StyleSpec{FG: "#89dceb", Bold: true},
-			ListCursor:       StyleSpec{FG: "#1e1e2e", BG: "#f9e2af", Bold: true},
-			ListCursorSelect: StyleSpec{FG: "#1e1e2e", BG: "#fab387", Bold: true},
+			ListHeader:       StyleSpec{FG: "#eef1f6", BG: "#161f29", Bold: true},
+			ListBody:         StyleSpec{FG: "#eef1f6"},
+			ListSelected:     StyleSpec{FG: "#5eead4", Bold: true},
+			ListCursor:       StyleSpec{FG: "#0a0f14", BG: "#fbbf24", Bold: true},
+			ListCursorSelect: StyleSpec{FG: "#0a0f14", BG: "#5eead4", Bold: true},
 
-			PreviewHeader: StyleSpec{FG: "#cba6f7", BG: "#241f3d", Bold: true},
-			PreviewBody:   StyleSpec{FG: "#cdd6f4"},
-			PreviewInfo:   StyleSpec{FG: "#f4b8e4", Bold: true},
+			PreviewHeader: StyleSpec{FG: "#5cc8ff", BG: "#11181f", Bold: true},
+			PreviewBody:   StyleSpec{FG: "#eef1f6"},
+			PreviewInfo:   StyleSpec{FG: "#5cc8ff", Bold: true},
 
-			Separator:   StyleSpec{FG: "#585b70"},
-			StatusBar:   StyleSpec{FG: "#cdd6f4", BG: "#11111b"},
-			StatusLabel: StyleSpec{FG: "#94e2d5", Bold: true},
-			StatusValue: StyleSpec{FG: "#f9e2af"},
-			PromptLabel: StyleSpec{FG: "#1e1e2e", BG: "#cba6f7", Bold: true},
-			PromptValue: StyleSpec{FG: "#f5e0dc", BG: "#1e1e2e"},
-			MetaOverlay: StyleSpec{FG: "#f2cdcd", BG: "#312244"},
+			Separator:   StyleSpec{FG: "#2d3a4a"},
+			StatusBar:   StyleSpec{FG: "#eef1f6", BG: "#070a0f"},
+			StatusLabel: StyleSpec{FG: "#5eead4", Bold: true},
+			StatusValue: StyleSpec{FG: "#fbbf24"},
+			PromptLabel: StyleSpec{FG: "#0a0f14", BG: "#5cc8ff", Bold: true},
+			PromptValue: StyleSpec{FG: "#eef1f6", BG: "#0a0f14"},
+			MetaOverlay: StyleSpec{FG: "#eef1f6", BG: "#11181f"},
 			Markdown: MarkdownStyle{
-				H1:         StyleSpec{FG: "#cba6f7", Bold: true},
-				H2:         StyleSpec{FG: "#a6e3a1", Bold: true},
-				H3:         StyleSpec{FG: "#f9e2af", Bold: true},
-				Code:       StyleSpec{FG: "#f9e2af"},
-				CodeBlock:  StyleSpec{FG: "#cdd6f4"},
-				Blockquote: StyleSpec{FG: "#7f8ca3", Italic: true},
-				Link:       StyleSpec{FG: "#89dceb"},
-				HR:         StyleSpec{FG: "#585b70"},
+				H1:         StyleSpec{FG: "#5cc8ff", Bold: true},
+				H2:         StyleSpec{FG: "#a3e635", Bold: true},
+				H3:         StyleSpec{FG: "#fbbf24", Bold: true},
+				Code:       StyleSpec{FG: "#fbbf24"},
+				CodeBlock:  StyleSpec{FG: "#eef1f6"},
+				Blockquote: StyleSpec{FG: "#8693a5", Italic: true},
+				Link:       StyleSpec{FG: "#5eead4"},
+				HR:         StyleSpec{FG: "#2d3a4a"},
 			},
 		},
 	}
