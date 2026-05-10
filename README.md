@@ -405,6 +405,10 @@ AI responses are rendered with terminal Markdown: **bold**, `code`, headings, bl
 
 That's it—you can re-clone and reinstall at any time.
 
+## Contributing
+
+Pull requests, bug reports, and feature ideas are all welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the dev setup, coding conventions, and PR checklist.
+
 ## Attribution / Credit
 
 This project is licensed under the MIT License.
