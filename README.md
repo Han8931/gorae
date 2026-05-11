@@ -1,455 +1,307 @@
-# Gorae
-
 <p align="center">
   <img src="assets/gorae.svg" alt="Gorae logo" width="180">
 </p>
 
-**Gorae** (*고래*, *whale*) is a terminal-first **TUI knowledge base for PDFs, EPUBs, and Markdown** with a built-in **file-based AI assistant in the CLI**—chat, summarize, and Q&A directly against your own documents without leaving the terminal. Combined with fast browsing, solid metadata, instant full-text search, bidirectional links, and mouse support, it's built as a **Vim/CLI-friendly alternative to Zotero, Mendeley, Notion, and Obsidian**.
+<h1 align="center">Gorae</h1>
 
-> The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea—one of the earliest known depictions of whales and whale hunting. The “glyph-like” whale shape is meant to feel like an engraving: minimal, timeless, and a little handmade—like a good terminal tool.
+<p align="center">
+  <em>A terminal-first knowledge base for PDFs, EPUBs, and Markdown — with a built-in AI assistant that talks to your library.</em>
+</p>
 
+<p align="center">
+  <a href="https://github.com/Han8931/gorae/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Han8931/gorae?sort=semver"></a>
+  <a href="https://github.com/Han8931/gorae/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Han8931/gorae"></a>
+  <img alt="Go" src="https://img.shields.io/badge/go-1.21%2B-00ADD8?logo=go&logoColor=white">
+  <a href="https://github.com/Han8931/gorae/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Han8931/gorae?style=social"></a>
+</p>
 
 <p align="center">
   <img src="assets/gorae_final_demo.gif" alt="App Demo" width="800">
 </p>
 
-## ✨ Highlights
+## Why Gorae
 
-- 🤖 **File-based AI assistant**: chat, summarize, and RAG Q&A against your own library, right in the terminal.
-- ⚡ **Vim-style browsing** with a to-read queue and reading states.
-- 🔎 **Instant FTS5 search**: ranked metadata + full-text search, no `pdftotext` per query.
-- 🏷️ **Hierarchical tags** with prefix matching (`ml/` → `ml/cnn`, `ml/transformers`).
-- 🔗 **Bidirectional links**: `[[wikilinks]]` in Markdown with auto backlinks.
-- 🖼️ **PDF image preview**: first-page previews with terminal-aware rendering.
-- 🧾 **Auto metadata**: detect **DOI / arXiv IDs**, edit in-app, copy **BibTeX**.
-- 🎨 **Themeable UI**: colors, glyphs, borders, and mouse support.
+- **Lives in your terminal.** Vim-style browsing, mouse support, no Electron, no browser tab.
+- **AI assistant that knows your library.** Chat, summarize, and RAG-Q&A directly against your indexed documents.
+- **Open and local-first.** Your files, your metadata store, your choice of model (Ollama, OpenAI, anything OpenAI-compatible).
 
-<!-- TODO: Add a screenshot / GIF / asciinema link -->
+Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
 
-## Everyday use
+## Quickstart
 
-> For deeper instructions, read **[Wiki](https://github.com/Han8931/gorae/wiki)** or run `:help`.
-
-| Action             | Key       |
-| ------------------ | --------- |
-| Move / enter / up  | `j/k`, `l/h` |
-| Select             | `Space`   |
-| To-read            | `t`       |
-| Reading state      | `r`       |
-| Edit metadata      | `ee`      |
-| Search             | `/`       |
-| AI chat            | `:gorae`  |
-| Index library      | `:index`  |
-| Help               | `:help`   |
-
-> Arrow keys and mouse input are also supported.
-
-### Preview support
-
-Gorae shows first-page PDF previews in the right pane. Tested on **Kitty** (Linux) and **iTerm2** (macOS); other terminals fall back to `chafa`-based rendering.
-
-### 🔎 Search tips
-
-Press `/` to open search, then type your query.
-
-You can scope the search with flags:
-
-- `-t <title>`     search in title
-- `-a <author>`    search in author
-- `-y <year>`      filter by year
-- `-c <keyword>`   search in full text (content)
-- `--tag <tag>`    filter by a single tag
-- `--tag <t1,t2>`  filter by multiple tags (comma-separated)
-
-**Examples**
-- `/ -t transformer`
-- `/ -a "Yoshua Bengio"`
-- `/ -y 2023`
-- `/ -c attention`
-- `/ --tag llm,graph`
-
-### ⚡ Full-text index (FTS)
-
-Content search (`-c`) uses the **FTS5 index** when available — instant, ranked results with no external tools required. Build the index once, then keep it fresh:
-
-```
-:index          index all documents under the watch root
-:index here     index only the current directory
-```
-
-Files are skipped automatically when their size hasn't changed, so re-indexing is fast. The index supports **stemming** (searching "running" also finds "run") via SQLite's built-in porter tokenizer.
-
-> Without an index, content search falls back to scanning files with `pdftotext` as before.
-
-### 🏷️ Tags
-
-Tags are stored as comma-separated values in the metadata editor and normalized into a dedicated table for fast lookup. Browse all tags with:
-
-```
-:tags
-```
-
-Hierarchical tags (`ml/transformers`, `ml/cnn`) are supported — searching for `ml/` matches all tags under that prefix.
-
-### 🔗 Bidirectional links (Markdown)
-
-In any Markdown file, write `[[filename]]` to link to another document by name. Run `:index` to resolve those links and build the link graph. After indexing:
-
-- **Backlinks** appear at the bottom of the info pane for every document that other files point to.
-- Links are resolved case-insensitively by filename (with or without extension).
-
-## Install
-
-> **Arch Linux (AUR):** `yay -S gorae` currently installs an **older version** and is no longer in sync with this repo. I plan to refresh the AUR package soon — until then, please use **Option A** (pre-built binary) or **Option B** (build from source) below.
-
-### Option A) Run the pre-built executable (no Go required)
-
-Download the ready-to-run binary from the **latest GitHub Release**.
-
-1. **Download the file for your OS/CPU**
-
-   * **Linux:** `gorae`
-   * **macOS (Intel):** `gorae-darwin-amd64`
-   * **macOS (Apple Silicon / M1–M3):** `gorae-darwin-arm64`
-   * **Windows (64-bit):** `gorae-windows-amd64.exe`
-
-2. **(Linux/macOS) Make it executable**
-
+1. **Download** the [latest release](https://github.com/Han8931/gorae/releases) for your platform — `gorae` (Linux), `gorae-darwin-arm64` (macOS Apple Silicon), `gorae-darwin-amd64` (macOS Intel), or `gorae-windows-amd64.exe`.
+2. **Make it executable** and move it onto your `PATH`:
    ```sh
-   chmod +x gorae*
+   chmod +x gorae && mv gorae ~/.local/bin/   # or /usr/local/bin
    ```
-
-3. **Move it into a folder on your PATH** (so you can run it anywhere)
-
-   * Linux/macOS examples: `~/.local/bin`, `/usr/local/bin`
-   * Windows example: `%USERPROFILE%\bin`
-
-4. **Run it**
-
+3. **Run it:**
    ```sh
    gorae
    ```
-
-> Tip: If your downloaded file has a long name (e.g., `gorae-darwin-arm64`), you can rename it to just `gorae` for convenience.
-
----
-
-### Option B) Quick install (script)
-
-This option builds and installs Gorae using Go.
-
-#### Requirements
-
-* **Go 1.21+**
-* **Poppler CLI tools**: `pdftotext`, `pdfinfo`, `pdftocairo`
-* **Kitty preview**: native first-page PDF image previews use `pdftocairo` and do not require `chafa`
-* **iTerm2 preview**: inline image preview path is supported
-* **Optional fallback preview**: `chafa` for non-Kitty / non-inline image text-art previews
-
-Install prerequisites:
-
-* **macOS:** `brew install golang poppler`
-* **Debian/Ubuntu:** `sudo apt install golang-go poppler-utils`
-* **Arch:** `sudo pacman -S go poppler`
-
-If you want fallback previews outside Kitty:
-
-* **macOS:** `brew install chafa`
-* **Debian/Ubuntu:** `sudo apt install chafa`
-* **Arch:** `sudo pacman -S chafa`
-
-#### Optional (recommended)
-
-* A fast PDF viewer (**Zathura** recommended)
-
-  * **Debian/Ubuntu:** `sudo apt install zathura zathura-pdf-mupdf`
-  * **Arch:** `sudo pacman -S zathura zathura-pdf-mupdf`
-
-1. **Clone the repo**
-
-   ```sh
-   git clone https://github.com/Han8931/gorae.git
-   cd gorae
+4. **Index your library** so the AI assistant has something to read:
+   ```
+   :index
+   ```
+5. **Open the chat:**
+   ```
+   :gorae
    ```
 
-2. **Run the installer**
-   (Default install path: `~/.local/bin/gorae` on Linux, `/usr/local/bin/gorae` on macOS)
+> Prefer building from source or using a package manager? See [Install](#install) below.
 
-   ```sh
-   ./install.sh
+## Features at a glance
 
-   # Install to a custom path
-   GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh
-   ./install.sh ~/bin/gorae
-   ```
-
-3. **Make sure the install directory is on your PATH**, then run:
-
-   ```sh
-   gorae
-   ```
-
-> Linux + Kitty: install `poppler`/`poppler-utils` so `pdftocairo` is available, and Gorae will use native image-based first-page PDF previews. `chafa` is not required for the Kitty path.
-
-## Recommended PDF viewer
-
-- Gorae works with any viewer command, but we recommend [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend. 
-- Zathura is minimal, keyboard-driven, starts instantly, supports vi-style navigation, and renders beautifully through MuPDF—great for tiling window managers.
-
-Install:
-
-* Debian/Ubuntu: `sudo apt install zathura zathura-pdf-mupdf`
-* Arch: `sudo pacman -S zathura zathura-pdf-mupdf`
-
-Then set the viewer command in your config:
-
-```json
-"pdf_viewer": "zathura"
-```
-
-If `zathura` is on your `PATH`, Gorae will auto-detect it, so most users can accept the default.
+| Area | What you get |
+|---|---|
+| **Browsing** | Vim-style nav, to-read queue, reading states, hierarchical tags (`ml/cnn`) |
+| **Search** | FTS5 full-text index with stemming; scope by `-t/-a/-y/-c/--tag` |
+| **Preview** | First-page PDF previews on Kitty / iTerm2; `chafa` fallback elsewhere |
+| **Metadata** | Auto-detect DOI / arXiv IDs, in-app editor, BibTeX copy |
+| **Links** | `[[wikilinks]]` in Markdown with auto backlinks |
+| **AI chat** | RAG against your library, streaming responses, sessions, skills |
+| **AI tools** | Model can invoke in-app actions like `save_markdown` (optional) |
+| **UI** | Themeable colors, glyphs, borders; mouse + Vim modal navigation |
 
 ## AI Chat (`:gorae`)
 
-Gorae has a built-in RAG chat assistant. Open it from anywhere with:
+A built-in RAG chat assistant grounded in your indexed library. Responses stream in real time.
 
 ```
-:gorae
+:gorae         open the chat
+:index         build the FTS index first so the assistant has context
 ```
 
-It automatically retrieves relevant chunks from your indexed library and injects them into every query, so answers are grounded in your own documents. Responses stream in real time with a live spinner; press **Esc** at any time to stop generation.
+**Headline features:**
 
-> Run `:index` first so Gorae has content to search. Without an index the assistant still works but has no document context.
+- **RAG out of the box** — relevant chunks are retrieved from your library and injected into every query.
+- **Sessions** — conversations are auto-saved; resume with `/sessions`, fork with `/new`.
+- **`/load <query>`** — fzf-style live picker pins a file as primary context for follow-up questions.
+- **Vim-style navigation mode** — `Esc` switches from typing to a message cursor: `j/k` between messages, `Space` to mark, `y` to yank one or many to the clipboard.
+- **Tool calling** — with `enable_tools: true`, the model can invoke in-app actions like `save_markdown` to write summaries straight to `notes_dir`.
+- **Reasoning display** — collapsible `<think>` blocks for DeepSeek-R1 / Qwen3 / QwQ.
+- **Web search** — optional Brave / Tavily routing with a hybrid rules + LLM classifier.
+- **Skills** — custom prompt templates as `.md` files become slash commands.
 
-### Setup
-
-Type `:config` to open the config file. Gorae will add an `"ai"` block automatically if one doesn't exist yet. The config file supports `//` comments:
+<details>
+<summary><b>Minimal AI config</b> — drop into <code>config.json</code> via <code>:config</code></summary>
 
 ```jsonc
 "ai": {
-  // Provider: "openai" | "ollama" | "custom"
-  "provider": "ollama",
-
-  // Model name — e.g. "llama3.2", "gpt-4o-mini", "mistral"
+  "provider": "ollama",       // "openai" | "ollama" | "custom"
   "model": "llama3.2",
-
-  // API key — leave empty for Ollama
-  "api_key": "",
-
-  // Base URL — leave empty to use the provider default
-  "base_url": "",
-
-  // Number of document chunks injected as context (default 3)
-  "top_k": 3,
-
-  // Optional system prompt prepended before the RAG context
-  "system_prompt": ""
+  "api_key": "",              // required for OpenAI / custom
+  "base_url": "",             // override endpoint
+  "top_k": 3,                 // chunks injected per query
+  "system_prompt": "",
+  "enable_tools": false       // let the model call in-app tools
 }
 ```
 
 | Field | Description |
 |---|---|
 | `provider` | `"openai"`, `"ollama"`, or `"custom"` |
-| `model` | Model name, e.g. `gpt-4o`, `llama3.2`, `mistral` |
-| `api_key` | Required for OpenAI / custom. Leave empty for Ollama. |
-| `base_url` | Override endpoint. Defaults: OpenAI → `https://api.openai.com/v1`, Ollama → `http://localhost:11434/v1`. |
-| `top_k` | Document chunks injected per query (default `3`). |
-| `system_prompt` | Extra instruction prepended before RAG context. |
+| `model` | e.g. `gpt-4o`, `llama3.2`, `mistral` |
+| `api_key` | Required for OpenAI / custom. Empty for Ollama. |
+| `base_url` | Defaults: OpenAI → `https://api.openai.com/v1`, Ollama → `http://localhost:11434/v1` |
+| `top_k` | Document chunks injected per query (default `3`) |
+| `system_prompt` | Extra instruction prepended before RAG context |
+| `enable_tools` | Allow tool calls (e.g. `save_markdown`). Default `false`. |
 
-Changes to `:config` are picked up immediately — no restart needed.
+</details>
 
-### Connecting to Ollama
-
-Make sure Ollama is running, then set:
-
-```json
-"ai": {
-  "provider": "ollama",
-  "model": "llama3.2"
-}
-```
-
-No `api_key` or `base_url` needed. Pull the model first if you haven't:
-
-```sh
-ollama pull llama3.2
-```
-
-Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
-
-### Connecting to OpenAI
+<details>
+<summary><b>Provider examples</b> — Ollama, OpenAI, OpenAI-compatible</summary>
 
 ```json
-"ai": {
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "api_key": "sk-..."
-}
-```
+// Ollama (local — no API key needed)
+"ai": { "provider": "ollama", "model": "llama3.2" }
 
-### Custom / OpenAI-compatible endpoint
+// OpenAI
+"ai": { "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-..." }
 
-```json
+// Any OpenAI-compatible endpoint (Together, Groq, OpenRouter, …)
 "ai": {
   "provider": "custom",
   "base_url": "https://api.together.xyz/v1",
-  "model": "meta-llama/Llama-3-8b-chat-hf",
-  "api_key": "..."
+  "model":    "meta-llama/Llama-3-8b-chat-hf",
+  "api_key":  "..."
 }
 ```
 
-### In-chat keybindings
+Pull the local model first if you haven't: `ollama pull llama3.2`. Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
+
+</details>
+
+<details>
+<summary><b>Keyboard reference</b> — insert mode + navigation mode</summary>
+
+**Insert mode** (default — typing flows into the prompt):
 
 | Key | Action |
 |---|---|
-| `Enter` | Send message / select file |
+| `Enter` | Send message / select file in `/load` picker |
 | `↑` / `↓` | Browse input history · navigate `/load` results |
 | `Tab` | Autocomplete `/` command |
-| `Ctrl+T` | Toggle reasoning display (expand/collapse `<think>` blocks) |
-| `Esc` | Stop streaming · cancel `/load` · exit |
-| `Ctrl+P` / `Ctrl+N` | Scroll chat up / down |
-| `PgUp` / `PgDn` | Scroll chat half a page |
+| `Ctrl+T` | Toggle reasoning display |
+| `Esc` | Switch to navigation mode (or exit if chat is empty) |
+| `Ctrl+C` | Exit chat |
+| `Ctrl+P` / `Ctrl+N` · `PgUp` / `PgDn` · mouse wheel | Scroll chat |
 
-### In-chat commands
+**Navigation mode** (press `Esc` to enter):
 
-Type `/` to see a live-filtered command list at the bottom of the screen.
+| Key | Action |
+|---|---|
+| `i`, `a` | Back to insert mode |
+| `j` / `k` | Next / previous message |
+| `h` / `l` | Jump to previous / next user message |
+| `gg`, `G` | First / last message |
+| `Space` | Toggle a mark on the current message |
+| `y` | Yank current — or every marked — message to the clipboard |
+| `c` | Clear all marks |
+| `/`, `?`, `q` | Slash command · help · exit |
+
+</details>
+
+<details>
+<summary><b>Slash commands</b></summary>
 
 | Command | Description |
 |---|---|
-| `/load <query>` | Load a file into chat context — live fzf-style picker, results update as you type |
+| `/load <query>` | Live fzf-style file picker; pin a file as focused context |
 | `/select` | Clear the currently focused file |
 | `/summarize` | Summarize the focused file and save to its note |
-| `/sources` | Show documents cited in the last answer |
-| `/clear` | Clear conversation history |
-| `/compact` | Summarize old messages to free up context window |
-| `/export` | Save conversation to a Markdown file in `notes_dir` |
-| `/sessions` | Open session picker — load or manage past conversations |
-| `/new` | Start a new session (current session stays saved) |
-| `/skills` | Manage custom prompt templates (see [Skills](#skills)) |
-| `/help` | Show help and all keybindings |
+| `/sources` | Documents cited in the last answer |
+| `/clear` | Clear the conversation |
+| `/compact` | Summarize older messages to free up context window |
+| `/export` | Save conversation to markdown in `notes_dir` |
+| `/sessions` | Session picker — load or manage past conversations |
+| `/new` | Start a fresh session (current stays saved) |
+| `/skills` | Manage custom prompt templates |
+| `/help` | Show in-chat help and all keybindings |
 
-### Live file loader (`/load`)
+</details>
 
-Start typing `/load <query>` and a file picker appears at the bottom of the screen, updating results on every keystroke — no Enter needed to search. Use `↑`/`↓` to move through results, `Enter` to select, `Esc` to cancel. (The legacy `/find` name still works as a silent alias.)
+For deeper docs — tool-call internals, skill placeholders, session compaction, reasoning UI — see the **[Wiki](https://github.com/Han8931/gorae/wiki)** or press `/help` in chat.
 
-Once a file is selected it becomes the **focused file**: its full indexed text is injected as primary context for every subsequent question, in addition to the normal RAG results. The status bar shows `focus: filename` while a file is active. Use `/select` to clear it.
+## Browsing & search
 
-### Reasoning / thinking display
+Vim-style navigation everywhere. Cheat sheet:
 
-Gorae supports models that expose their internal reasoning via `<think>…</think>` blocks (e.g. **DeepSeek-R1**, **Qwen3**, **QwQ**). When such a model is used:
-
-- A collapsed `▶ Thinking… (N lines)` indicator always appears above the response.
-- Press **`Ctrl+T`** to expand the full reasoning trace; press again to collapse.
-- Thinking content streams live, just like the response.
-- The status bar shows `[think:on]` when the expanded view is active.
-
-Standard models (GPT-4o, Llama, Mistral, etc.) that do not emit `<think>` blocks are unaffected.
-
-### Markdown rendering
-
-AI responses are rendered with terminal Markdown: **bold**, `code`, headings, blockquotes, fenced code blocks, and tables all display with theme-appropriate colors. Long lines are word-wrapped to fit the terminal width.
-
-### Sessions
-
-Conversations are saved automatically. Open the session picker with `/sessions` to resume a past conversation or start fresh with `/new`. Sessions are exported as `gorae-chat-<slug>-YYYYMMDD-HHMMSS.md` when you use `/export`.
-
-Use `/compact` to summarize old messages when a conversation gets long — it keeps the last several exchanges verbatim and condenses the rest, freeing up context window space. Compaction also triggers automatically after 40 messages.
-
-### Skills
-
-Skills are custom prompt templates stored as Markdown files. Each skill becomes a slash command you can invoke directly in chat.
-
-**Create or edit a skill:**
-
-```
-/skills edit <name>
-```
-
-This opens `$EDITOR` with a template. If the file doesn't exist yet it's created automatically. The skill name becomes the slash command (e.g. name `summarize` → invoke as `/summarize`).
-
-**Skill file format** (`~/.local/share/gorae/skills/summarize.md`):
-
-```markdown
----
-description: Summarize a document concisely
----
-
-Summarize the following in 3 bullet points: {input}
-```
-
-**Placeholders:**
-
-| Placeholder | Replaced with |
+| Action | Key |
 |---|---|
-| `{input}` | Text typed after the skill name |
-| `{focused_file}` | Full content of the focused file (use `/load` first) |
-| `{title}` | Title of the focused file |
+| Move / enter / up | `j/k`, `l/h` (or arrow keys) |
+| Select | `Space` |
+| To-read queue | `t` |
+| Reading state | `r` |
+| Edit metadata | `ee` |
+| Search | `/` |
+| AI chat | `:gorae` |
+| Index library | `:index` |
+| Help | `:help` |
 
-**Example usage:**
+**Search flags** (after `/`):
+
+- `-t <title>`, `-a <author>`, `-y <year>`, `-c <keyword>` (full-text), `--tag <t1,t2>`
+- Examples: `/ -t transformer`, `/ -a "Yoshua Bengio"`, `/ -c attention`, `/ --tag llm,graph`
+
+**Full-text index:**
 
 ```
-/summarize Large language models are trained on vast amounts of text…
+:index            index all documents under the watch root
+:index here       only the current directory
 ```
 
-List all skills with `/skills list`. Delete a skill by removing its `.md` file from the skills directory.
+Files whose size hasn't changed are skipped, so re-indexing is fast. The index uses SQLite's porter tokenizer, so "running" also matches "run".
 
----
+**Tags:** comma-separated in the metadata editor, hierarchical (`ml/transformers` matches the `ml/` prefix). Browse all tags with `:tags`.
 
-## Roadmap
+**Bidirectional links:** write `[[filename]]` in any Markdown file, run `:index`, and backlinks appear at the bottom of the info pane for every document that points to it.
 
-### Fix
-* [ ] Delete confirmation prompt
-* [ ] Metadata view improvement
+## Install
 
-### New Features and Todo
+### Option A — Pre-built binary (recommended)
 
-* [ ] Open URL
-* [ ] ToDo management
-* [ ] Vault warden for cloud support
-* [ ] WebServer
-* [ ] Trash
+Covered in [Quickstart](#quickstart) above.
 
-### Knowledge base (in progress)
-* [ ] **Citation network** — auto-fetch citation relationships from DOIs via Semantic Scholar
+<details>
+<summary><b>Option B — Build from source</b></summary>
 
-### Gorae AI features
+#### Requirements
 
-* [ ] Text extraction / OCR
-* [ ] TTS
-* [x] **AI chat sessions** — persist and resume conversations; `/sessions` picker, `/new`, `/compact`, `/export`
-* [x] **Skills** — user-defined prompt templates as `.md` files, invoked as slash commands
-* [x] `/summarize` command — streams summary and saves to the file's note
-* [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
-* [x] Live `/load` file picker — fzf-style, results update as you type
-* [ ] Semantic search in Gorae mode
-* [x] Web search integration — Brave / Tavily with hybrid routing node (rules + LLM classifier)
-* [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics
-* [ ] Multifile Handling
-* [ ] Session renaming
+- **Go 1.21+**
+- **Poppler CLI tools** (`pdftotext`, `pdfinfo`, `pdftocairo`)
+- **Optional fallback preview:** `chafa` for non-Kitty / non-iTerm2 terminals
+
+```sh
+# macOS
+brew install golang poppler
+
+# Debian / Ubuntu
+sudo apt install golang-go poppler-utils
+
+# Arch
+sudo pacman -S go poppler
+```
+
+#### Build & install
+
+```sh
+git clone https://github.com/Han8931/gorae.git
+cd gorae
+./install.sh                                       # → ~/.local/bin/gorae (Linux) or /usr/local/bin/gorae (macOS)
+GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh   # custom path
+```
+
+> Linux + Kitty: with `poppler-utils` installed, Gorae uses native image-based PDF previews via `pdftocairo`. `chafa` is not required for the Kitty path.
+
+</details>
+
+<details>
+<summary><b>Option C — Arch (AUR)</b></summary>
+
+`yay -S gorae` currently installs an **older version** and is out of sync with `main`. I plan to refresh the AUR package — until then, use Option A or B.
+
+</details>
+
+<details>
+<summary><b>Recommended PDF viewer: Zathura</b></summary>
+
+Any PDF viewer works, but [Zathura](https://pwmt.org/projects/zathura/) with the MuPDF backend is a great fit: minimal, keyboard-driven, instant start, vi-style navigation.
+
+```sh
+sudo apt install zathura zathura-pdf-mupdf     # Debian / Ubuntu
+sudo pacman -S zathura zathura-pdf-mupdf       # Arch
+```
+
+```json
+"pdf_viewer": "zathura"
+```
+
+Gorae auto-detects `zathura` on `PATH`, so the default works for most users.
+
+</details>
 
 ## Uninstall
 
-1. Delete the binary you installed (default `~/.local/bin/gorae` on Linux or `/usr/local/bin/gorae` on macOS).
-2. Remove the config/data folders if you no longer need them:
+```sh
+rm <path-to-installed-binary>
+rm -rf ~/.config/gorae        # config + theme
+rm -rf ~/.local/share/gorae   # metadata, notes, db
+```
 
-   ```sh
-   rm -rf ~/.config/gorae        # config + theme
-   rm -rf ~/.local/share/gorae   # metadata store, notes, db
-   ```
+## Roadmap
 
-That's it—you can re-clone and reinstall at any time.
+See [ROADMAP.md](ROADMAP.md) — what's shipped, what's in progress, and what's planned.
 
 ## Contributing
 
-Pull requests, bug reports, and feature ideas are all welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the dev setup, coding conventions, and PR checklist.
+PRs, bug reports, and feature ideas welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for dev setup, conventions, and the PR checklist.
 
-## Attribution / Credit
+## License & credit
 
-This project is licensed under the MIT License.
+MIT. If you use Gorae in your project, documentation, or distribution, please credit **Gorae by Han** with a link to this repository.
 
-If you use Gorae in your project, documentation, or distribution, please credit:
-- **Gorae by Han**
-- link to the project repository
+> The Gorae logo is inspired by the **Bangudae Petroglyphs** (반구대 암각화) in Ulsan, South Korea — one of the earliest known depictions of whales and whale hunting.
 
 ## Acknowledgements
 
@@ -461,7 +313,6 @@ If you use Gorae in your project, documentation, or distribution, please credit:
       </a>
       <br/>
       <a href="https://github.com/fineday38">fineday38</a>
-      <br/>
     </td>
   </tr>
 </table>
