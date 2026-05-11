@@ -58,7 +58,12 @@ type Config struct {
 	NotesDir            string    `json:"notes_dir,omitempty"`
 	ThemePath           string    `json:"theme_path,omitempty"`
 	EnableMouse         bool      `json:"enable_mouse"`
-	AI                  *AIConfig `json:"ai,omitempty"`
+	// TextPreviewOnly forces the right pane to use the text/ASCII fallback
+	// even on terminals that support kitty/iTerm2/sixel image protocols.
+	// Useful over slow ssh, in tmux without passthrough, or as a personal
+	// preference. Defaults to false (image preview when supported).
+	TextPreviewOnly bool      `json:"text_preview_only"`
+	AI              *AIConfig `json:"ai,omitempty"`
 
 	WebSearch *WebSearchConfig `json:"web_search,omitempty"`
 
@@ -357,7 +362,84 @@ func writeDefaultConfig(path string, cfg *Config) error {
 		cfg.ThemePath,
 		cfg.EnableMouse,
 	)
-	return os.WriteFile(path, []byte(content), 0o644)
+	// Run the upgrade pass so any fields added since the template was last
+	// edited also land in freshly-created configs. Same path as existing
+	// configs go through, keeping behaviour identical for both.
+	upgraded, _, _ := upgradeConfigBytes([]byte(content))
+	return os.WriteFile(path, upgraded, 0o644)
+}
+
+// configUpgrade describes one top-level config key that may be missing from
+// older user configs. When you add a new top-level field to Config, add an
+// entry here (and update the struct + comments). On next launch, existing
+// users' configs will be auto-extended with the new key + default value +
+// explanatory comment — no manual editing required.
+//
+// `block` is a complete JSONC fragment (leading comment lines + `"key": value`)
+// with NO trailing comma; the upgrader handles comma stitching itself.
+type configUpgrade struct {
+	key   string
+	block string
+}
+
+var configUpgrades = []configUpgrade{
+	{
+		key: "text_preview_only",
+		block: `  // Force the text/ASCII PDF preview even on kitty/iTerm2/sixel terminals.
+  // Useful over slow ssh, inside tmux without passthrough, or if you simply
+  // prefer the text view. Leave false to keep image previews when supported.
+  "text_preview_only": false`,
+	},
+}
+
+// upgradeConfigBytes injects any registered top-level keys that are missing
+// from raw and returns the updated JSONC plus the list of injected keys.
+// Existing values, ordering, and user comments are preserved untouched. If
+// raw doesn't parse as JSON (after comment stripping), it's returned unchanged.
+func upgradeConfigBytes(raw []byte) ([]byte, []string, error) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(stripJSONComments(raw), &top); err != nil {
+		return raw, nil, err
+	}
+	var missing []configUpgrade
+	for _, u := range configUpgrades {
+		if _, present := top[u.key]; !present {
+			missing = append(missing, u)
+		}
+	}
+	if len(missing) == 0 {
+		return raw, nil, nil
+	}
+
+	// Locate the root object's closing brace (the last `}` in the file).
+	closeIdx := bytes.LastIndexByte(raw, '}')
+	if closeIdx < 0 {
+		return raw, nil, fmt.Errorf("malformed config: no closing brace")
+	}
+	head := bytes.TrimRight(raw[:closeIdx], " \t\r\n")
+	tail := raw[closeIdx:]
+	needsComma := len(head) > 0 && head[len(head)-1] != ',' && head[len(head)-1] != '{'
+
+	var b bytes.Buffer
+	b.Write(head)
+	if needsComma {
+		b.WriteByte(',')
+	}
+	for i, u := range missing {
+		b.WriteString("\n\n")
+		b.WriteString(u.block)
+		if i < len(missing)-1 {
+			b.WriteByte(',')
+		}
+	}
+	b.WriteByte('\n')
+	b.Write(tail)
+
+	keys := make([]string, len(missing))
+	for i, u := range missing {
+		keys[i] = u.key
+	}
+	return b.Bytes(), keys, nil
 }
 
 func LoadOrInit() (*Config, error) {
@@ -368,6 +450,14 @@ func LoadOrInit() (*Config, error) {
 
 	// existing config — strip JSONC comments before parsing
 	if data, err := os.ReadFile(path); err == nil {
+		// Auto-inject any top-level fields that have been added to Gorae
+		// since this config was created. Idempotent: noop when nothing's
+		// missing. We swallow write errors here because parsing still
+		// succeeds against the in-memory upgraded bytes either way.
+		if upgraded, injected, err := upgradeConfigBytes(data); err == nil && len(injected) > 0 {
+			_ = os.WriteFile(path, upgraded, 0o644)
+			data = upgraded
+		}
 		var cfg Config
 		if err := json.Unmarshal(stripJSONComments(data), &cfg); err != nil {
 			return nil, err

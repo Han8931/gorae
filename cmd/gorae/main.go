@@ -21,6 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	app.SetTextPreviewOnly(cfg.TextPreviewOnly)
 
 	origWatch := cfg.WatchDir
 	root := cfg.WatchDir

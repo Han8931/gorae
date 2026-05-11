@@ -13,17 +13,36 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 var errTerminalGraphicsUnsupported = errors.New("terminal image preview unsupported")
 var execLookPath = exec.LookPath
 
+// textPreviewOnly, when true, forces terminalGraphicFormat to return "" so the
+// preview pipeline falls back to text/ASCII rendering on every supported
+// terminal. Toggled by SetTextPreviewOnly(cfg.TextPreviewOnly) at startup and
+// on config reload.
+var textPreviewOnly atomic.Bool
+
+// SetTextPreviewOnly toggles the runtime kill-switch for image previews.
+func SetTextPreviewOnly(on bool) { textPreviewOnly.Store(on) }
+
 const kittyPreviewImageID = 1
 const kittyChunkRawSize = 3072
 
 func terminalGraphicFormat() string {
+	if textPreviewOnly.Load() {
+		return ""
+	}
 	if override := normalizeGraphicFormat(os.Getenv("GORAE_PDF_PREVIEW_FORMAT")); override != "" {
 		return override
+	}
+	// Allow the env var to act as an explicit kill switch too, matching the
+	// config option for users who'd rather not edit JSON.
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GORAE_PDF_PREVIEW_FORMAT"))) {
+	case "off", "none", "text", "disabled", "disable":
+		return ""
 	}
 
 	term := strings.ToLower(strings.TrimSpace(os.Getenv("TERM")))

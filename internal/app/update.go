@@ -187,6 +187,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cfg, err := config.LoadOrInit(); err == nil {
 				m.cfg = cfg
 				m.aiClient = nil // force re-init on next :gorae
+				SetTextPreviewOnly(cfg.TextPreviewOnly)
+				// Drop any cached graphic so the new preview-mode takes effect
+				// on the next preview cycle without needing a restart.
+				m.previewGraphic = ""
+				m.previewGraphicClear = true
+				m.previewGraphicPath = ""
 			}
 			m.setStatus("Config reloaded")
 		}
@@ -1960,6 +1966,17 @@ func (m *Model) launchConfigEditor() tea.Cmd {
 	})
 }
 
+// previewModeLabel renders the effective PDF-preview mode for :config show.
+func previewModeLabel(cfg *config.Config) string {
+	if cfg != nil && cfg.TextPreviewOnly {
+		return "text-only (image preview disabled by text_preview_only)"
+	}
+	if fmt := terminalGraphicFormat(); fmt != "" {
+		return "image (" + fmt + ")"
+	}
+	return "text (no supported image protocol detected)"
+}
+
 func (m *Model) displayConfigSummary() {
 	path, err := config.Path()
 	if err != nil {
@@ -2024,6 +2041,8 @@ func (m *Model) displayConfigSummary() {
 		"  " + editor,
 		"Configured PDF viewer:",
 		"  " + viewer,
+		"PDF preview mode:",
+		"  " + previewModeLabel(m.cfg),
 	}
 
 	// AI config
