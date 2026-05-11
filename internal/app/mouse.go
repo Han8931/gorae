@@ -9,9 +9,18 @@ import (
 )
 
 // handleMouse implements basic mouse interactions:
-// - Scroll wheel: scroll list/search results.
+// - Scroll wheel: scroll list / search results / AI chat.
 // - Left click: move cursor; double-click (or click) opens file/dir.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.state == stateGorae {
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.scrollAIChatBy(-3)
+		case tea.MouseWheelDown:
+			m.scrollAIChatBy(3)
+		}
+		return m, nil
+	}
 	switch msg.Type {
 	case tea.MouseWheelUp:
 		return m.scrollMouse(-1)

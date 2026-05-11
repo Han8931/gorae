@@ -50,6 +50,9 @@ func (m *Model) renderGoraeView() string {
 		maxScroll = 0
 	}
 	scroll := m.aiChatScroll
+	if m.aiFollowBottom {
+		scroll = maxScroll
+	}
 	if scroll > maxScroll {
 		scroll = maxScroll
 	}

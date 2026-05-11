@@ -175,6 +175,7 @@ type Model struct {
 	aiShowThinking  bool   // ctrl+t toggles visibility of thinking blocks
 	aiSources       []string // document paths cited in last answer
 	aiChatScroll    int
+	aiFollowBottom  bool // true => renderer pegs chat to the bottom regardless of aiChatScroll
 	aiClient        *ai.Client
 	aiSearchResults   []meta.NameMatch     // live find results shown in overlay
 	aiSearchSelecting bool                 // true while the find overlay is active

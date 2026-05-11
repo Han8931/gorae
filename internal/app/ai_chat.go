@@ -119,6 +119,7 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.previewGraphic = ""
 	m.previewGraphicClear = true
 	m.aiChatScroll = 0
+	m.aiFollowBottom = true
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 
@@ -147,7 +148,7 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 				})
 			}
 			welcomeMsg = fmt.Sprintf("Resumed session — %d message(s) loaded. Type /new for a fresh session.", len(msgs))
-			m.aiChatScroll = 1<<31 - 1
+			m.aiFollowBottom = true
 		}
 	}
 
@@ -226,6 +227,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.aiMessages = append([]ai.Message{summaryMsg}, m.aiMessages[n-keep:]...)
 		m.aiChatScroll = 0
+		m.aiFollowBottom = true
 		m.setStatus(fmt.Sprintf("Compacted %d messages → summary + last %d kept verbatim", compacted, keep))
 		return m, nil
 
@@ -278,22 +280,16 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "ctrl+p":
-			m.aiChatScroll--
-			if m.aiChatScroll < 0 {
-				m.aiChatScroll = 0
-			}
+			m.scrollAIChatBy(-1)
 			return m, nil
 		case "ctrl+n":
-			m.aiChatScroll++
+			m.scrollAIChatBy(1)
 			return m, nil
 		case "pgup":
-			m.aiChatScroll -= m.viewportHeight / 2
-			if m.aiChatScroll < 0 {
-				m.aiChatScroll = 0
-			}
+			m.scrollAIChatBy(-m.viewportHeight / 2)
 			return m, nil
 		case "pgdown":
-			m.aiChatScroll += m.viewportHeight / 2
+			m.scrollAIChatBy(m.viewportHeight / 2)
 			return m, nil
 		case "tab":
 			if cmd := m.goraeAutocomplete(); cmd != nil {
@@ -444,7 +440,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiSearchResults = matches
 		m.aiSearchCursor = 0
 		m.aiSearchSelecting = true
-		m.aiChatScroll = 1<<31 - 1 // scroll to bottom so list is visible
+		m.aiFollowBottom = true // stick to bottom so the find list is visible
 		return nil
 
 	case "/summarize":
@@ -465,6 +461,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiMessages = nil
 		m.aiSources = nil
 		m.aiChatScroll = 0
+		m.aiFollowBottom = true
 		if m.aiSessionID > 0 && m.meta != nil {
 			_ = m.meta.ClearSessionMessages(context.Background(), m.aiSessionID)
 		}
@@ -478,6 +475,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiMessages = nil
 		m.aiSources = nil
 		m.aiChatScroll = 0
+		m.aiFollowBottom = true
 		m.setStatus("New session started")
 		if m.aiClient != nil {
 			m.updateGoraeStatus(m.aiClient.Model())
@@ -536,11 +534,78 @@ Keyboard shortcuts:
   Ctrl+T      — toggle thinking / reasoning display
   Ctrl+P/N    — scroll chat up / down
   PgUp/PgDn   — scroll half a page
+  Mouse wheel — scroll chat up / down
   ↑/↓         — browse input history
   Tab         — autocomplete / command
   Esc         — exit
 
 Press Esc or Ctrl+C to exit.`)
+}
+
+// ── scroll helpers ────────────────────────────────────────────────────────────
+
+// aiChatMaxScroll returns the largest valid value for aiChatScroll given the
+// current chat content and viewport. Mirrors the layout maths in renderGoraeView.
+func (m *Model) aiChatMaxScroll() int {
+	width := m.width
+	height := m.viewportHeight
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+
+	overlayLines := 0
+	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
+		overlayLines = len(m.buildFindOverlay(width))
+	} else if !m.aiStreaming {
+		muted := m.styles.Preview.Body
+		accent := m.styles.StatusValue
+		bright := m.styles.Preview.Info
+		overlayLines = len(m.goraeCommandHint(muted, accent, bright))
+	}
+
+	const inputRows, statusRows, sepRows, paddingRows = 1, 1, 1, 1
+	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - overlayLines
+	if chatHeight < 3 {
+		chatHeight = 3
+	}
+
+	max := len(m.buildChatLines(width)) - chatHeight
+	if max < 0 {
+		max = 0
+	}
+	return max
+}
+
+// scrollAIChatBy moves the chat by delta lines. Negative scrolls up (and detaches
+// from the bottom); positive scrolls down (and re-attaches once the bottom is
+// reached so new tokens keep auto-scrolling).
+func (m *Model) scrollAIChatBy(delta int) {
+	if delta == 0 {
+		return
+	}
+	max := m.aiChatMaxScroll()
+	if delta < 0 {
+		if m.aiFollowBottom {
+			m.aiChatScroll = max
+			m.aiFollowBottom = false
+		}
+		m.aiChatScroll += delta
+		if m.aiChatScroll < 0 {
+			m.aiChatScroll = 0
+		}
+		return
+	}
+	if m.aiFollowBottom {
+		return
+	}
+	m.aiChatScroll += delta
+	if m.aiChatScroll >= max {
+		m.aiChatScroll = max
+		m.aiFollowBottom = true
+	}
 }
 
 // ── summarize ────────────────────────────────────────────────────────────────
@@ -580,7 +645,7 @@ func (m *Model) startSummarize() tea.Cmd {
 	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: "/summarize " + title})
 	m.aiInputHistory = append(m.aiInputHistory, "/summarize")
 	m.aiHistoryCursor = -1
-	m.aiChatScroll = 1<<31 - 1
+	m.aiFollowBottom = true
 	m.aiStreaming = true
 	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
@@ -699,7 +764,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	}
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
-	m.aiChatScroll = 1<<31 - 1 // scroll to bottom
+	m.aiFollowBottom = true // stick to bottom while answer streams in
 	m.aiStreaming = true
 	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
