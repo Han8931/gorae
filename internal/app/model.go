@@ -193,6 +193,17 @@ type Model struct {
 	aiSessionCursor   int                  // cursor in the session list
 	aiCompacting      bool                 // true while a /compact summarisation is in flight
 	aiToolHops        int                  // tool-call iterations used by the current user turn (reset on submit)
+
+	// Modal (vim-style) navigation in the chat.
+	aiNormalMode bool         // false = insert mode (default), true = normal mode
+	aiMsgCursor  int          // index into aiMessages while in normal mode
+	aiMsgMarks   map[int]bool // selected message indices (for multi-yank)
+	aiLastNavKey string       // tracks single-key prefixes like "g" for gg
+	aiLastNavAt  time.Time    // expiry timestamp for the prefix above
+
+	// "Shown-once" guidance flags, reset per chat session.
+	aiNormalHintShown  bool // first-time NORMAL teaching status
+	aiUnknownHintShown bool // hint shown when user mashes a letter in NORMAL
 	aiUserSkills      []UserSkill          // user-defined prompt templates loaded from skillsDir
 	skillsDir         string               // directory containing *.md skill files
 

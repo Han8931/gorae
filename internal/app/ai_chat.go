@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/cursor"
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -107,7 +108,7 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	}
 
 	inp := textinput.New()
-	inp.Placeholder = " ask anything… (/help for commands)"
+	inp.Placeholder = " ask anything…  (Esc → navigate past messages • /help)"
 	inp.CharLimit = 4096
 	inp.Cursor.SetMode(cursor.CursorStatic)
 	inp.Focus()
@@ -121,6 +122,12 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.previewGraphicClear = true
 	m.aiChatScroll = 0
 	m.aiFollowBottom = true
+	m.aiNormalMode = false
+	m.aiMsgCursor = 0
+	m.aiMsgMarks = nil
+	m.aiLastNavKey = ""
+	m.aiNormalHintShown = false
+	m.aiUnknownHintShown = false
 	m.aiHistoryCursor = -1
 	m.aiHistoryDraft = ""
 
@@ -186,7 +193,7 @@ func (m *Model) goraeSelectCurrent() {
 }
 
 func (m *Model) updateGoraeStatus(modelName string) {
-	status := "Gorae AI  model:" + modelName + "  Esc to exit"
+	status := "Gorae AI  model:" + modelName + "  Esc:normal mode  Ctrl+C:exit"
 	if m.aiFocusedFile != "" {
 		status += "  focus:" + filepath.Base(m.aiFocusedFile)
 	}
@@ -199,6 +206,9 @@ func (m *Model) updateGoraeStatus(modelName string) {
 func (m *Model) exitGoraeChat() {
 	m.state = stateNormal
 	m.aiStreaming = false
+	m.aiNormalMode = false
+	m.aiMsgMarks = nil
+	m.aiLastNavKey = ""
 	m.aiInput.Blur()
 	m.setPersistentStatus("")
 }
@@ -248,31 +258,13 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		switch msg.String() {
-		case "esc", "ctrl+c":
-			if m.aiSearchSelecting {
-				m.aiSearchSelecting = false
-				return m, nil
-			}
+
+		key := msg.String()
+
+		// Universal keys (work in both modes, regardless of overlays).
+		switch key {
+		case "ctrl+c":
 			m.exitGoraeChat()
-			return m, nil
-		case "up":
-			if m.aiSearchSelecting {
-				if m.aiSearchCursor > 0 {
-					m.aiSearchCursor--
-				}
-				return m, nil
-			}
-			m.goraeHistoryBack()
-			return m, nil
-		case "down":
-			if m.aiSearchSelecting {
-				if m.aiSearchCursor < len(m.aiSearchResults)-1 {
-					m.aiSearchCursor++
-				}
-				return m, nil
-			}
-			m.goraeHistoryForward()
 			return m, nil
 		case "ctrl+t":
 			m.aiShowThinking = !m.aiShowThinking
@@ -291,6 +283,51 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "pgdown":
 			m.scrollAIChatBy(m.viewportHeight / 2)
+			return m, nil
+		}
+
+		// Find-overlay intercepts navigation/select while active.
+		if m.aiSearchSelecting {
+			switch key {
+			case "esc":
+				m.aiSearchSelecting = false
+				return m, nil
+			case "up":
+				if m.aiSearchCursor > 0 {
+					m.aiSearchCursor--
+				}
+				return m, nil
+			case "down":
+				if m.aiSearchCursor < len(m.aiSearchResults)-1 {
+					m.aiSearchCursor++
+				}
+				return m, nil
+			case "enter":
+				m.goraeSelectCurrent()
+				return m, nil
+			}
+			// Typing keys fall through to the input so the live filter updates.
+		}
+
+		if m.aiNormalMode {
+			return m.handleGoraeNormalKey(key)
+		}
+
+		// Insert mode.
+		switch key {
+		case "esc":
+			if len(m.aiMessages) == 0 {
+				// No messages to navigate — preserve the old "Esc exits" shortcut.
+				m.exitGoraeChat()
+				return m, nil
+			}
+			m.enterAINormalMode()
+			return m, nil
+		case "up":
+			m.goraeHistoryBack()
+			return m, nil
+		case "down":
+			m.goraeHistoryForward()
 			return m, nil
 		case "tab":
 			if cmd := m.goraeAutocomplete(); cmd != nil {
@@ -472,6 +509,8 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiSources = nil
 		m.aiChatScroll = 0
 		m.aiFollowBottom = true
+		m.aiMsgCursor = 0
+		m.aiMsgMarks = nil
 		if m.aiSessionID > 0 && m.meta != nil {
 			_ = m.meta.ClearSessionMessages(context.Background(), m.aiSessionID)
 		}
@@ -486,6 +525,8 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiSources = nil
 		m.aiChatScroll = 0
 		m.aiFollowBottom = true
+		m.aiMsgCursor = 0
+		m.aiMsgMarks = nil
 		m.setStatus("New session started")
 		if m.aiClient != nil {
 			m.updateGoraeStatus(m.aiClient.Model())
@@ -540,16 +581,260 @@ Gorae AI slash commands:
   /skills     — manage custom prompt templates (edit / list)
   /help       — this help text
 
-Keyboard shortcuts:
+Keyboard shortcuts (insert mode — typing into the prompt):
   Ctrl+T      — toggle thinking / reasoning display
   Ctrl+P/N    — scroll chat up / down
   PgUp/PgDn   — scroll half a page
   Mouse wheel — scroll chat up / down
   ↑/↓         — browse input history
   Tab         — autocomplete / command
-  Esc         — exit
+  Esc         — switch to NORMAL mode (or exit if chat is empty)
+  Ctrl+C      — exit chat
 
-Press Esc or Ctrl+C to exit.`)
+Normal mode (vim-style navigation across messages):
+  i, a        — return to insert mode
+  /           — insert mode prefilled with "/" for a slash command
+  j / ↓       — next message
+  k / ↑       — previous message
+  l / →       — jump to next user message
+  h / ←       — jump to previous user message
+  gg          — first message
+  G           — last message
+  Space       — toggle mark on current message (multi-select)
+  y           — yank current message — or all marks — to clipboard
+  c           — clear all marks
+  ?           — show this help
+  q           — exit chat`)
+}
+
+// ── modal navigation (vim-style) ──────────────────────────────────────────────
+
+const aiNavSeqTTL = 1200 * time.Millisecond
+
+func (m *Model) enterAINormalMode() {
+	if len(m.aiMessages) == 0 {
+		return
+	}
+	m.aiNormalMode = true
+	m.aiInput.Blur()
+	// Snap cursor to the last message — most users land here from "I just sent
+	// something, let me look at the answer".
+	m.aiMsgCursor = len(m.aiMessages) - 1
+	m.aiLastNavKey = ""
+	m.ensureMessageCursorVisible()
+	if m.aiClient != nil {
+		m.updateGoraeStatus(m.aiClient.Model())
+	}
+	// First-time teaching: explain what just happened. Once per session so it
+	// stays out of the way of users who already get it.
+	if !m.aiNormalHintShown {
+		m.aiNormalHintShown = true
+		m.setStatus("NORMAL mode — j/k navigate · gg/G top/bottom · y copy · space mark · i to type · q to quit · ? help")
+	}
+}
+
+func (m *Model) enterAIInsertMode() {
+	m.aiNormalMode = false
+	m.aiLastNavKey = ""
+	m.aiInput.Focus()
+	m.aiFollowBottom = true
+	if m.aiClient != nil {
+		m.updateGoraeStatus(m.aiClient.Model())
+	}
+}
+
+// isUserMessage reports whether the given index points at a user message that
+// h/l should jump to.
+func (m *Model) isUserMessage(idx int) bool {
+	if idx < 0 || idx >= len(m.aiMessages) {
+		return false
+	}
+	return m.aiMessages[idx].Role == ai.RoleUser
+}
+
+func (m *Model) moveAIMsgCursor(delta int) {
+	if len(m.aiMessages) == 0 {
+		return
+	}
+	next := m.aiMsgCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= len(m.aiMessages) {
+		next = len(m.aiMessages) - 1
+	}
+	m.aiMsgCursor = next
+	m.ensureMessageCursorVisible()
+}
+
+func (m *Model) jumpToUserMessage(direction int) {
+	if len(m.aiMessages) == 0 {
+		return
+	}
+	idx := m.aiMsgCursor + direction
+	for idx >= 0 && idx < len(m.aiMessages) {
+		if m.isUserMessage(idx) {
+			m.aiMsgCursor = idx
+			m.ensureMessageCursorVisible()
+			return
+		}
+		idx += direction
+	}
+	// No further user message — clamp to start/end.
+	if direction < 0 {
+		m.aiMsgCursor = 0
+	} else {
+		m.aiMsgCursor = len(m.aiMessages) - 1
+	}
+	m.ensureMessageCursorVisible()
+}
+
+func (m *Model) toggleAIMsgMark() {
+	if len(m.aiMessages) == 0 {
+		return
+	}
+	if m.aiMsgMarks == nil {
+		m.aiMsgMarks = map[int]bool{}
+	}
+	if m.aiMsgMarks[m.aiMsgCursor] {
+		delete(m.aiMsgMarks, m.aiMsgCursor)
+	} else {
+		m.aiMsgMarks[m.aiMsgCursor] = true
+	}
+}
+
+// yankAIMessages copies one-or-more chat messages to the system clipboard.
+// When marks are present it yanks every marked message in chronological order;
+// otherwise it yanks the message under the cursor. Returns a status string for
+// the status bar.
+func (m *Model) yankAIMessages() string {
+	if len(m.aiMessages) == 0 {
+		return "Nothing to yank"
+	}
+	var indices []int
+	if len(m.aiMsgMarks) > 0 {
+		for i := range m.aiMessages {
+			if m.aiMsgMarks[i] {
+				indices = append(indices, i)
+			}
+		}
+	} else {
+		indices = []int{m.aiMsgCursor}
+	}
+
+	var body string
+	if len(indices) == 1 {
+		// Single message: paste-ready, no role label.
+		body = m.aiMessages[indices[0]].Content
+	} else {
+		var sb strings.Builder
+		for i, idx := range indices {
+			msg := m.aiMessages[idx]
+			label := "Message"
+			switch msg.Role {
+			case ai.RoleUser:
+				label = "You"
+			case ai.RoleAssistant:
+				label = "Gorae"
+			case ai.RoleTool:
+				label = "Tool (" + msg.Name + ")"
+			}
+			sb.WriteString("**" + label + ":** " + msg.Content)
+			if i < len(indices)-1 {
+				sb.WriteString("\n\n---\n\n")
+			}
+		}
+		body = sb.String()
+	}
+
+	if err := clipboard.WriteAll(body); err != nil {
+		return "Yank failed: " + err.Error()
+	}
+	if len(indices) == 1 {
+		return "Yanked 1 message to clipboard"
+	}
+	return fmt.Sprintf("Yanked %d messages to clipboard", len(indices))
+}
+
+// handleGoraeNormalKey is the dispatcher for vim-style normal mode in chat.
+// It must always return; falling through would hand the key to the input box.
+func (m *Model) handleGoraeNormalKey(key string) (tea.Model, tea.Cmd) {
+	// Two-key sequence resolution (currently only "gg").
+	if m.aiLastNavKey == "g" && time.Since(m.aiLastNavAt) <= aiNavSeqTTL {
+		m.aiLastNavKey = ""
+		if key == "g" {
+			m.aiMsgCursor = 0
+			m.ensureMessageCursorVisible()
+			return m, nil
+		}
+		// Anything else cancels the prefix and falls through.
+	}
+
+	switch key {
+	case "i", "a":
+		m.enterAIInsertMode()
+		return m, nil
+	case "esc":
+		// Already normal — clear any pending prefix; do not exit chat.
+		m.aiLastNavKey = ""
+		return m, nil
+	case "q":
+		m.exitGoraeChat()
+		return m, nil
+	case "/":
+		m.enterAIInsertMode()
+		m.aiInput.SetValue("/")
+		m.aiInput.CursorEnd()
+		return m, nil
+	case "?":
+		m.appendAISystem(goraeHelpText())
+		m.aiMsgCursor = len(m.aiMessages) - 1
+		m.ensureMessageCursorVisible()
+		return m, nil
+	case "j", "down":
+		m.moveAIMsgCursor(1)
+		return m, nil
+	case "k", "up":
+		m.moveAIMsgCursor(-1)
+		return m, nil
+	case "l", "right":
+		m.jumpToUserMessage(1)
+		return m, nil
+	case "h", "left":
+		m.jumpToUserMessage(-1)
+		return m, nil
+	case "g":
+		m.aiLastNavKey = "g"
+		m.aiLastNavAt = time.Now()
+		return m, nil
+	case "G":
+		m.aiMsgCursor = len(m.aiMessages) - 1
+		m.ensureMessageCursorVisible()
+		return m, nil
+	case " ", "space":
+		m.toggleAIMsgMark()
+		return m, nil
+	case "y":
+		m.setStatus(m.yankAIMessages())
+		return m, nil
+	case "c":
+		// Clear marks.
+		if len(m.aiMsgMarks) > 0 {
+			n := len(m.aiMsgMarks)
+			m.aiMsgMarks = nil
+			m.setStatus(fmt.Sprintf("Cleared %d mark(s)", n))
+		}
+		return m, nil
+	}
+
+	// Safety net: if the user typed a printable letter that has no normal-mode
+	// binding (e.g. "t", "x", "e"), explain once where they are. Filters out
+	// special keys like "enter"/"tab"/"ctrl+x" which have len > 1.
+	if !m.aiUnknownHintShown && len(key) == 1 {
+		m.aiUnknownHintShown = true
+		m.setStatus("You're in NORMAL mode — press i to type, j/k to navigate, gg/G for top/bottom, q to quit, ? for help")
+	}
+	return m, nil
 }
 
 // ── scroll helpers ────────────────────────────────────────────────────────────
@@ -582,11 +867,84 @@ func (m *Model) aiChatMaxScroll() int {
 		chatHeight = 3
 	}
 
-	max := len(m.buildChatLines(width)) - chatHeight
+	lines, _ := m.buildChatLines(width)
+	max := len(lines) - chatHeight
 	if max < 0 {
 		max = 0
 	}
 	return max
+}
+
+// ensureMessageCursorVisible adjusts aiChatScroll so the message at
+// aiMsgCursor stays on-screen with a few lines of context on each side.
+// In normal mode the cursor — not aiFollowBottom — is the source of scroll
+// truth, so this function takes over scroll bookkeeping for the duration.
+func (m *Model) ensureMessageCursorVisible() {
+	if m.aiMsgCursor < 0 || m.aiMsgCursor >= len(m.aiMessages) {
+		return
+	}
+	width := m.width
+	height := m.viewportHeight
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+
+	overlayLines := 0
+	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
+		overlayLines = len(m.buildFindOverlay(width))
+	} else if !m.aiStreaming {
+		muted := m.styles.Preview.Body
+		accent := m.styles.StatusValue
+		bright := m.styles.Preview.Info
+		overlayLines = len(m.goraeCommandHint(muted, accent, bright))
+	}
+	const inputRows, statusRows, sepRows, paddingRows = 1, 1, 1, 1
+	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - overlayLines
+	if chatHeight < 3 {
+		chatHeight = 3
+	}
+
+	lines, offsets := m.buildChatLines(width)
+	if m.aiMsgCursor >= len(offsets) {
+		return
+	}
+	cursorLine := offsets[m.aiMsgCursor]
+
+	maxScroll := len(lines) - chatHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	// If we were follow-bottom, the renderer was pegging scroll to maxScroll
+	// regardless of m.aiChatScroll. Snap the field to that effective value
+	// before doing the cursor-visibility math, then disable follow-bottom so
+	// the renderer respects our updates.
+	if m.aiFollowBottom {
+		m.aiChatScroll = maxScroll
+		m.aiFollowBottom = false
+	}
+
+	// Keep the cursor at least `scrolloff` lines from each edge — that's what
+	// makes the screen feel like it scrolls smoothly under the cursor as you
+	// press j/k, instead of the cursor sticking to the boundary.
+	const scrolloff = 3
+	topEdge := m.aiChatScroll + scrolloff
+	bottomEdge := m.aiChatScroll + chatHeight - scrolloff - 1
+	switch {
+	case cursorLine < topEdge:
+		m.aiChatScroll = cursorLine - scrolloff
+	case cursorLine > bottomEdge:
+		m.aiChatScroll = cursorLine - chatHeight + scrolloff + 1
+	}
+	if m.aiChatScroll < 0 {
+		m.aiChatScroll = 0
+	}
+	if m.aiChatScroll > maxScroll {
+		m.aiChatScroll = maxScroll
+	}
 }
 
 // scrollAIChatBy moves the chat by delta lines. Negative scrolls up (and detaches

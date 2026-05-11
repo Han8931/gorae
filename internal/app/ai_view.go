@@ -42,7 +42,7 @@ func (m *Model) renderGoraeView() string {
 		chatHeight = 3
 	}
 
-	chatLines := m.buildChatLines(width)
+	chatLines, _ := m.buildChatLines(width)
 
 	// Scroll: clamp to valid range
 	maxScroll := len(chatLines) - chatHeight
@@ -95,7 +95,9 @@ func (m *Model) renderGoraeView() string {
 		fmt.Fprintln(&b, ol)
 	}
 
-	// Input row
+	// Input row — the leftmost badge doubles as the mode indicator so it sits
+	// right next to where the user is looking when they wonder why typing
+	// doesn't work.
 	if m.aiStreaming {
 		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
 		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
@@ -104,6 +106,19 @@ func (m *Model) renderGoraeView() string {
 		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
 		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
 		b.WriteString(m.styles.StatusValue.Render(" Compacting…"))
+	} else if m.aiNormalMode {
+		normalBadge := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#FFD580")).
+			Bold(true).
+			Render(" NORMAL ")
+		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+		hint := "  i:insert  j/k:nav  gg/G:top/bot  h/l:jump  space:mark  y:yank  q:quit"
+		if n := len(m.aiMsgMarks); n > 0 {
+			hint = fmt.Sprintf("  %d mark(s)  y:yank all  c:clear  i:insert  gg/G:top/bot  q:quit", n)
+		}
+		b.WriteString(normalBadge)
+		b.WriteString(hintStyle.Render(hint))
 	} else {
 		b.WriteString(m.styles.StatusLabel.Render(" YOU "))
 		b.WriteString(" " + m.aiInput.View())
@@ -165,10 +180,17 @@ var goraeCommandDescs = []struct{ name, desc string }{
 	{"/help", "show help"},
 }
 
-func (m Model) buildChatLines(width int) []string {
+func (m Model) buildChatLines(width int) ([]string, []int) {
 	assistantStyle := m.styles.Preview.Body
 	labelUserStyle := m.styles.StatusLabel
 	labelAIStyle := m.styles.StatusValue
+	// Cursor: invert label colours so the active message reads as a bright
+	// chip. Mark: a yellow asterisk to the left of the role badge.
+	cursorBadge := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#000000")).
+		Background(lipgloss.Color("#FFD580")).
+		Bold(true)
+	markStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD580")).Bold(true)
 
 	wrapW := width - 6
 	if wrapW < 20 {
@@ -176,16 +198,34 @@ func (m Model) buildChatLines(width int) []string {
 	}
 
 	var lines []string
+	msgStartLines := make([]int, 0, len(m.aiMessages))
+
+	// renderRoleLabel returns the role badge plus a fixed-width left margin
+	// (" *" if marked, "  " otherwise) so the chat doesn't shift horizontally
+	// as marks come and go. When the message is the cursor target, the badge
+	// itself is rendered in a high-contrast style so it's impossible to miss.
+	renderRoleLabel := func(idx int, baseStyle lipgloss.Style, text string) string {
+		margin := "  "
+		if m.aiMsgMarks[idx] {
+			margin = " " + markStyle.Render("*")
+		}
+		style := baseStyle
+		if m.aiNormalMode && m.aiMsgCursor == idx {
+			style = cursorBadge
+		}
+		return margin + style.Render(text)
+	}
 
 	// Base content: welcome screen or conversation
 	if len(m.aiMessages) == 0 && !m.aiSearchSelecting {
 		lines = m.goraeWelcomeLines()
 	} else {
-		for _, msg := range m.aiMessages {
+		for i, msg := range m.aiMessages {
+			msgStartLines = append(msgStartLines, len(lines))
 			switch msg.Role {
 			case ai.RoleUser:
 				chatUserStyle := m.styles.ChatUser
-				lines = append(lines, labelUserStyle.Render(" YOU "))
+				lines = append(lines, renderRoleLabel(i, labelUserStyle, " YOU "))
 				for _, l := range wrapTextToWidth(msg.Content, wrapW) {
 					pad := wrapW - runewidth.StringWidth(l)
 					if pad < 0 {
@@ -198,7 +238,7 @@ func (m Model) buildChatLines(width int) []string {
 			case ai.RoleAssistant:
 				if msg.IsSummary {
 					compactStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
-					lines = append(lines, compactStyle.Render("  ╌╌╌ context summary ╌╌╌"))
+					lines = append(lines, renderRoleLabel(i, compactStyle, " ╌╌╌ context summary ╌╌╌"))
 					for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
 						lines = append(lines, "   "+compactStyle.Render(pl.text))
 					}
@@ -207,7 +247,7 @@ func (m Model) buildChatLines(width int) []string {
 				} else {
 					hasContent := strings.TrimSpace(msg.Content) != ""
 					if hasContent || msg.Thinking != "" {
-						lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
+						lines = append(lines, renderRoleLabel(i, labelAIStyle, " GORAE ")+" "+assistantStyle.Render(""))
 						if msg.Thinking != "" {
 							lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
 						}
@@ -229,7 +269,7 @@ func (m Model) buildChatLines(width int) []string {
 
 		// Streaming buffer
 		if m.aiStreaming {
-			lines = append(lines, labelAIStyle.Render(" GORAE ")+" ")
+			lines = append(lines, "  "+labelAIStyle.Render(" GORAE ")+" ")
 			if m.aiThinkBuf != "" {
 				lines = append(lines, m.renderThinkingBlock(m.aiThinkBuf, wrapW, m.aiShowThinking)...)
 			}
@@ -241,7 +281,7 @@ func (m Model) buildChatLines(width int) []string {
 		}
 	}
 
-	return lines
+	return lines, msgStartLines
 }
 
 // renderToolCallLines renders a muted block summarising one or more tool
