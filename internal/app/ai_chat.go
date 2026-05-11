@@ -34,10 +34,11 @@ func goraeSpinnerTick() tea.Cmd {
 // ── messages ──────────────────────────────────────────────────────────────────
 
 type aiTokenMsg struct {
-	text string
-	done bool
-	err  error
-	ch   <-chan ai.StreamToken
+	text      string
+	toolCalls []ai.ToolCall
+	done      bool
+	err       error
+	ch        <-chan ai.StreamToken
 }
 
 type aiSourcesMsg struct {
@@ -342,18 +343,24 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.aiInput, inputCmd = m.aiInput.Update(msg)
 	cmds = append(cmds, inputCmd)
 
-	// Live /find: trigger search whenever the query part changes.
+	// Live /load (and legacy /find): trigger search whenever the query part changes.
 	if !m.aiStreaming {
-		val := m.aiInput.Value()
-		const findPrefix = "/find "
-		if strings.HasPrefix(strings.ToLower(val), findPrefix) {
-			query := strings.TrimSpace(val[len(findPrefix):])
+		val := strings.ToLower(m.aiInput.Value())
+		prefix := ""
+		switch {
+		case strings.HasPrefix(val, "/load "):
+			prefix = "/load "
+		case strings.HasPrefix(val, "/find "):
+			prefix = "/find "
+		}
+		if prefix != "" {
+			query := strings.TrimSpace(m.aiInput.Value()[len(prefix):])
 			if query != m.aiLiveQuery {
 				m.aiLiveQuery = query
 				cmds = append(cmds, m.doLiveFind(query))
 			}
 		} else if m.aiSearchSelecting {
-			// Input no longer starts with "/find " — clear overlay
+			// Input no longer starts with /load (or /find) — clear overlay.
 			m.aiSearchSelecting = false
 			m.aiSearchResults = nil
 			m.aiLiveQuery = ""
@@ -365,7 +372,10 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-var goraeSlashCommands = []string{"/find", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
+// goraeSlashCommands drives autocomplete and the on-screen hint overlay. The
+// legacy "/find" command still works as a silent alias (see handleGoraeSlashCommand)
+// but is intentionally absent here so new users see only "/load".
+var goraeSlashCommands = []string{"/load", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
 
 func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiInput.Value()
@@ -418,10 +428,10 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 	parts := strings.Fields(raw)
 	cmd := strings.ToLower(parts[0])
 	switch cmd {
-	case "/find":
+	case "/load", "/find": // /find is the legacy name; keep it working silently
 		query := strings.TrimSpace(strings.TrimPrefix(raw, parts[0]))
 		if query == "" {
-			m.appendAISystem("Usage: /find <keyword or title>")
+			m.appendAISystem("Usage: /load <keyword or title>")
 			return nil
 		}
 		if m.meta == nil {
@@ -448,7 +458,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 
 	case "/select":
 		if m.aiFocusedFile == "" {
-			m.appendAISystem("No file focused. Use /find to pick a file.")
+			m.appendAISystem("No file focused. Use /load to pick a file.")
 		} else {
 			m.aiFocusedFile = ""
 			if m.aiClient != nil {
@@ -518,7 +528,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 func goraeHelpText() string {
 	return strings.TrimSpace(`
 Gorae AI slash commands:
-  /find <q>   — find files; use ↑/↓/Enter to select, Esc to cancel
+  /load <q>   — find files and load one into chat context; ↑/↓/Enter select
   /select     — clear the current file focus
   /summarize  — summarize focused file and save to its note
   /clear      — clear chat history (also removes from saved session)
@@ -616,7 +626,7 @@ func (m *Model) startSummarize() tea.Cmd {
 		return nil
 	}
 	if m.aiFocusedFile == "" {
-		m.appendAISystem("No file focused. Use /find to select a file first.")
+		m.appendAISystem("No file focused. Use /load to select a file first.")
 		return nil
 	}
 	if m.meta == nil {
@@ -662,7 +672,7 @@ func (m *Model) startSummarize() tea.Cmd {
 	}
 
 	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
-		ch := client.StreamChat(ctx, msgs)
+		ch := client.StreamChat(ctx, msgs, nil)
 		return pumpTokenCmd(ch)()
 	})
 }
@@ -766,6 +776,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	m.aiHistoryDraft = ""
 	m.aiFollowBottom = true // stick to bottom while answer streams in
 	m.aiStreaming = true
+	m.aiToolHops = 0
 	m.aiRawBuf = ""
 	m.aiStreamBuf = ""
 	m.aiThinkBuf = ""
@@ -777,6 +788,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	client := m.aiClient
 	store := m.meta
 	cfg := m.cfg
+	tools := m.activeToolSpecs()
 	history := make([]ai.Message, len(m.aiMessages))
 	copy(history, m.aiMessages)
 
@@ -814,7 +826,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 		msgs = append(msgs, systemMsg)
 		msgs = append(msgs, history...)
 
-		ch := client.StreamChat(ctx, msgs)
+		ch := client.StreamChat(ctx, msgs, tools)
 
 		return tea.Batch(
 			func() tea.Msg { return aiSourcesMsg{paths: sources} },
@@ -823,13 +835,46 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	})
 }
 
+// continueGoraeStream restarts streaming after a tool-call round-trip, with
+// the updated m.aiMessages (which now contains the assistant tool-call request
+// + tool replies). No RAG re-retrieval — the prior turn already gathered it.
+func (m *Model) continueGoraeStream() tea.Cmd {
+	if m.aiClient == nil {
+		return nil
+	}
+	client := m.aiClient
+	cfg := m.cfg
+	tools := m.activeToolSpecs()
+	history := make([]ai.Message, len(m.aiMessages))
+	copy(history, m.aiMessages)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.aiCancelFunc = cancel
+
+	systemMsg := ai.Message{Role: ai.RoleSystem, Content: goraeSystemPrompt(cfg, "")}
+	msgs := make([]ai.Message, 0, len(history)+1)
+	msgs = append(msgs, systemMsg)
+	msgs = append(msgs, history...)
+
+	return func() tea.Msg {
+		ch := client.StreamChat(ctx, msgs, tools)
+		return pumpTokenCmd(ch)()
+	}
+}
+
 func pumpTokenCmd(ch <-chan ai.StreamToken) tea.Cmd {
 	return func() tea.Msg {
 		tok, ok := <-ch
 		if !ok {
 			return aiTokenMsg{done: true}
 		}
-		return aiTokenMsg{text: tok.Text, done: tok.Done, err: tok.Err, ch: ch}
+		return aiTokenMsg{
+			text:      tok.Text,
+			toolCalls: tok.ToolCalls,
+			done:      tok.Done,
+			err:       tok.Err,
+			ch:        ch,
+		}
 	}
 }
 
@@ -846,6 +891,9 @@ func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
 		return nil
 	}
 	if tok.done {
+		if len(tok.toolCalls) > 0 {
+			return m.handleToolCalls(tok.toolCalls)
+		}
 		m.aiStreaming = false
 		m.aiCancelFunc = nil
 		m.flushStreamBuf()
@@ -857,6 +905,52 @@ func (m *Model) handleAIToken(tok aiTokenMsg) tea.Cmd {
 	m.aiRawBuf += tok.text
 	m.aiStreamBuf, m.aiThinkBuf = parseThinkBlocks(m.aiRawBuf)
 	return pumpTokenCmd(tok.ch)
+}
+
+// maxToolHopsPerTurn caps the number of tool-call iterations within a single
+// user turn so a misbehaving model can't trap us in an infinite request loop.
+const maxToolHopsPerTurn = 5
+
+// handleToolCalls is invoked when the model finished with finish_reason=tool_calls.
+// It records the request + each result in m.aiMessages (in-memory only — these
+// rounds are deliberately not persisted to the session DB) and kicks off a
+// follow-up stream so the model can see the results and reply.
+func (m *Model) handleToolCalls(calls []ai.ToolCall) tea.Cmd {
+	m.aiToolHops++
+	if m.aiToolHops > maxToolHopsPerTurn {
+		// Bail out: drop the partial tool exchange, surface an error, end the turn.
+		m.aiStreaming = false
+		m.aiCancelFunc = nil
+		m.aiRawBuf = ""
+		m.aiStreamBuf = ""
+		m.aiThinkBuf = ""
+		m.appendAISystem(fmt.Sprintf("Tool loop aborted: model exceeded %d tool-call iterations.", maxToolHopsPerTurn))
+		return nil
+	}
+
+	// Capture any preface text the model produced alongside the tool call.
+	display, _ := parseThinkBlocks(m.aiRawBuf)
+	m.aiMessages = append(m.aiMessages, ai.Message{
+		Role:      ai.RoleAssistant,
+		Content:   strings.TrimSpace(display),
+		ToolCalls: calls,
+	})
+	for _, call := range calls {
+		result := m.runToolCall(call)
+		m.aiMessages = append(m.aiMessages, ai.Message{
+			Role:       ai.RoleTool,
+			Content:    result,
+			ToolCallID: call.ID,
+			Name:       call.Func.Name,
+		})
+	}
+	m.aiRawBuf = ""
+	m.aiStreamBuf = ""
+	m.aiThinkBuf = ""
+	// Stay in streaming state so the spinner keeps ticking; continueGoraeStream
+	// re-arms m.aiCancelFunc.
+	m.aiFollowBottom = true
+	return m.continueGoraeStream()
 }
 
 func (m *Model) flushStreamBuf() {
@@ -932,7 +1026,7 @@ func (m *Model) compactChat() tea.Cmd {
 			"as context for an ongoing conversation — be complete but brief.\n\n" +
 			"Conversation:\n" + sb.String()
 
-		ch := client.StreamChat(ctx, []ai.Message{{Role: ai.RoleUser, Content: prompt}})
+		ch := client.StreamChat(ctx, []ai.Message{{Role: ai.RoleUser, Content: prompt}}, nil)
 		var buf strings.Builder
 		for tok := range ch {
 			if tok.Err != nil {
@@ -1079,7 +1173,7 @@ func llmClassifyRetrieval(ctx context.Context, query string, client *ai.Client) 
 		"  web   = true  → query needs current / real-time information from the internet\n" +
 		"Query: \"" + query + "\""
 
-	ch := client.StreamChat(classCtx, []ai.Message{{Role: ai.RoleUser, Content: prompt}})
+	ch := client.StreamChat(classCtx, []ai.Message{{Role: ai.RoleUser, Content: prompt}}, nil)
 	var buf strings.Builder
 	for tok := range ch {
 		if tok.Err != nil {
@@ -1195,13 +1289,30 @@ func goraeSystemPrompt(cfg *config.Config, docContext string) string {
 // ── export ────────────────────────────────────────────────────────────────────
 
 func (m *Model) exportGoraeChat() tea.Cmd {
-	if len(m.aiMessages) == 0 {
-		m.setStatus("Nothing to export")
+	path, err := m.exportGoraeChatTo("")
+	if err != nil {
+		m.setStatus(err.Error())
 		return nil
+	}
+	m.setStatus("Exported to " + path)
+	return nil
+}
+
+// exportGoraeChatTo writes the current conversation as a markdown transcript
+// and returns the absolute path. filenameHint, if non-empty, overrides the
+// auto-generated slug (extension is appended if missing).
+func (m *Model) exportGoraeChatTo(filenameHint string) (string, error) {
+	if len(m.aiMessages) == 0 {
+		return "", fmt.Errorf("nothing to export")
 	}
 	var sb strings.Builder
 	sb.WriteString("# Gorae Chat Export\n\n")
 	for _, msg := range m.aiMessages {
+		// Tool-call request/result rounds are not part of the user-facing
+		// transcript — skip them so the export reads naturally.
+		if len(msg.ToolCalls) > 0 || msg.Role == ai.RoleTool {
+			continue
+		}
 		switch msg.Role {
 		case ai.RoleUser:
 			sb.WriteString("**You:** " + msg.Content + "\n\n")
@@ -1215,25 +1326,58 @@ func (m *Model) exportGoraeChat() tea.Cmd {
 			sb.WriteString("- " + filepath.Base(p) + "\n")
 		}
 	}
+	return m.writeNoteMarkdown(filenameHint, sb.String())
+}
+
+// writeNoteMarkdown writes arbitrary markdown content to notes_dir under the
+// given filename hint (sanitized; .md appended if missing; auto-named when
+// empty) and returns the absolute path.
+func (m *Model) writeNoteMarkdown(filenameHint, content string) (string, error) {
 	notesDir := ""
 	if m.cfg != nil {
 		notesDir = strings.TrimSpace(m.cfg.NotesDir)
 	}
 	if notesDir == "" {
-		m.setStatus("No notes_dir configured — cannot export")
-		return nil
+		return "", fmt.Errorf("no notes_dir configured — cannot save")
 	}
 	if err := os.MkdirAll(notesDir, 0o755); err != nil {
-		m.setStatus("Export failed: " + err.Error())
-		return nil
+		return "", fmt.Errorf("save failed: %w", err)
 	}
-	filename := filepath.Join(notesDir, m.goraeExportFilename())
-	if err := os.WriteFile(filename, []byte(sb.String()), 0o644); err != nil {
-		m.setStatus("Export failed: " + err.Error())
-		return nil
+	name := strings.TrimSpace(filenameHint)
+	if name == "" {
+		name = m.goraeExportFilename()
+	} else {
+		name = safeExportFilename(name)
+		if !strings.HasSuffix(strings.ToLower(name), ".md") {
+			name += ".md"
+		}
 	}
-	m.setStatus("Exported to " + filename)
-	return nil
+	path := filepath.Join(notesDir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("save failed: %w", err)
+	}
+	return path, nil
+}
+
+// safeExportFilename strips path separators and other unsafe characters from
+// an LLM-supplied filename so a model can't escape the notes directory.
+func safeExportFilename(name string) string {
+	name = filepath.Base(name) // drop any directory components
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), ".-_")
+	if out == "" {
+		out = "gorae-chat-" + time.Now().Format("20060102-150405")
+	}
+	return out
 }
 
 // goraeExportFilename builds a unique export filename from the session title
@@ -1382,7 +1526,7 @@ func (m *Model) invokeUserSkill(skill UserSkill, extraArgs string) tea.Cmd {
 	needsFile := strings.Contains(prompt, "{focused_file}") || strings.Contains(prompt, "{title}")
 	if needsFile {
 		if m.aiFocusedFile == "" {
-			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused file. Use /find to select one first.", skill.Name))
+			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused file. Use /load to select one first.", skill.Name))
 			return nil
 		}
 		if m.meta != nil {
@@ -1415,7 +1559,7 @@ Skills — custom prompt templates stored as .md files.
 
 Placeholders:
   {input}         text typed after the skill name
-  {focused_file}  full content of the focused file (use /find first)
+  {focused_file}  full content of the focused file (use /load first)
   {title}         title of the focused file`)
 }
 

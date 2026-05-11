@@ -152,7 +152,7 @@ func max(a, b int) int {
 }
 
 var goraeCommandDescs = []struct{ name, desc string }{
-	{"/find", "find files by title or filename"},
+	{"/load", "load a file into chat context (search by title or filename)"},
 	{"/select", "clear focused file"},
 	{"/summarize", "summarize focused file and save to its note"},
 	{"/clear", "clear chat history"},
@@ -205,15 +205,25 @@ func (m Model) buildChatLines(width int) []string {
 					lines = append(lines, compactStyle.Render("  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"))
 					lines = append(lines, "")
 				} else {
-					lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
-					if msg.Thinking != "" {
-						lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
+					hasContent := strings.TrimSpace(msg.Content) != ""
+					if hasContent || msg.Thinking != "" {
+						lines = append(lines, labelAIStyle.Render(" GORAE ")+" "+assistantStyle.Render(""))
+						if msg.Thinking != "" {
+							lines = append(lines, m.renderThinkingBlock(msg.Thinking, wrapW, m.aiShowThinking)...)
+						}
+						if hasContent {
+							for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
+								lines = append(lines, "   "+pl.text)
+							}
+						}
+						lines = append(lines, "")
 					}
-					for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
-						lines = append(lines, "   "+pl.text)
+					if len(msg.ToolCalls) > 0 {
+						lines = append(lines, renderToolCallLines(msg.ToolCalls, wrapW)...)
 					}
-					lines = append(lines, "")
 				}
+			case ai.RoleTool:
+				lines = append(lines, renderToolResultLines(msg.Name, msg.Content, wrapW)...)
 			}
 		}
 
@@ -231,6 +241,46 @@ func (m Model) buildChatLines(width int) []string {
 		}
 	}
 
+	return lines
+}
+
+// renderToolCallLines renders a muted block summarising one or more tool
+// invocations the model requested.
+func renderToolCallLines(calls []ai.ToolCall, wrapW int) []string {
+	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+	var lines []string
+	for _, c := range calls {
+		args := strings.TrimSpace(c.Func.Arguments)
+		if args == "" || args == "{}" {
+			lines = append(lines, "   "+toolStyle.Render("⚙ "+c.Func.Name+"()"))
+			continue
+		}
+		header := "⚙ " + c.Func.Name + "(" + args + ")"
+		for _, l := range wrapTextToWidth(header, wrapW) {
+			lines = append(lines, "   "+toolStyle.Render(l))
+		}
+	}
+	return lines
+}
+
+// renderToolResultLines renders the reply we sent back to the model.
+func renderToolResultLines(name, content string, wrapW int) []string {
+	resultStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6a9955")).Italic(true)
+	errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#c94a4a")).Italic(true)
+	style := resultStyle
+	if strings.HasPrefix(content, "Error") {
+		style = errStyle
+	}
+	var lines []string
+	prefix := "   ↳ "
+	for i, l := range wrapTextToWidth(content, wrapW-len(prefix)) {
+		if i == 0 {
+			lines = append(lines, prefix+style.Render(l))
+		} else {
+			lines = append(lines, "     "+style.Render(l))
+		}
+	}
+	lines = append(lines, "")
 	return lines
 }
 

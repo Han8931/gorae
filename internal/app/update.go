@@ -2001,11 +2001,17 @@ func (m *Model) displayConfigSummary() {
 	if m.toReadDir != "" {
 		toReadDir = m.toReadDir
 	}
+	notesDir := "(not configured — /export and save_markdown will fail)"
+	if m.cfg != nil && strings.TrimSpace(m.cfg.NotesDir) != "" {
+		notesDir = strings.TrimSpace(m.cfg.NotesDir)
+	}
 	lines := []string{
 		"Config file:",
 		"  " + path,
 		"Theme file:",
 		"  " + themePath,
+		"Notes directory (chat exports, summaries):",
+		"  " + notesDir,
 		"Recently Added directory:",
 		"  " + recentAdded,
 		"Recently Read directory:",
@@ -2044,13 +2050,35 @@ func (m *Model) displayConfigSummary() {
 		if topK <= 0 {
 			topK = 3
 		}
+		systemPrompt := strings.TrimSpace(ai.SystemPrompt)
+		if systemPrompt == "" {
+			systemPrompt = "(default)"
+		} else if len(systemPrompt) > 60 {
+			systemPrompt = systemPrompt[:57] + "…"
+		}
+		embModel := strings.TrimSpace(ai.EmbeddingModel)
+		if embModel == "" {
+			embModel = "nomic-embed-text"
+		}
 		lines = append(lines,
-			fmt.Sprintf("  provider : %s", provider),
-			fmt.Sprintf("  model    : %s", model),
-			fmt.Sprintf("  api_key  : %s", apiKey),
-			fmt.Sprintf("  base_url : %s", baseURL),
-			fmt.Sprintf("  top_k    : %d", topK),
+			fmt.Sprintf("  provider        : %s", provider),
+			fmt.Sprintf("  model           : %s", model),
+			fmt.Sprintf("  api_key         : %s", apiKey),
+			fmt.Sprintf("  base_url        : %s", baseURL),
+			fmt.Sprintf("  top_k           : %d", topK),
+			fmt.Sprintf("  system_prompt   : %s", systemPrompt),
+			fmt.Sprintf("  vector_search   : %t", ai.VectorSearch),
+			fmt.Sprintf("  embedding_model : %s", embModel),
+			fmt.Sprintf("  enable_tools    : %t", ai.EnableTools),
 		)
+		if ai.EnableTools {
+			names := make([]string, 0, len(goraeTools))
+			for name := range goraeTools {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			lines = append(lines, fmt.Sprintf("    tools available: %s", strings.Join(names, ", ")))
+		}
 	} else {
 		lines = append(lines, "  (not configured — add an \"ai\" block to config.json)")
 	}

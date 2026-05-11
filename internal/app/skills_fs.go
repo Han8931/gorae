@@ -85,6 +85,6 @@ description: A short description of what this skill does
 Your prompt here. Available placeholders:
 
   {input}         — text typed after the skill name
-  {focused_file}  — full content of the focused file (use /find first)
+  {focused_file}  — full content of the focused file (use /load first)
   {title}         — title of the focused file
 `

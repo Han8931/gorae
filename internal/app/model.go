@@ -192,6 +192,7 @@ type Model struct {
 	aiSessionList     []meta.ChatSession   // sessions shown in stateSessionList
 	aiSessionCursor   int                  // cursor in the session list
 	aiCompacting      bool                 // true while a /compact summarisation is in flight
+	aiToolHops        int                  // tool-call iterations used by the current user turn (reset on submit)
 	aiUserSkills      []UserSkill          // user-defined prompt templates loaded from skillsDir
 	skillsDir         string               // directory containing *.md skill files
 

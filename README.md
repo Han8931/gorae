@@ -303,10 +303,10 @@ Good picks for document Q&A: `llama3.2`, `mistral`, `gemma3`.
 | Key | Action |
 |---|---|
 | `Enter` | Send message / select file |
-| `↑` / `↓` | Browse input history · navigate `/find` results |
+| `↑` / `↓` | Browse input history · navigate `/load` results |
 | `Tab` | Autocomplete `/` command |
 | `Ctrl+T` | Toggle reasoning display (expand/collapse `<think>` blocks) |
-| `Esc` | Stop streaming · cancel `/find` · exit |
+| `Esc` | Stop streaming · cancel `/load` · exit |
 | `Ctrl+P` / `Ctrl+N` | Scroll chat up / down |
 | `PgUp` / `PgDn` | Scroll chat half a page |
 
@@ -316,7 +316,7 @@ Type `/` to see a live-filtered command list at the bottom of the screen.
 
 | Command | Description |
 |---|---|
-| `/find <query>` | Live fzf-style file picker — results update as you type |
+| `/load <query>` | Load a file into chat context — live fzf-style picker, results update as you type |
 | `/select` | Clear the currently focused file |
 | `/summarize` | Summarize the focused file and save to its note |
 | `/sources` | Show documents cited in the last answer |
@@ -328,9 +328,9 @@ Type `/` to see a live-filtered command list at the bottom of the screen.
 | `/skills` | Manage custom prompt templates (see [Skills](#skills)) |
 | `/help` | Show help and all keybindings |
 
-### Live file finder (`/find`)
+### Live file loader (`/load`)
 
-Start typing `/find <query>` and a file picker appears at the bottom of the screen, updating results on every keystroke — no Enter needed to search. Use `↑`/`↓` to move through results, `Enter` to select, `Esc` to cancel.
+Start typing `/load <query>` and a file picker appears at the bottom of the screen, updating results on every keystroke — no Enter needed to search. Use `↑`/`↓` to move through results, `Enter` to select, `Esc` to cancel. (The legacy `/find` name still works as a silent alias.)
 
 Once a file is selected it becomes the **focused file**: its full indexed text is injected as primary context for every subsequent question, in addition to the normal RAG results. The status bar shows `focus: filename` while a file is active. Use `/select` to clear it.
 
@@ -382,7 +382,7 @@ Summarize the following in 3 bullet points: {input}
 | Placeholder | Replaced with |
 |---|---|
 | `{input}` | Text typed after the skill name |
-| `{focused_file}` | Full content of the focused file (use `/find` first) |
+| `{focused_file}` | Full content of the focused file (use `/load` first) |
 | `{title}` | Title of the focused file |
 
 **Example usage:**
@@ -420,7 +420,7 @@ List all skills with `/skills list`. Delete a skill by removing its `.md` file f
 * [x] **Skills** — user-defined prompt templates as `.md` files, invoked as slash commands
 * [x] `/summarize` command — streams summary and saves to the file's note
 * [x] Reasoning/thinking display — collapsible `<think>` blocks with `Ctrl+T`
-* [x] Live `/find` file picker — fzf-style, results update as you type
+* [x] Live `/load` file picker — fzf-style, results update as you type
 * [ ] Semantic search in Gorae mode
 * [x] Web search integration — Brave / Tavily with hybrid routing node (rules + LLM classifier)
 * [ ] **Daily digest** — `:digest` command summarising recently added documents and newly published arXiv papers matching your library's topics

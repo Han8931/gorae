@@ -40,6 +40,10 @@ type AIConfig struct {
 	SystemPrompt   string `json:"system_prompt"`
 	VectorSearch   bool   `json:"vector_search"`
 	EmbeddingModel string `json:"embedding_model,omitempty"`
+	// EnableTools turns on function/tool calling so the model can invoke
+	// in-app actions (e.g. save the chat as markdown). Requires a provider/
+	// model that supports tool calls. Disabled by default.
+	EnableTools bool `json:"enable_tools"`
 }
 
 type Config struct {
@@ -193,6 +197,7 @@ func DefaultAIConfig() *AIConfig {
 		SystemPrompt:   "",
 		VectorSearch:   false,
 		EmbeddingModel: "nomic-embed-text",
+		EnableTools:    false,
 	}
 }
 
