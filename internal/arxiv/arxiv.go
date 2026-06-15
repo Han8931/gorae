@@ -23,6 +23,10 @@ type Metadata struct {
 
 const userAgent = "gorae/0.1 (https://github.com/Han8931/gorae)"
 
+// httpClient bounds every arXiv request so an unresponsive server can't hang
+// the operation indefinitely (http.DefaultClient has no timeout).
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
 type feed struct {
 	Entries []entry `xml:"entry"`
 }
@@ -55,7 +59,7 @@ func Fetch(ctx context.Context, id string) (*Metadata, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("perform request: %w", err)
 	}

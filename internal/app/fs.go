@@ -25,7 +25,6 @@ func isMarkdown(path string) bool {
 	}
 }
 
-
 func isBrowsableDocument(path string) bool {
 	return isPDF(path) || isEPUB(path) || isMarkdown(path)
 }
@@ -75,7 +74,7 @@ func (m *Model) loadEntries() {
 		return
 	}
 
-		// hide dotfiles and non-document files (but keep directories)
+	// hide dotfiles and non-document files (but keep directories)
 	filtered := make([]fs.DirEntry, 0, len(ents))
 	notesDir := strings.TrimSpace(m.notesDir)
 	noteAbs := ""

@@ -1579,10 +1579,13 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 				embModel = "nomic-embed-text"
 			}
 			if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
+				// On error, results stays empty and we fall back to FTS below.
 				results, _ = store.SearchSemantic(ctx, vec, topK)
 			}
 		}
 		if len(results) == 0 {
+			// Retrieval is best-effort: a failure here just means the answer is
+			// ungrounded rather than fatal, so the error is intentionally dropped.
 			results, _ = store.SearchFTS(ctx, query, topK)
 		}
 

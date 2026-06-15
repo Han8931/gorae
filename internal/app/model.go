@@ -166,33 +166,33 @@ type Model struct {
 	metaDraft       meta.Metadata // draft being edited
 
 	// AI chat (:gorae)
-	aiMessages      []ai.Message // full conversation history
-	aiInput         textinput.Model
-	aiStreaming     bool
-	aiRawBuf        string // raw stream including <think> tags
-	aiStreamBuf     string // display content (outside <think> blocks)
-	aiThinkBuf      string // thinking content (inside <think> blocks) for current turn
-	aiShowThinking  bool   // ctrl+t toggles visibility of thinking blocks
-	aiSources       []string // document paths cited in last answer
-	aiChatScroll    int
-	aiFollowBottom  bool // true => renderer pegs chat to the bottom regardless of aiChatScroll
-	aiClient        *ai.Client
-	aiSearchResults   []meta.NameMatch     // live find results shown in overlay
-	aiSearchSelecting bool                 // true while the find overlay is active
-	aiSearchCursor    int                  // highlighted row in the overlay
-	aiLiveQuery       string               // last query sent to live find
-	aiFocusedFile     string               // path selected; injected as context
-	aiCancelFunc        context.CancelFunc   // cancels the in-flight request
-	aiSpinnerFrame      int                  // current spinner animation frame
-	aiSummarizeTarget   string               // if set, flush writes summary to this file's note
-	aiInputHistory    []string             // previously submitted user messages
-	aiHistoryCursor   int                  // -1 = at current draft; ≥0 = browsing history
-	aiHistoryDraft    string               // saved draft while browsing history
-	aiSessionID       int64                // active session ID; 0 = ephemeral (not yet persisted)
-	aiSessionList     []meta.ChatSession   // sessions shown in stateSessionList
-	aiSessionCursor   int                  // cursor in the session list
-	aiCompacting      bool                 // true while a /compact summarisation is in flight
-	aiToolHops        int                  // tool-call iterations used by the current user turn (reset on submit)
+	aiMessages        []ai.Message // full conversation history
+	aiInput           textinput.Model
+	aiStreaming       bool
+	aiRawBuf          string   // raw stream including <think> tags
+	aiStreamBuf       string   // display content (outside <think> blocks)
+	aiThinkBuf        string   // thinking content (inside <think> blocks) for current turn
+	aiShowThinking    bool     // ctrl+t toggles visibility of thinking blocks
+	aiSources         []string // document paths cited in last answer
+	aiChatScroll      int
+	aiFollowBottom    bool // true => renderer pegs chat to the bottom regardless of aiChatScroll
+	aiClient          *ai.Client
+	aiSearchResults   []meta.NameMatch   // live find results shown in overlay
+	aiSearchSelecting bool               // true while the find overlay is active
+	aiSearchCursor    int                // highlighted row in the overlay
+	aiLiveQuery       string             // last query sent to live find
+	aiFocusedFile     string             // path selected; injected as context
+	aiCancelFunc      context.CancelFunc // cancels the in-flight request
+	aiSpinnerFrame    int                // current spinner animation frame
+	aiSummarizeTarget string             // if set, flush writes summary to this file's note
+	aiInputHistory    []string           // previously submitted user messages
+	aiHistoryCursor   int                // -1 = at current draft; ≥0 = browsing history
+	aiHistoryDraft    string             // saved draft while browsing history
+	aiSessionID       int64              // active session ID; 0 = ephemeral (not yet persisted)
+	aiSessionList     []meta.ChatSession // sessions shown in stateSessionList
+	aiSessionCursor   int                // cursor in the session list
+	aiCompacting      bool               // true while a /compact summarisation is in flight
+	aiToolHops        int                // tool-call iterations used by the current user turn (reset on submit)
 
 	// Modal (vim-style) navigation in the chat.
 	aiNormalMode bool         // false = insert mode (default), true = normal mode
@@ -202,10 +202,10 @@ type Model struct {
 	aiLastNavAt  time.Time    // expiry timestamp for the prefix above
 
 	// "Shown-once" guidance flags, reset per chat session.
-	aiNormalHintShown  bool // first-time NORMAL teaching status
-	aiUnknownHintShown bool // hint shown when user mashes a letter in NORMAL
-	aiUserSkills      []UserSkill          // user-defined prompt templates loaded from skillsDir
-	skillsDir         string               // directory containing *.md skill files
+	aiNormalHintShown  bool        // first-time NORMAL teaching status
+	aiUnknownHintShown bool        // hint shown when user mashes a letter in NORMAL
+	aiUserSkills       []UserSkill // user-defined prompt templates loaded from skillsDir
+	skillsDir          string      // directory containing *.md skill files
 
 	previewText     []string
 	previewRawLines []panelLine // pre-styled ANSI lines (e.g. markdown), bypasses panelizeLines
@@ -719,7 +719,6 @@ func (m Model) entryIcon(isDir bool) string {
 	}
 	return "▣"
 }
-
 
 func (m Model) selectionIndicator() string {
 	if icon := strings.TrimSpace(m.iconSet.Selected); icon != "" {

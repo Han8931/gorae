@@ -91,10 +91,6 @@ func rebuildRecentlyOpenedDirectory(dest string, limit int, store *meta.Store) e
 		if _, err := os.Stat(target); err != nil {
 			continue
 		}
-		openedAt := md.LastOpenedAt
-		if openedAt.IsZero() {
-			openedAt = time.Now()
-		}
 		linkName := mapBackedLinkName(filepath.Base(target), md.Title, md.Year, desired)
 		desired[linkName] = target
 	}

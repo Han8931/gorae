@@ -25,7 +25,7 @@ const (
 // WebSearchConfig holds settings for the web search feature.
 type WebSearchConfig struct {
 	Enabled  bool   `json:"enabled"`
-	Provider string `json:"provider"`        // "brave" | "tavily"
+	Provider string `json:"provider"` // "brave" | "tavily"
 	APIKey   string `json:"api_key"`
 	Results  int    `json:"results,omitempty"` // default 5
 }
@@ -357,7 +357,8 @@ func writeDefaultConfig(path string, cfg *Config) error {
 		cfg.ThemePath,
 		cfg.EnableMouse,
 	)
-	return os.WriteFile(path, []byte(content), 0o644)
+	// 0o600: the config can hold plaintext API keys, so keep it owner-only.
+	return os.WriteFile(path, []byte(content), 0o600)
 }
 
 func LoadOrInit() (*Config, error) {
@@ -479,7 +480,8 @@ func writeConfig(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// 0o600: the config can hold plaintext API keys, so keep it owner-only.
+	return os.WriteFile(path, data, 0o600)
 }
 
 // Save persists the provided configuration to disk, ensuring directories exist first.

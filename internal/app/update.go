@@ -472,133 +472,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//  NEW DIRECTORY MODE
 		// ===========================
 		if m.state == stateNewDir {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-
-			switch key {
-			case "enter":
-				name := strings.TrimSpace(m.input.Value())
-				m.state = stateNormal
-				m.input.SetValue("")
-
-				if name == "" {
-					m.setStatus("Directory name cannot be empty")
-					return m, cmd
-				}
-				if strings.HasPrefix(name, ".") {
-					m.setStatus("Dot directories are hidden; choose another name")
-					return m, cmd
-				}
-
-				dst := filepath.Join(m.cwd, name)
-				if _, err := os.Stat(dst); err == nil {
-					m.setStatus("Already exists")
-					return m, cmd
-				}
-
-				if err := os.MkdirAll(dst, 0o755); err != nil {
-					m.setStatus("Failed: " + err.Error())
-					return m, cmd
-				}
-
-				m.loadEntries()
-
-				// jump to new folder
-				for i, e := range m.entries {
-					if e.IsDir() && e.Name() == name {
-						m.cursor = i
-						break
-					}
-				}
-				m.ensureCursorVisible()
-				m.setStatus("Directory created")
-				return m, cmd
-
-			case "esc", "q":
-				m.state = stateNormal
-				m.setStatus("Cancelled")
-				m.input.SetValue("")
-				return m, cmd
-			}
-
-			return m, cmd
+			return m.handleInputPrompt(msg, key, inputPromptConfig{
+				quitCancels: true,
+				cancelMsg:   "Cancelled",
+				onSubmit:    (*Model).submitNewDir,
+			})
 		}
 
 		// ===========================
 		//  RENAME MODE
 		// ===========================
 		if m.state == stateRename {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-
-			switch key {
-			case "enter":
-				newName := strings.TrimSpace(m.input.Value())
-				oldPath := m.renameTarget
-
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.renameTarget = ""
-
-				if newName == "" {
-					m.setStatus("Name cannot be empty")
-					return m, cmd
-				}
-
-				if strings.Contains(newName, "/") {
-					m.setStatus("Name cannot contain '/'")
-					return m, cmd
-				}
-
-				dir := filepath.Dir(oldPath)
-				newPath := filepath.Join(dir, newName)
-
-				if _, err := os.Stat(newPath); err == nil {
-					m.setStatus("Target already exists")
-					return m, cmd
-				}
-
-				if err := os.Rename(oldPath, newPath); err != nil {
-					m.setStatus("Rename failed: " + err.Error())
-					return m, cmd
-				}
-
-				var metaErr error
-				var recentErr error
-				if err := m.moveMetadataPaths(oldPath, newPath, true); err != nil {
-					metaErr = err
-				}
-				if err := m.syncRecentlyOpenedDirectory(); err != nil {
-					recentErr = err
-				}
-
-				m.loadEntries()
-				for i, e := range m.entries {
-					if e.Name() == newName {
-						m.cursor = i
-						break
-					}
-				}
-				m.ensureCursorVisible()
-				m.updateTextPreview()
-				if metaErr != nil {
-					m.setStatus("Renamed, but metadata update failed: " + metaErr.Error())
-				} else if recentErr != nil {
-					m.setStatus("Renamed, but recently read update failed: " + recentErr.Error())
-				} else {
-					m.setStatus("Renamed")
-				}
-				return m, cmd
-
-			case "esc":
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.renameTarget = ""
-				m.setStatus("Rename cancelled")
-				return m, cmd
-			}
-
-			return m, cmd
+			return m.handleInputPrompt(msg, key, inputPromptConfig{
+				cancelMsg: "Rename cancelled",
+				onCancel:  func(m *Model) { m.renameTarget = "" },
+				onSubmit:  (*Model).submitRename,
+			})
 		}
 
 		// ===========================
@@ -654,131 +543,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//  COMMAND MODE
 		// ===========================
 		if m.state == stateCommand {
-			if key == "tab" {
-				if m.handleCommandAutocomplete() {
-					return m, nil
-				}
-			}
-			if key == "up" {
-				if m.recallPreviousCommand() {
-					return m, nil
-				}
-			}
-			if key == "down" {
-				if m.recallNextCommand() {
-					return m, nil
-				}
-			}
-			var inputCmd tea.Cmd
-			m.input, inputCmd = m.input.Update(msg)
-
-			switch key {
-			case "enter":
-				line := m.input.Value()
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.input.Blur()
-				m.rememberCommand(line)
-				cmd := m.runCommand(line)
-				return m, tea.Batch(inputCmd, cmd)
-			case "esc":
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.input.Blur()
-				m.resetCommandHistoryNavigation()
-				m.setStatus("Command cancelled")
-				return m, inputCmd
-			default:
-				return m, inputCmd
-			}
+			return m.handleInputPrompt(msg, key, inputPromptConfig{
+				blurOnExit: true,
+				cancelMsg:  "Command cancelled",
+				preKey:     (*Model).commandPromptPreKey,
+				onCancel:   func(m *Model) { m.resetCommandHistoryNavigation() },
+				onSubmit:   (*Model).submitCommand,
+			})
 		}
 
 		// ===========================
 		//  SEARCH PROMPT MODE
 		// ===========================
 		if m.state == stateSearchPrompt {
-			var inputCmd tea.Cmd
-			m.input, inputCmd = m.input.Update(msg)
-
-			switch key {
-			case "enter":
-				line := strings.TrimSpace(m.input.Value())
-				m.input.SetValue("")
-				m.input.Blur()
-				m.state = stateNormal
-
-				if line == "" {
-					m.setStatus("Search query cannot be empty")
-					return m, inputCmd
-				}
-
-				tokens, err := splitCommandLine(line)
-				if err != nil {
-					m.setStatus("Search parse failed: " + err.Error())
-					return m, inputCmd
-				}
-				req, err := m.buildSearchRequest(tokens)
-				if err != nil {
-					m.setStatus(err.Error())
-					return m, inputCmd
-				}
-				cmd := m.runSearch(req)
-				return m, tea.Batch(inputCmd, cmd)
-
-			case "esc":
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.input.Blur()
-				m.setStatus("Search cancelled")
-				return m, inputCmd
-
-			default:
-				return m, inputCmd
-			}
+			return m.handleInputPrompt(msg, key, inputPromptConfig{
+				blurOnExit: true,
+				cancelMsg:  "Search cancelled",
+				onSubmit:   (*Model).submitSearch,
+			})
 		}
 
 		// ===========================
 		//  ARXIV PROMPT MODE
 		// ===========================
 		if m.state == stateArxivPrompt {
-			var inputCmd tea.Cmd
-			m.input, inputCmd = m.input.Update(msg)
-
-			switch key {
-			case "enter":
-				id := strings.TrimSpace(m.input.Value())
-				if id == "" {
-					m.setStatus("arXiv ID cannot be empty")
-					return m, inputCmd
-				}
-				target := strings.TrimSpace(m.pendingArxivActive)
-				if target == "" {
-					m.setStatus("No file selected for arXiv import")
-					m.state = stateNormal
-					m.input.SetValue("")
-					m.input.Blur()
-					m.pendingArxivFiles = nil
-					return m, inputCmd
-				}
-				m.pendingArxivActive = ""
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.input.Blur()
-				cmd := m.runArxivFetch(id, []string{target})
-				return m, tea.Batch(inputCmd, cmd)
-
-			case "esc", "q":
-				m.pendingArxivActive = ""
-				m.pendingArxivFiles = nil
-				m.state = stateNormal
-				m.input.SetValue("")
-				m.input.Blur()
-				m.setStatus("arXiv command cancelled")
-				return m, inputCmd
-
-			default:
-				return m, inputCmd
-			}
+			return m.handleInputPrompt(msg, key, inputPromptConfig{
+				quitCancels: true,
+				blurOnExit:  true,
+				cancelMsg:   "arXiv command cancelled",
+				onCancel:    func(m *Model) { m.pendingArxivActive = ""; m.pendingArxivFiles = nil },
+				onSubmit:    (*Model).submitArxiv,
+			})
 		}
 
 		// ===========================

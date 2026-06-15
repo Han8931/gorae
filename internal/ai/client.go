@@ -320,6 +320,18 @@ func (c *Client) stream(ctx context.Context, messages []Message, tools []Tool, c
 		return out
 	}
 
+	// send delivers a token but bails out if the caller's context is cancelled,
+	// so this producer goroutine can't block forever should the consumer stop
+	// draining the channel mid-stream. Returns false once the stream is aborted.
+	send := func(tok StreamToken) bool {
+		select {
+		case ch <- tok:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
 	// Buffer for SSE payloads larger than bufio.Scanner's default 64KB line cap.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 1<<16), 1<<20)
@@ -330,7 +342,7 @@ func (c *Client) stream(ctx context.Context, messages []Message, tools []Tool, c
 		}
 		payload := strings.TrimPrefix(line, "data: ")
 		if payload == "[DONE]" {
-			ch <- StreamToken{ToolCalls: flushTools(), Done: true}
+			send(StreamToken{ToolCalls: flushTools(), Done: true})
 			return nil
 		}
 		var chunk streamChunk
@@ -339,7 +351,9 @@ func (c *Client) stream(ctx context.Context, messages []Message, tools []Tool, c
 		}
 		for _, choice := range chunk.Choices {
 			if t := choice.Delta.Content; t != "" {
-				ch <- StreamToken{Text: t}
+				if !send(StreamToken{Text: t}) {
+					return ctx.Err()
+				}
 			}
 			for _, tc := range choice.Delta.ToolCalls {
 				p, ok := pending[tc.Index]
@@ -359,7 +373,7 @@ func (c *Client) stream(ctx context.Context, messages []Message, tools []Tool, c
 				}
 			}
 			if choice.FinishReason != nil {
-				ch <- StreamToken{ToolCalls: flushTools(), Done: true}
+				send(StreamToken{ToolCalls: flushTools(), Done: true})
 				return nil
 			}
 		}
@@ -367,6 +381,6 @@ func (c *Client) stream(ctx context.Context, messages []Message, tools []Tool, c
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	ch <- StreamToken{ToolCalls: flushTools(), Done: true}
+	send(StreamToken{ToolCalls: flushTools(), Done: true})
 	return nil
 }
