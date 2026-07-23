@@ -147,6 +147,8 @@ Pull the local model first if you haven't: `ollama pull llama3.2`. Good picks fo
 | `Ctrl+C` | Exit chat |
 | `Ctrl+P` / `Ctrl+N` · `PgUp` / `PgDn` · mouse wheel | Scroll chat |
 
+Mouse input is enabled by default. Set `"enable_mouse": false` in `config.json` to disable it.
+
 **Navigation mode** (press `Esc` to enter):
 
 | Key | Action |
@@ -259,7 +261,16 @@ GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh   # custom path
 <details>
 <summary><b>Option C — Arch (AUR)</b></summary>
 
-`yay -S gorae` currently installs an **older version** and is out of sync with `main`. I plan to refresh the AUR package — until then, use Option A or B.
+Two packages, pick whichever fits:
+
+```sh
+yay -S gorae-bin   # pre-built x86_64 binary from the latest GitHub release
+yay -S gorae       # builds from source via go (Arch-native)
+```
+
+Both pull in `poppler` automatically and suggest `chafa`, `zathura`, and `zathura-pdf-mupdf` as optional dependencies.
+
+> Maintainer notes for keeping the PKGBUILDs in sync: see [`packaging/aur/README.md`](packaging/aur/README.md).
 
 </details>
 

@@ -80,6 +80,7 @@ const (
 	legacyRecentlyOpenedName    = "_recently_opened"
 	defaultRecentlyAddedDirName = "Recently Added"
 	defaultRecentlyOpenedName   = "Recently Read"
+	defaultEnableMouse          = true
 )
 
 func defaultConfigPath() (string, error) {
@@ -290,7 +291,8 @@ func writeDefaultConfig(path string, cfg *Config) error {
   // Path to a custom theme.toml. Leave empty to use the built-in theme.
   "theme_path": %q,
 
-  // Set to true to enable mouse support.
+  // Mouse support is enabled by default (including scrolling in :gorae).
+  // Set to false to disable mouse input.
   "enable_mouse": %v,
 
   // ── AI chat (:gorae) ────────────────────────────────────────────────────────
@@ -383,6 +385,11 @@ type configUpgrade struct {
 }
 
 var configUpgrades = []configUpgrade{
+	{
+		key: "enable_mouse",
+		block: `  // Enable mouse support, including wheel scrolling in :gorae.
+  "enable_mouse": true`,
+	},
 	{
 		key: "text_preview_only",
 		block: `  // Force the text/ASCII PDF preview even on kitty/iTerm2/sixel terminals.
@@ -526,11 +533,11 @@ func LoadOrInit() (*Config, error) {
 		ThemePath:           defaultThemePath(),
 		ConfigPath:          path,
 		NeedsConfirm:        true,
-		EnableMouse:         false,
+		EnableMouse:         defaultEnableMouse,
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
-	fmt.Printf("  enable_mouse: %v (set to true to enable mouse input)\n", cfg.EnableMouse)
+	fmt.Printf("  enable_mouse: %v (set to false to disable mouse input)\n", cfg.EnableMouse)
 	fmt.Printf("Edit %s to change these paths.\n", path)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
