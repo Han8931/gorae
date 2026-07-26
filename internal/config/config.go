@@ -25,7 +25,7 @@ const (
 // WebSearchConfig holds settings for the web search feature.
 type WebSearchConfig struct {
 	Enabled  bool   `json:"enabled"`
-	Provider string `json:"provider"`        // "brave" | "tavily"
+	Provider string `json:"provider"` // "brave" | "tavily"
 	APIKey   string `json:"api_key"`
 	Results  int    `json:"results,omitempty"` // default 5
 }
@@ -47,17 +47,21 @@ type AIConfig struct {
 }
 
 type Config struct {
-	WatchDir            string    `json:"watch_dir"`
-	MetaDir             string    `json:"meta_dir"`
-	RecentlyAddedDir    string    `json:"recent_dir,omitempty"` // keep legacy key for compatibility
-	RecentlyAddedDays   int       `json:"recent_days,omitempty"`
-	RecentlyOpenedDir   string    `json:"recently_opened_dir,omitempty"`
-	RecentlyOpenedLimit int       `json:"recently_opened_limit,omitempty"`
-	Editor              string    `json:"editor,omitempty"`
-	PDFViewer           string    `json:"pdf_viewer,omitempty"`
-	NotesDir            string    `json:"notes_dir,omitempty"`
-	ThemePath           string    `json:"theme_path,omitempty"`
-	EnableMouse         bool      `json:"enable_mouse"`
+	WatchDir            string `json:"watch_dir"`
+	MetaDir             string `json:"meta_dir"`
+	RecentlyAddedDir    string `json:"recent_dir,omitempty"` // keep legacy key for compatibility
+	RecentlyAddedDays   int    `json:"recent_days,omitempty"`
+	RecentlyOpenedDir   string `json:"recently_opened_dir,omitempty"`
+	RecentlyOpenedLimit int    `json:"recently_opened_limit,omitempty"`
+	Editor              string `json:"editor,omitempty"`
+	PDFViewer           string `json:"pdf_viewer,omitempty"`
+	NotesDir            string `json:"notes_dir,omitempty"`
+	ThemePath           string `json:"theme_path,omitempty"`
+	// Theme is the key of a built-in color theme (e.g. "tokyo-night"). When set
+	// it takes precedence over ThemePath. Empty means use ThemePath / the
+	// on-disk theme.toml.
+	Theme       string `json:"theme,omitempty"`
+	EnableMouse bool   `json:"enable_mouse"`
 	// TextPreviewOnly forces the right pane to use the text/ASCII fallback
 	// even on terminals that support kitty/iTerm2/sixel image protocols.
 	// Useful over slow ssh, in tmux without passthrough, or as a personal
@@ -291,6 +295,11 @@ func writeDefaultConfig(path string, cfg *Config) error {
   // Path to a custom theme.toml. Leave empty to use the built-in theme.
   "theme_path": %q,
 
+  // Built-in color theme key (e.g. "tokyo-night", "catppuccin-mocha", "dracula").
+  // Takes precedence over theme_path. Change it live with :theme <name>.
+  // Run :theme list to see every bundled theme.
+  "theme": %q,
+
   // Mouse support is enabled by default (including scrolling in :gorae).
   // Set to false to disable mouse input.
   "enable_mouse": %v,
@@ -362,6 +371,7 @@ func writeDefaultConfig(path string, cfg *Config) error {
 		cfg.PDFViewer,
 		cfg.NotesDir,
 		cfg.ThemePath,
+		cfg.Theme,
 		cfg.EnableMouse,
 	)
 	// Run the upgrade pass so any fields added since the template was last

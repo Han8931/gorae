@@ -1879,13 +1879,67 @@ func (m *Model) handleThemeCommand(args []string) tea.Cmd {
 		return m.reloadTheme()
 	case "show", "info", "path":
 		m.displayThemeSummary()
+	case "list", "ls":
+		m.displayThemeList()
 	default:
-		m.setStatus(fmt.Sprintf("Unknown theme command: %s", sub))
+		if theme.IsBuiltin(sub) {
+			return m.applyBuiltinTheme(sub)
+		}
+		m.setStatus(fmt.Sprintf("Unknown theme: %s (try :theme list)", sub))
 	}
 	return nil
 }
 
+// applyBuiltinTheme switches to a bundled theme and persists the choice so it
+// survives restarts.
+func (m *Model) applyBuiltinTheme(name string) tea.Cmd {
+	th, ok := theme.Builtin(name)
+	if !ok {
+		m.setStatus(fmt.Sprintf("Unknown theme: %s (try :theme list)", name))
+		return nil
+	}
+	m.applyTheme(th)
+	m.refreshEntryTitles()
+	if m.cfg != nil {
+		m.cfg.Theme = strings.ToLower(strings.TrimSpace(name))
+		if err := config.Save(m.cfg); err != nil {
+			m.setStatus(fmt.Sprintf("Theme set to %s (not saved: %s)", th.Meta.Name, err.Error()))
+			return nil
+		}
+	}
+	m.setStatus(fmt.Sprintf("Theme set to %s", th.Meta.Name))
+	return nil
+}
+
+func (m *Model) displayThemeList() {
+	active := ""
+	if m.cfg != nil {
+		active = strings.ToLower(strings.TrimSpace(m.cfg.Theme))
+	}
+	lines := []string{"Available themes (:theme <name>):"}
+	for _, key := range theme.BuiltinNames() {
+		marker := "  "
+		if key == active {
+			marker = "▸ "
+		}
+		lines = append(lines, fmt.Sprintf("%s%-18s %s", marker, key, theme.BuiltinDisplayName(key)))
+	}
+	lines = append(lines, "", "Use :theme reload to re-read a custom theme.toml.")
+	m.setCommandOutput(lines)
+	m.setStatus("Theme list displayed (:clear hides)")
+}
+
 func (m *Model) reloadTheme() tea.Cmd {
+	if m.cfg != nil {
+		if name := strings.TrimSpace(m.cfg.Theme); name != "" {
+			if th, ok := theme.Builtin(name); ok {
+				m.applyTheme(th)
+				m.refreshEntryTitles()
+				m.setStatus(fmt.Sprintf("Theme reloaded: %s", th.Meta.Name))
+				return nil
+			}
+		}
+	}
 	path := ""
 	if m.cfg != nil {
 		path = strings.TrimSpace(m.cfg.ThemePath)
@@ -2191,7 +2245,8 @@ func buildHelpOutput() []string {
 		"Config & Theme",
 		"  :config ...... edit config (use :config show for summary)",
 		"  :config editor <cmd> sets your editor",
-		"  :theme reload / :theme show manage the active theme",
+		"  :theme <name> . switch color theme (Tab to autocomplete)",
+		"  :theme list ... list bundled themes; :theme reload re-reads theme.toml",
 		"",
 		"Other Commands",
 		"  :pwd ......... show working directory",
@@ -2908,6 +2963,7 @@ var commandNames = []string{
 	"clear",
 	"recent",
 	"config",
+	"theme",
 	"arxiv",
 	"autofetch",
 	"search",
@@ -2936,6 +2992,9 @@ func (m *Model) handleCommandAutocomplete() bool {
 	hasTrailingWhitespace := trimmedLen != len(runes)
 	if !strings.ContainsAny(trimmed, " \t") && !hasTrailingWhitespace {
 		return m.autocompleteCommandName(trimmed)
+	}
+	if firstCommandToken(trimmed) == "theme" {
+		return m.autocompleteTheme(trimmed, hasTrailingWhitespace)
 	}
 	lastSep := strings.LastIndexAny(trimmed, " \t")
 	if lastSep == -1 || lastSep == len(trimmed)-1 {
@@ -3024,6 +3083,90 @@ func (m *Model) autocompleteCommandName(current string) bool {
 		m.setPersistentStatus("Multiple completions (type more letters)")
 		return true
 	}
+	newValue := prefix + lcp
+	if len(matches) == 1 && lcp == matches[0] {
+		newValue += " "
+	}
+	m.input.SetValue(newValue)
+	m.input.CursorEnd()
+	return true
+}
+
+// firstCommandToken returns the lowercased command word of a command-line
+// buffer, ignoring a leading ":".
+func firstCommandToken(s string) string {
+	body := strings.TrimPrefix(strings.TrimSpace(s), ":")
+	fields := strings.Fields(body)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.ToLower(fields[0])
+}
+
+// themeCompletionCandidates lists the values that may follow ":theme " — the
+// built-in theme keys plus the theme subcommands — sorted for stable output.
+func themeCompletionCandidates() []string {
+	names := theme.BuiltinNames()
+	out := make([]string, 0, len(names)+3)
+	out = append(out, "list", "reload", "show")
+	out = append(out, names...)
+	sort.Strings(out)
+	return out
+}
+
+// autocompleteTheme completes the single argument of the :theme command against
+// the known theme names and subcommands.
+func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool {
+	body := strings.TrimPrefix(trimmed, ":")
+	fields := strings.Fields(body)
+
+	var token string
+	if trailingWhitespace {
+		// A new (empty) token is starting. :theme takes a single argument, so
+		// once one is present there is nothing further to complete.
+		if len(fields) >= 2 {
+			return false
+		}
+		token = ""
+	} else {
+		if len(fields) < 2 {
+			return false
+		}
+		token = fields[len(fields)-1]
+	}
+
+	tokenLower := strings.ToLower(token)
+	candidates := themeCompletionCandidates()
+	matches := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		if strings.HasPrefix(c, tokenLower) {
+			matches = append(matches, c)
+		}
+	}
+	if len(matches) == 0 {
+		m.setStatus("No matching themes")
+		return true
+	}
+
+	var prefix string
+	if token == "" {
+		prefix = trimmed + " "
+	} else {
+		idx := strings.LastIndex(trimmed, token)
+		prefix = trimmed[:idx]
+	}
+
+	lcp := longestCommonPrefix(matches)
+	if len(matches) > 1 && lcp == tokenLower {
+		lines := []string{"Themes:"}
+		for _, name := range matches {
+			lines = append(lines, "  "+name)
+		}
+		m.setCommandOutput(lines)
+		m.setPersistentStatus("Multiple completions (type more letters)")
+		return true
+	}
+
 	newValue := prefix + lcp
 	if len(matches) == 1 && lcp == matches[0] {
 		newValue += " "
