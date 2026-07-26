@@ -54,7 +54,7 @@ Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
 | Area | What you get |
 |---|---|
 | **Browsing** | Vim-style nav, to-read queue, reading states, hierarchical tags (`ml/cnn`) |
-| **Search** | FTS5 full-text index with stemming; scope by `-t/-a/-y/-c/--tag` |
+| **Search** | FTS5 full-text index with stemming; scope by `-t/-a/-y/-c/--tag`; every hit in a document, jump between them, open at the hit's page |
 | **Preview** | First-page PDF previews on Kitty / iTerm2; `chafa` fallback elsewhere |
 | **Metadata** | Auto-detect DOI / arXiv IDs, in-app editor, BibTeX copy |
 | **Links** | `[[wikilinks]]` in Markdown with auto backlinks |
@@ -214,6 +214,18 @@ Vim-style navigation everywhere. Cheat sheet:
 ```
 
 Files whose size hasn't changed are skipped, so re-indexing is fast. The index uses SQLite's porter tokenizer, so "running" also matches "run".
+
+**Search results — every hit, not just one:** a content search lists each matching document with its **full hit count**, and the detail pane shows a snippet for every occurrence (page-numbered for PDFs). Within the selected document you can walk through hits and open the file right where the match is:
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move between matching documents (result list) |
+| `n` / `N` (or `Tab` / `Shift+Tab`) | Move the cursor between hits in the multi-hit box |
+| `Enter` | Open the document at the selected hit's page |
+| `PgUp` / `PgDn` | Page through the results list |
+| `Esc` / `q` | Close results · `/` searches again |
+
+Opening at a specific page works with viewers that support it (`zathura`, `sioyek`, `okular`, `evince`); others open at the first page.
 
 **Tags:** comma-separated in the metadata editor, hierarchical (`ml/transformers` matches the `ml/` prefix). Browse all tags with `:tags`.
 

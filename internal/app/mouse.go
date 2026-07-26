@@ -71,6 +71,7 @@ func (m Model) clickMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		row := m.searchResultOffset + msg.Y
 		if row >= 0 && row < len(m.searchResults) {
 			m.searchResultCursor = row
+			m.searchHitCursor = 0
 			m.ensureSearchResultVisible()
 			// double-click to open search result
 			now := time.Now()

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -839,7 +840,7 @@ func (m Model) renderSearchResultsView() string {
 		b.WriteString(m.styles.Tree.Info.Render(padStyledLine(line, width)) + "\n")
 	}
 
-	controls := "Controls: j/k move • PgUp/PgDn page • Enter open • Esc/q close • / search again"
+	controls := "Controls: j/k results • n/N hit • PgUp/PgDn page • Enter open at hit • Esc/q close • / search again"
 	b.WriteString(m.styles.Separator.Render(padStyledLine(controls, width)) + "\n")
 
 	listLines, title := m.searchResultListLines(listHeight)
@@ -851,12 +852,12 @@ func (m Model) renderSearchResultsView() string {
 	}
 	b.WriteString("\n")
 
-	detailLines := panelizeLines(m.searchResultDetailLines(detailHeight, width))
-	for _, line := range m.renderPanelBlock("", detailLines, width, detailHeight+3, m.styles.Preview) {
+	detailLines := m.searchResultDetailLines(detailHeight+1, width)
+	for _, line := range m.renderPanelBlock("", detailLines, width, detailHeight+3, m.styles.List) {
 		b.WriteString(line + "\n")
 	}
 
-	if warn := m.renderSearchWarnings(width, detailHeight); warn != "" {
+	if warn := m.renderSearchWarnings(width); warn != "" {
 		b.WriteString("\n" + warn + "\n")
 	}
 
@@ -987,27 +988,25 @@ func (m Model) searchResultListLines(visible int) ([]panelLine, string) {
 		if len(info) > 0 {
 			display += "  · " + strings.Join(info, " · ")
 		}
-		text := fmt.Sprintf("%3d. %s", i+1, display)
+		// The selected row is shown with the list's block highlight (same as the
+		// file browser), so no textual marker is needed.
 		kind := panelLineBody
 		if i == cursor {
 			kind = panelLineCursor
 		}
+		text := fmt.Sprintf("%3d. %s", i+1, display)
 		lines = append(lines, panelLine{text: text, kind: kind})
 	}
 	title := fmt.Sprintf("Results %d-%d of %d", start+1, end, total)
 	return lines, title
 }
 
-func (m Model) renderSearchWarnings(width, detailHeight int) string {
-	if len(m.searchWarnings) == 0 {
+func (m Model) renderSearchWarnings(width int) string {
+	// searchWarningsShown is the shared budget authority, so the panel never
+	// overflows the layout the scroll math assumes.
+	maxWarn := m.searchWarningsShown()
+	if maxWarn <= 0 {
 		return ""
-	}
-	maxWarn := detailHeight / 2
-	if maxWarn < 1 {
-		maxWarn = 1
-	}
-	if maxWarn > len(m.searchWarnings) {
-		maxWarn = len(m.searchWarnings)
 	}
 	lines := make([]panelLine, 0, maxWarn)
 	for i := 0; i < maxWarn; i++ {
@@ -1408,59 +1407,105 @@ func dividerLine(width int) string {
 	return strings.Repeat("─", width)
 }
 
-func (m Model) searchResultDetailLines(limit, width int) []string {
+// searchResultDetailLines builds the multi-hit box. For content results each
+// occurrence is one selectable row, the active hit (searchHitCursor) carries the
+// list's block highlight, and the rows scroll so the active hit stays visible.
+func (m Model) searchResultDetailLines(limit, width int) []panelLine {
 	match := m.currentSearchMatch()
 	if match == nil {
-		lines := []string{
+		return panelizeLines(trimLinesToWidth([]string{
 			"(no selection)",
 			"",
 			"Press Esc to exit the search view.",
-		}
-		return trimLinesToWidth(lines, width)
+		}, width))
 	}
-	lines := []string{
-		fmt.Sprintf("File: %s", match.Path),
-		fmt.Sprintf("Matches: %d", match.MatchCount),
-		"",
+	if limit < 1 {
+		limit = 1
 	}
-	if match.Mode == searchModeContent {
-		lines = append(lines, "Snippets:")
-		lines = append(lines, formatContentSnippets(match.Snippets)...)
-	} else {
+
+	// Non-content (metadata) matches keep the simple informational layout.
+	if match.Mode != searchModeContent {
+		lines := []string{fmt.Sprintf("File: %s", filepath.Base(match.Path)), ""}
 		lines = append(lines, "Metadata:")
 		for _, snippet := range match.Snippets {
 			lines = append(lines, "  "+snippet)
 		}
+		lines = trimLinesToWidth(lines, width)
+		if len(lines) > limit {
+			lines = lines[:limit]
+		}
+		return panelizeLines(lines)
 	}
-	lines = trimLinesToWidth(lines, width)
-	if limit > 0 && len(lines) > limit {
-		lines = lines[:limit]
+
+	n := len(match.HitPages)
+	if n == 0 {
+		// Fallback (e.g. stemmed-only FTS match): a single non-navigable snippet.
+		lines := []string{fmt.Sprintf("File: %s", filepath.Base(match.Path)), ""}
+		for _, snippet := range match.Snippets {
+			lines = append(lines, "  "+collapseToLine(snippet))
+		}
+		lines = trimLinesToWidth(lines, width)
+		if len(lines) > limit {
+			lines = lines[:limit]
+		}
+		return panelizeLines(lines)
 	}
-	return lines
+
+	active := m.searchHitCursor
+	if active < 0 {
+		active = 0
+	}
+	if active >= n {
+		active = n - 1
+	}
+
+	header := fmt.Sprintf("Hit %d/%d in %s  ·  n/N move · Enter open",
+		active+1, n, filepath.Base(match.Path))
+	out := []panelLine{{text: trimLine(header, width), kind: panelLineInfo}}
+
+	// One row per hit; scroll the window so the active hit stays on screen.
+	avail := limit - len(out)
+	if avail < 1 {
+		avail = 1
+	}
+	start := 0
+	if active >= avail {
+		start = active - avail + 1
+	}
+	end := start + avail
+	if end > n {
+		end = n
+	}
+	for i := start; i < end; i++ {
+		page := "     "
+		if match.HitPages[i] > 0 {
+			page = fmt.Sprintf("p.%-3d", match.HitPages[i])
+		}
+		text := fmt.Sprintf(" %s %s", page, collapseToLine(match.Snippets[i]))
+		kind := panelLineBody
+		if i == active {
+			kind = panelLineCursor
+		}
+		out = append(out, panelLine{text: trimLine(text, width), kind: kind})
+	}
+	return out
 }
 
-func formatContentSnippets(snippets []string) []string {
-	if len(snippets) == 0 {
-		return []string{"  (no snippet data)"}
-	}
-	lines := make([]string, 0, len(snippets)*3)
-	for i, snippet := range snippets {
-		parts := strings.Split(snippet, "\n")
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			lines = append(lines, "  "+part)
-		}
-		if i < len(snippets)-1 {
-			lines = append(lines, "")
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// collapseToLine flattens a (possibly wrapped, possibly ANSI-highlighted)
+// snippet into a single plain-text line. ANSI is stripped so it can't reset the
+// block highlight of the active row, and the leading "[p.N]" tag (rendered in a
+// dedicated column) is removed.
+func collapseToLine(s string) string {
+	s = ansiEscapePattern.ReplaceAllString(s, "")
+	s = strings.Join(strings.Fields(s), " ")
+	if strings.HasPrefix(s, "[p.") {
+		if idx := strings.IndexByte(s, ']'); idx >= 0 {
+			s = strings.TrimSpace(s[idx+1:])
 		}
 	}
-	if len(lines) == 0 {
-		lines = []string{"  (no snippet data)"}
-	}
-	return lines
+	return s
 }
 
 func panelizeLines(lines []string) []panelLine {

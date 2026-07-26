@@ -248,6 +248,7 @@ type Model struct {
 	searchWarnings     []string
 	searchResultCursor int
 	searchResultOffset int
+	searchHitCursor    int // which hit within the selected result is active
 	searchSummary      string
 	lastSearchQuery    string
 	lastSearchMode     searchMode
@@ -946,6 +947,7 @@ func (m *Model) enterSearchResults(msg searchResultMsg) {
 	m.lastSearchMode = msg.req.mode
 	m.searchResultCursor = 0
 	m.searchResultOffset = 0
+	m.searchHitCursor = 0
 	m.ensureSearchResultVisible()
 }
 
@@ -962,6 +964,7 @@ func (m *Model) clearSearchResults() {
 	m.lastSearchMode = searchModeContent
 	m.searchResultCursor = 0
 	m.searchResultOffset = 0
+	m.searchHitCursor = 0
 	m.quickFilter = quickFilterNone
 }
 
@@ -975,7 +978,14 @@ func (m *Model) currentSearchMatch() *searchMatch {
 	return &m.searchResults[m.searchResultCursor]
 }
 
-func (m *Model) searchResultsHeights() (int, int) {
+// searchWarningsMaxShown bounds how many warning rows the results view renders.
+// The same bound is reserved in searchResultsChromeHeight, so the warnings panel
+// can never push the list/detail panels past the bottom of the screen.
+const searchWarningsMaxShown = 3
+
+// searchResultsViewportHeight is the number of rows the whole search-results
+// view is allowed to occupy.
+func (m *Model) searchResultsViewportHeight() int {
 	height := m.viewportHeight
 	if height <= 0 {
 		height = m.windowHeight - 5
@@ -983,6 +993,69 @@ func (m *Model) searchResultsHeights() (int, int) {
 	if height <= 0 {
 		height = 20
 	}
+	return height
+}
+
+// searchWarningsShown is the single source of truth for how many warning rows
+// the results view draws. It scales to the viewport and returns 0 when there is
+// nothing to warn about or the window is too short to spare room — on tiny
+// terminals the scrollable list takes priority over warnings.
+func (m *Model) searchWarningsShown() int {
+	n := len(m.searchWarnings)
+	if n == 0 {
+		return 0
+	}
+	height := m.searchResultsViewportHeight()
+	base := 10
+	if m.quickFilter != quickFilterNone {
+		base++
+	}
+	const minList, minDetail = 4, 3
+	// A warnings panel costs a blank separator + its 3-row frame around the rows,
+	// so it needs at least 5 spare rows beyond the minimum list/detail panels.
+	spare := height - base - minList - minDetail
+	if spare < 1+1+3 {
+		return 0
+	}
+	shown := searchWarningsMaxShown
+	if shown > n {
+		shown = n
+	}
+	if room := spare - (1 + 3); shown > room { // subtract blank separator + frame
+		shown = room
+	}
+	if shown < 1 {
+		return 0
+	}
+	return shown
+}
+
+// searchResultsChromeHeight is the number of view rows consumed by everything
+// other than the list and detail panel bodies: the header/query/controls rows,
+// both panel borders, the blank separator, the optional quick-filter line, and
+// the optional warnings panel. It must stay in sync with renderSearchResultsView
+// so the row count used for scrolling matches what is actually on screen —
+// otherwise the cursor can scroll past the visible area while the viewport fails
+// to follow it.
+func (m *Model) searchResultsChromeHeight() int {
+	// 1 header + 1 query + 1 controls + 1 blank separator
+	// + 3 list-panel (top/title/bottom) + 3 detail-panel (top/body-pad/bottom).
+	chrome := 10
+	if m.quickFilter != quickFilterNone {
+		chrome++ // quick-filter line
+	}
+	if shown := m.searchWarningsShown(); shown > 0 {
+		chrome += 1 + shown + 3 // blank separator + warnings panel (borders/title + rows)
+		if shown < len(m.searchWarnings) {
+			chrome++ // "... N more warning(s)" line
+		}
+	}
+	return chrome
+}
+
+func (m *Model) searchResultsHeights() (int, int) {
+	height := m.searchResultsViewportHeight()
+	chrome := m.searchResultsChromeHeight()
 	detail := height / 5
 	if detail < 4 {
 		detail = 4
@@ -997,8 +1070,7 @@ func (m *Model) searchResultsHeights() (int, int) {
 	if detail < 3 {
 		detail = 3
 	}
-	// Overhead: 1 header + 1 query + 1 controls + 1 blank + 3 list-panel borders + 3 detail-panel borders = 10
-	list := height - detail - 10
+	list := height - detail - chrome
 	if list < 4 {
 		needed := 4 - list
 		list = 4
@@ -1060,7 +1132,47 @@ func (m *Model) moveSearchCursor(delta int) {
 	if m.searchResultCursor >= len(m.searchResults) {
 		m.searchResultCursor = len(m.searchResults) - 1
 	}
+	m.searchHitCursor = 0
 	m.ensureSearchResultVisible()
+}
+
+// hitCount returns how many navigable hits the current result exposes (the
+// number of concrete snippets, excluding any trailing "(+N more)" line).
+func (m *Model) hitCount() int {
+	match := m.currentSearchMatch()
+	if match == nil {
+		return 0
+	}
+	return len(match.HitPages)
+}
+
+// moveSearchHitCursor moves the active-hit selection within the current result,
+// clamped to the available hits.
+func (m *Model) moveSearchHitCursor(delta int) {
+	n := m.hitCount()
+	if n <= 0 {
+		m.searchHitCursor = 0
+		return
+	}
+	m.searchHitCursor += delta
+	if m.searchHitCursor < 0 {
+		m.searchHitCursor = 0
+	}
+	if m.searchHitCursor >= n {
+		m.searchHitCursor = n - 1
+	}
+}
+
+// currentHitPage returns the 1-based page of the active hit, or 0 if unknown.
+func (m *Model) currentHitPage() int {
+	match := m.currentSearchMatch()
+	if match == nil {
+		return 0
+	}
+	if m.searchHitCursor < 0 || m.searchHitCursor >= len(match.HitPages) {
+		return 0
+	}
+	return match.HitPages[m.searchHitCursor]
 }
 
 func (m *Model) pageSearchCursor(direction int) {

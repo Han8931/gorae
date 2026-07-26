@@ -1381,6 +1381,13 @@ func parseMetadataEditorData(raw []byte, path string) (meta.Metadata, error) {
 }
 
 func (m *Model) openPDF(path string) error {
+	return m.openPDFAtPage(path, 0)
+}
+
+// openPDFAtPage launches the configured PDF viewer, jumping to page (1-based)
+// when it is > 0 and the resolved viewer supports a page flag. Unknown pages or
+// viewers without page support open the document normally.
+func (m *Model) openPDFAtPage(path string, page int) error {
 	viewer := ""
 	if m.cfg != nil {
 		viewer = strings.TrimSpace(m.cfg.PDFViewer)
@@ -1423,6 +1430,9 @@ func (m *Model) openPDF(path string) error {
 	}
 
 	args := append([]string{}, extraArgs...)
+	if page > 0 {
+		args = append(args, viewerPageArgs(name, page)...)
+	}
 	args = append(args, path)
 	cmd := exec.Command(name, args...)
 	if err := cmd.Start(); err != nil {
@@ -1430,6 +1440,31 @@ func (m *Model) openPDF(path string) error {
 	}
 	m.markReadingStateOnOpen(path)
 	return nil
+}
+
+// viewerPageArgs returns the CLI flags that open the given viewer at a 1-based
+// page. It returns nil for viewers with no known page flag, so the document
+// simply opens at the beginning.
+func viewerPageArgs(viewerName string, page int) []string {
+	if page <= 0 {
+		return nil
+	}
+	switch strings.ToLower(filepath.Base(viewerName)) {
+	case "zathura":
+		return []string{"--page", strconv.Itoa(page)}
+	case "sioyek":
+		return []string{"--page", strconv.Itoa(page)}
+	case "okular":
+		return []string{"--page", strconv.Itoa(page)}
+	case "evince":
+		return []string{fmt.Sprintf("--page-index=%d", page)}
+	case "mupdf", "mupdf-gl", "mupdf-x11":
+		// mupdf takes the page as a trailing positional argument after the file;
+		// handled by callers that place the file first — skip to stay safe.
+		return nil
+	default:
+		return nil
+	}
 }
 
 func (m *Model) markReadingStateOnOpen(path string) {
@@ -2307,14 +2342,19 @@ func (m *Model) openSearchResultAtCursor() {
 		m.setStatus("No search result selected")
 		return
 	}
-	if err := m.openPDF(match.Path); err != nil {
+	page := m.currentHitPage()
+	if err := m.openPDFAtPage(match.Path, page); err != nil {
 		m.setStatus("Failed to open PDF: " + err.Error())
 		return
 	}
 	if !m.cwdIsRecentlyOpened {
 		m.recordRecentlyOpened(match.Path)
 	}
-	m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(match.Path)))
+	if page > 0 {
+		m.setStatus(fmt.Sprintf("Opened %s at p.%d", filepath.Base(match.Path), page))
+	} else {
+		m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(match.Path)))
+	}
 }
 
 func (m *Model) runSearch(req searchRequest) tea.Cmd {
@@ -2523,6 +2563,12 @@ func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 	case "k", "up":
 		m.moveSearchCursor(-1)
 		return true, nil
+	case "n", "tab":
+		m.moveSearchHitCursor(1)
+		return true, nil
+	case "N", "shift+tab":
+		m.moveSearchHitCursor(-1)
+		return true, nil
 	case "pgdown", "ctrl+f":
 		m.pageSearchCursor(1)
 		return true, nil
@@ -2553,11 +2599,13 @@ func (m *Model) handleSearchResultsKey(key string) (bool, tea.Cmd) {
 		return true, nil
 	case "g":
 		m.searchResultCursor = 0
+		m.searchHitCursor = 0
 		m.ensureSearchResultVisible()
 		return true, nil
 	case "G":
 		if len(m.searchResults) > 0 {
 			m.searchResultCursor = len(m.searchResults) - 1
+			m.searchHitCursor = 0
 			m.ensureSearchResultVisible()
 		}
 		return true, nil

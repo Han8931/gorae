@@ -54,9 +54,13 @@ type searchMatch struct {
 	Mode       searchMode
 	MatchCount int
 	Snippets   []string
-	Meta       pdfMeta
-	Title      string
-	Year       string
+	// HitPages holds the 1-based page number for each snippet in Snippets
+	// (0 when the page is unknown, e.g. EPUB/Markdown or a fallback snippet).
+	// It may be shorter than Snippets when a trailing "(+N more)" line is added.
+	HitPages []int
+	Meta     pdfMeta
+	Title    string
+	Year     string
 }
 
 type searchAggregate struct {
@@ -66,7 +70,10 @@ type searchAggregate struct {
 	totalMatches int
 }
 
-const maxSnippetsPerFile = 6
+// maxHitsPerFile caps how many individual occurrences are turned into navigable
+// hits for a single document. It's a safety bound for pathological cases (a
+// common word in a whole book); real documents stay well under it.
+const maxHitsPerFile = 1000
 
 func (m searchMode) label() string {
 	if m == "" {
@@ -217,6 +224,22 @@ func tryFTSSearch(req searchRequest) (searchAggregate, string, bool) {
 
 	agg := searchAggregate{}
 	for _, fm := range matches {
+		// FTS5's snippet() only returns one passage per document, so a term that
+		// appears many times would show a single hit. Re-scan the indexed body
+		// (same pdftotext output that was indexed) to surface every occurrence
+		// with its page number, matching the file-scan path's behaviour.
+		body, bodyErr := req.metaStore.GetFileContent(ctx, fm.Path)
+		if bodyErr == nil && strings.TrimSpace(body) != "" {
+			paginated := strings.EqualFold(filepath.Ext(fm.Path), ".pdf")
+			if sm, ok := buildContentMatch(fm.Path, body, req.query, false, req.wrapWidth, paginated, req.metaStore); ok {
+				agg.matches = append(agg.matches, sm)
+				agg.filesMatched++
+				agg.totalMatches += sm.MatchCount
+				continue
+			}
+		}
+		// Fallback: literal query not found in the body (e.g. a stemmed-only
+		// match) or the body is unavailable — keep FTS's single snippet.
 		snippet := strings.ReplaceAll(fm.Snippet, "\n", " ")
 		sm := searchMatch{
 			Path:       fm.Path,
@@ -230,7 +253,7 @@ func tryFTSSearch(req searchRequest) (searchAggregate, string, bool) {
 		agg.totalMatches++
 	}
 
-	summary := fmt.Sprintf("Content search (FTS): %d file(s) matched [index: %d files]", agg.filesMatched, count)
+	summary := fmt.Sprintf("Content search (FTS): %d file(s), %d match(es) [index: %d files]", agg.filesMatched, agg.totalMatches, count)
 	if agg.filesMatched == 0 {
 		summary = fmt.Sprintf("Content search (FTS): no matches for %q [index: %d files]", req.query, count)
 	}
@@ -350,32 +373,8 @@ func searchPDFContent(path, query string, caseSensitive bool, wrapWidth int, sto
 	if err != nil {
 		return searchMatch{}, false, err
 	}
-	positions := findAllMatches(text, query, caseSensitive)
-	if len(positions) == 0 {
-		return searchMatch{}, false, nil
-	}
-	maxSnippets := maxSnippetsPerFile
-	if maxSnippets > len(positions) {
-		maxSnippets = len(positions)
-	}
-	snippets := make([]string, 0, maxSnippets)
-	for i := 0; i < maxSnippets; i++ {
-		pos := positions[i]
-		snippet := makeSnippet(text, pos, len(query), query, caseSensitive, wrapWidth)
-		snippets = append(snippets, snippet)
-	}
-	if len(positions) > maxSnippetsPerFile {
-		extra := len(positions) - maxSnippetsPerFile
-		snippets = append(snippets, fmt.Sprintf("(+%d more match(es) in this file)", extra))
-	}
-	match := searchMatch{
-		Path:       path,
-		Mode:       searchModeContent,
-		MatchCount: len(positions),
-		Snippets:   snippets,
-	}
-	populateMatchDisplay(&match, store)
-	return match, true, nil
+	match, ok := buildContentMatch(path, text, query, caseSensitive, wrapWidth, true, store)
+	return match, ok, nil
 }
 
 func searchEPUBContent(path, query string, caseSensitive bool, wrapWidth int, store *meta.Store) (searchMatch, bool, error) {
@@ -383,32 +382,61 @@ func searchEPUBContent(path, query string, caseSensitive bool, wrapWidth int, st
 	if err != nil {
 		return searchMatch{}, false, err
 	}
+	match, ok := buildContentMatch(path, text, query, caseSensitive, wrapWidth, false, store)
+	return match, ok, nil
+}
+
+// buildContentMatch turns every occurrence of query within text into its own
+// navigable snippet (up to maxHitsPerFile), records each hit's page, and reports
+// the true total in MatchCount. When paginated is true the text is treated as
+// pdftotext output whose pages are separated by form feeds, so each hit is
+// annotated with its 1-based page number. Returns ok=false when query does not
+// occur in text.
+func buildContentMatch(path, text, query string, caseSensitive bool, wrapWidth int, paginated bool, store *meta.Store) (searchMatch, bool) {
 	positions := findAllMatches(text, query, caseSensitive)
 	if len(positions) == 0 {
-		return searchMatch{}, false, nil
+		return searchMatch{}, false
 	}
-	maxSnippets := maxSnippetsPerFile
-	if maxSnippets > len(positions) {
-		maxSnippets = len(positions)
+	// The multi-hit box is a scrollable list, so surface every occurrence (up to
+	// a generous safety cap) instead of the handful the old static view showed.
+	shown := len(positions)
+	if shown > maxHitsPerFile {
+		shown = maxHitsPerFile
 	}
-	snippets := make([]string, 0, maxSnippets)
-	for i := 0; i < maxSnippets; i++ {
+	snippets := make([]string, 0, shown)
+	pages := make([]int, 0, shown)
+	for i := 0; i < shown; i++ {
 		pos := positions[i]
+		page := 0
+		if paginated {
+			page = pageForOffset(text, pos)
+		}
 		snippet := makeSnippet(text, pos, len(query), query, caseSensitive, wrapWidth)
+		if page > 0 {
+			snippet = fmt.Sprintf("[p.%d] %s", page, snippet)
+		}
 		snippets = append(snippets, snippet)
-	}
-	if len(positions) > maxSnippetsPerFile {
-		extra := len(positions) - maxSnippetsPerFile
-		snippets = append(snippets, fmt.Sprintf("(+%d more match(es) in this file)", extra))
+		pages = append(pages, page)
 	}
 	match := searchMatch{
 		Path:       path,
 		Mode:       searchModeContent,
 		MatchCount: len(positions),
 		Snippets:   snippets,
+		HitPages:   pages,
 	}
 	populateMatchDisplay(&match, store)
-	return match, true, nil
+	return match, true
+}
+
+// pageForOffset maps a byte offset within pdftotext output to its 1-based page
+// number by counting the form-feed page breaks that precede it. Returns 0 when
+// the offset is out of range.
+func pageForOffset(text string, offset int) int {
+	if offset < 0 || offset > len(text) {
+		return 0
+	}
+	return 1 + strings.Count(text[:offset], "\f")
 }
 
 func searchPDFMetadata(path string, mode searchMode, query string, caseSensitive bool, store *meta.Store) (searchMatch, bool, error) {
@@ -829,6 +857,11 @@ func findAllMatches(text, query string, caseSensitive bool) []int {
 	return positions
 }
 
+var (
+	snippetPunctPattern = regexp.MustCompile(`([.,;:!?])([^\s])`)
+	snippetCamelPattern = regexp.MustCompile(`([a-z])([A-Z])`)
+)
+
 func makeSnippet(text string, idx, matchLen int, query string, caseSensitive bool, wrapWidth int) string {
 	const context = 80
 	if idx < 0 {
@@ -845,10 +878,8 @@ func makeSnippet(text string, idx, matchLen int, query string, caseSensitive boo
 	snippet := text[start:end]
 	snippet = strings.ReplaceAll(snippet, "\n", " ")
 	snippet = strings.Join(strings.Fields(snippet), " ")
-	rePunct := regexp.MustCompile(`([.,;:!?])([^\s])`)
-	snippet = rePunct.ReplaceAllString(snippet, "$1 $2")
-	reCamel := regexp.MustCompile(`([a-z])([A-Z])`)
-	snippet = reCamel.ReplaceAllString(snippet, "$1 $2")
+	snippet = snippetPunctPattern.ReplaceAllString(snippet, "$1 $2")
+	snippet = snippetCamelPattern.ReplaceAllString(snippet, "$1 $2")
 	snippet = highlight(snippet, query, caseSensitive)
 	snippet = wrapSnippet(snippet, wrapWidth)
 	return snippet
