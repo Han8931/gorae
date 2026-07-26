@@ -13,7 +13,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 func isMarkdown(path string) bool {

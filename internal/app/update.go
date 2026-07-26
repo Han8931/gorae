@@ -17,11 +17,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	userdoc "gorae/docs"
-	"gorae/internal/arxiv"
-	"gorae/internal/config"
-	"gorae/internal/meta"
-	"gorae/internal/theme"
+	userdoc "github.com/Han8931/gorae/docs"
+	"github.com/Han8931/gorae/internal/arxiv"
+	"github.com/Han8931/gorae/internal/config"
+	"github.com/Han8931/gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/theme"
 )
 
 // previewReadyMsg carries the result of an asynchronous PDF preview request.

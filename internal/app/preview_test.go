@@ -11,8 +11,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gorae/internal/meta"
-	"gorae/internal/theme"
+	"github.com/Han8931/gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/theme"
 )
 
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)

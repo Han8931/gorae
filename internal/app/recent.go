@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 const defaultRecentlyAddedSyncInterval = time.Minute

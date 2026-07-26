@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 func TestRecordOpenedAndList(t *testing.T) {

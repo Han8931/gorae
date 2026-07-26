@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"gorae/internal/config"
+	"github.com/Han8931/gorae/internal/config"
 )
 
 const (

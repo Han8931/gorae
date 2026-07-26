@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gorae/internal/ai"
+	"github.com/Han8931/gorae/internal/ai"
 )
 
 // toolHandler runs an in-app action requested by the model. The string result

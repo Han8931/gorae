@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gorae/internal/theme"
+	"github.com/Han8931/gorae/internal/theme"
 )
 
 const (

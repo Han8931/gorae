@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 func TestBuildBibtexEntryWithMetadata(t *testing.T) {

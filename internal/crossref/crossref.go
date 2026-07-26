@@ -27,7 +27,7 @@ type Metadata struct {
 	Abstract  string
 }
 
-const userAgent = "gorae/0.1 (https://github.com/Han8931/gorae)"
+const userAgent = "github.com/Han8931/gorae/0.1 (https://github.com/Han8931/gorae)"
 
 // Fetch retrieves metadata for the provided DOI via the Crossref Works API.
 func Fetch(ctx context.Context, doi string) (*Metadata, error) {

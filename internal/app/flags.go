@@ -11,7 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 type metadataFlag int

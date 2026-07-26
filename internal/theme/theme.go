@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gorae/internal/simpletoml"
+	"github.com/Han8931/gorae/internal/simpletoml"
 )
 
 const defaultThemeFile = `# Gorae color theme.

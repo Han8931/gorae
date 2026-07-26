@@ -16,10 +16,10 @@ import (
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gorae/internal/ai"
-	"gorae/internal/config"
-	"gorae/internal/meta"
-	"gorae/internal/search"
+	"github.com/Han8931/gorae/internal/ai"
+	"github.com/Han8931/gorae/internal/config"
+	"github.com/Han8931/gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/search"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

@@ -21,7 +21,7 @@ type Metadata struct {
 	Abstract string
 }
 
-const userAgent = "gorae/0.1 (https://github.com/Han8931/gorae)"
+const userAgent = "github.com/Han8931/gorae/0.1 (https://github.com/Han8931/gorae)"
 
 // httpClient bounds every arXiv request so an unresponsive server can't hang
 // the operation indefinitely (http.DefaultClient has no timeout).

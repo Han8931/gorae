@@ -11,7 +11,7 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 var yearPattern = regexp.MustCompile(`\d{4}`)

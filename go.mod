@@ -1,4 +1,4 @@
-module gorae
+module github.com/Han8931/gorae
 
 go 1.25.1
 

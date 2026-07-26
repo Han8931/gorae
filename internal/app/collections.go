@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 func (m *Model) syncCollectionDirectories() error {

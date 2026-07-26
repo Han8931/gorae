@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"gorae/internal/theme"
+	"github.com/Han8931/gorae/internal/theme"
 )
 
 type panelStyles struct {

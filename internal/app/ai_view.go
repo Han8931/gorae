@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
-	"gorae/internal/ai"
+	"github.com/Han8931/gorae/internal/ai"
 )
 
 func (m *Model) renderGoraeView() string {

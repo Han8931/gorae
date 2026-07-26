@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gorae/internal/app"
-	"gorae/internal/config"
-	"gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/app"
+	"github.com/Han8931/gorae/internal/config"
+	"github.com/Han8931/gorae/internal/meta"
 )
 
 func main() {
