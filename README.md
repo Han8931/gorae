@@ -29,9 +29,14 @@ Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
 
 ## Quickstart
 
-1. **Download** the [latest release](https://github.com/Han8931/gorae/releases) for your platform — `gorae` (Linux), `gorae-darwin-arm64` (macOS Apple Silicon), `gorae-darwin-amd64` (macOS Intel), or `gorae-windows-amd64.exe`.
-2. **Make it executable** and move it onto your `PATH`:
+1. **Download** the binary for your platform from the [latest release](https://github.com/Han8931/gorae/releases):
+   - **Linux:** `gorae-linux-amd64`
+   - **macOS (Apple Silicon):** `gorae-darwin-arm64`
+   - **macOS (Intel):** `gorae-darwin-amd64`
+   - **Windows:** `gorae-windows-amd64.exe`
+2. **Rename it to `gorae`, make it executable**, and move it onto your `PATH`:
    ```sh
+   mv gorae-linux-amd64 gorae                 # use the file you downloaded
    chmod +x gorae && mv gorae ~/.local/bin/   # or /usr/local/bin
    ```
 3. **Run it:**
@@ -275,10 +280,27 @@ GORAE_INSTALL_PATH=/usr/local/bin/gorae ./install.sh   # custom path
 
 Two packages, pick whichever fits:
 
+| Package | What it does |
+|---|---|
+| [`gorae`](https://aur.archlinux.org/packages/gorae) | builds from source via `go` (Arch-native) |
+| [`gorae-bin`](https://aur.archlinux.org/packages/gorae-bin) | installs the pre-built x86_64 binary from the latest GitHub release |
+
+**With an AUR helper** (e.g. [`yay`](https://github.com/Jguer/yay) or `paru`):
+
 ```sh
-yay -S gorae-bin   # pre-built x86_64 binary from the latest GitHub release
 yay -S gorae       # builds from source via go (Arch-native)
+yay -S gorae-bin   # pre-built x86_64 binary from the latest GitHub release
 ```
+
+**Without an AUR helper** — clone and build with `makepkg`, which installs the package through `pacman`:
+
+```sh
+git clone https://aur.archlinux.org/gorae.git      # or gorae-bin.git
+cd gorae
+makepkg -si                                         # -s pulls build deps, -i installs via pacman
+```
+
+To update later, `git pull` in the clone and re-run `makepkg -si`.
 
 Both pull in `poppler` automatically and suggest `chafa`, `zathura`, and `zathura-pdf-mupdf` as optional dependencies.
 
