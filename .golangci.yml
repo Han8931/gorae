@@ -1,0 +1,24 @@
+# golangci-lint configuration (schema v2 — golangci-lint v2.x).
+#
+# This starts with a deliberately conservative, green-on-day-one set so CI can
+# be enforced immediately. The codebase has pre-existing staticcheck/unused/
+# stylecheck findings (unused helpers, capitalized error strings, a couple of
+# deprecated bubbletea mouse APIs); enable those linters below once cleaned up.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet        # suspicious constructs; already clean
+    - misspell     # common English misspellings in comments/strings
+    - unconvert    # redundant type conversions
+    # TODO: enable after a cleanup pass (each has a handful of pre-existing hits):
+    #   - ineffassign  # 4 ineffectual assignments (e.g. view.go renderHelpView)
+    #   - staticcheck  # ~40 findings: unused code, ST1005 error strings, SA1019 deprecations
+    #   - unused
+    #   - errcheck
+
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives

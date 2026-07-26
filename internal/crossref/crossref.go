@@ -9,7 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// httpClient bounds every Crossref request so an unresponsive server can't
+// hang the operation indefinitely (http.DefaultClient has no timeout).
+var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 // Metadata describes the subset of Crossref fields used by Gorae.
 type Metadata struct {
@@ -37,7 +42,7 @@ func Fetch(ctx context.Context, doi string) (*Metadata, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("perform request: %w", err)
 	}

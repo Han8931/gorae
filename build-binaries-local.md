@@ -7,7 +7,7 @@ These notes walk through building standalone binaries for each supported platfor
 - Go 1.21+ and the project dependencies installed on this machine.
 - Poppler CLI tools (`pdftotext`, `pdfinfo`) available so you can test the Linux build; end users still need these tools, but not Go.
 
-From the repo root (`/home/han/Projects/go-pdf`):
+From the repo root (the `gorae` checkout):
 
 ```sh
 mkdir -p dist

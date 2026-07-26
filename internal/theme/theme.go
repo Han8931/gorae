@@ -196,26 +196,26 @@ type MarkdownStyle struct {
 }
 
 type ComponentStyles struct {
-	AppHeader        StyleSpec    `toml:"app_header" json:"app_header"`
-	TreeHeader       StyleSpec    `toml:"tree_header" json:"tree_header"`
-	TreeBody         StyleSpec    `toml:"tree_body" json:"tree_body"`
-	TreeActive       StyleSpec    `toml:"tree_active" json:"tree_active"`
-	TreeInfo         StyleSpec    `toml:"tree_info" json:"tree_info"`
-	ListHeader       StyleSpec    `toml:"list_header" json:"list_header"`
-	ListBody         StyleSpec    `toml:"list_body" json:"list_body"`
-	ListSelected     StyleSpec    `toml:"list_selected" json:"list_selected"`
-	ListCursor       StyleSpec    `toml:"list_cursor" json:"list_cursor"`
-	ListCursorSelect StyleSpec    `toml:"list_cursor_selected" json:"list_cursor_selected"`
-	PreviewHeader    StyleSpec    `toml:"preview_header" json:"preview_header"`
-	PreviewBody      StyleSpec    `toml:"preview_body" json:"preview_body"`
-	PreviewInfo      StyleSpec    `toml:"preview_info" json:"preview_info"`
-	Separator        StyleSpec    `toml:"separator" json:"separator"`
-	StatusBar        StyleSpec    `toml:"status_bar" json:"status_bar"`
-	StatusLabel      StyleSpec    `toml:"status_label" json:"status_label"`
-	StatusValue      StyleSpec    `toml:"status_value" json:"status_value"`
-	PromptLabel      StyleSpec    `toml:"prompt_label" json:"prompt_label"`
-	PromptValue      StyleSpec    `toml:"prompt_value" json:"prompt_value"`
-	MetaOverlay      StyleSpec    `toml:"meta_overlay" json:"meta_overlay"`
+	AppHeader        StyleSpec     `toml:"app_header" json:"app_header"`
+	TreeHeader       StyleSpec     `toml:"tree_header" json:"tree_header"`
+	TreeBody         StyleSpec     `toml:"tree_body" json:"tree_body"`
+	TreeActive       StyleSpec     `toml:"tree_active" json:"tree_active"`
+	TreeInfo         StyleSpec     `toml:"tree_info" json:"tree_info"`
+	ListHeader       StyleSpec     `toml:"list_header" json:"list_header"`
+	ListBody         StyleSpec     `toml:"list_body" json:"list_body"`
+	ListSelected     StyleSpec     `toml:"list_selected" json:"list_selected"`
+	ListCursor       StyleSpec     `toml:"list_cursor" json:"list_cursor"`
+	ListCursorSelect StyleSpec     `toml:"list_cursor_selected" json:"list_cursor_selected"`
+	PreviewHeader    StyleSpec     `toml:"preview_header" json:"preview_header"`
+	PreviewBody      StyleSpec     `toml:"preview_body" json:"preview_body"`
+	PreviewInfo      StyleSpec     `toml:"preview_info" json:"preview_info"`
+	Separator        StyleSpec     `toml:"separator" json:"separator"`
+	StatusBar        StyleSpec     `toml:"status_bar" json:"status_bar"`
+	StatusLabel      StyleSpec     `toml:"status_label" json:"status_label"`
+	StatusValue      StyleSpec     `toml:"status_value" json:"status_value"`
+	PromptLabel      StyleSpec     `toml:"prompt_label" json:"prompt_label"`
+	PromptValue      StyleSpec     `toml:"prompt_value" json:"prompt_value"`
+	MetaOverlay      StyleSpec     `toml:"meta_overlay" json:"meta_overlay"`
 	Markdown         MarkdownStyle `toml:"markdown" json:"markdown"`
 }
 

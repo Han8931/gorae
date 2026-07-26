@@ -86,8 +86,8 @@ func newViewStyles(th theme.Theme) viewStyles {
 		PromptValue: styleFromSpec(palette, th.Components.PromptValue),
 		Separator:   styleFromSpec(palette, th.Components.Separator),
 		MetaOverlay: styleFromSpec(palette, th.Components.MetaOverlay),
-		Border:  lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette))),
-		SepChar: borderCharsetFor(th.Borders.Style).Vertical,
+		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette))),
+		SepChar:     borderCharsetFor(th.Borders.Style).Vertical,
 		Markdown: mdStyles{
 			H1:         styleFromSpec(palette, th.Components.Markdown.H1),
 			H2:         styleFromSpec(palette, th.Components.Markdown.H2),

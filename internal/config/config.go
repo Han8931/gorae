@@ -378,7 +378,8 @@ func writeDefaultConfig(path string, cfg *Config) error {
 	// edited also land in freshly-created configs. Same path as existing
 	// configs go through, keeping behaviour identical for both.
 	upgraded, _, _ := upgradeConfigBytes([]byte(content))
-	return os.WriteFile(path, upgraded, 0o644)
+	// 0o600: the config can hold plaintext API keys, so keep it owner-only.
+	return os.WriteFile(path, upgraded, 0o600)
 }
 
 // configUpgrade describes one top-level config key that may be missing from
@@ -586,7 +587,8 @@ func writeConfig(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// 0o600: the config can hold plaintext API keys, so keep it owner-only.
+	return os.WriteFile(path, data, 0o600)
 }
 
 // Save persists the provided configuration to disk, ensuring directories exist first.

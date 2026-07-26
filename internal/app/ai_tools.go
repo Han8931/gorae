@@ -51,7 +51,9 @@ var goraeTools = map[string]goraeTool{
 				Content  string `json:"content"`
 			}
 			if rawArgs != "" {
-				_ = json.Unmarshal([]byte(rawArgs), &p)
+				if err := json.Unmarshal([]byte(rawArgs), &p); err != nil {
+					return "Error: could not parse tool arguments: " + err.Error()
+				}
 			}
 			if strings.TrimSpace(p.Content) != "" {
 				path, err := m.writeNoteMarkdown(p.Filename, p.Content)
