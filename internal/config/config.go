@@ -473,7 +473,8 @@ func LoadOrInit() (*Config, error) {
 		// missing. We swallow write errors here because parsing still
 		// succeeds against the in-memory upgraded bytes either way.
 		if upgraded, injected, err := upgradeConfigBytes(data); err == nil && len(injected) > 0 {
-			_ = os.WriteFile(path, upgraded, 0o644)
+			// 0o600: the config can hold plaintext API keys, so keep it owner-only.
+			_ = os.WriteFile(path, upgraded, 0o600)
 			data = upgraded
 		}
 		var cfg Config
