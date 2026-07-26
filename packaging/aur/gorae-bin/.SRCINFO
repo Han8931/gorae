@@ -1,0 +1,20 @@
+pkgbase = gorae-bin
+	pkgdesc = Terminal-first knowledge base for PDFs, EPUBs, and Markdown — with a built-in AI assistant
+	pkgver = 2.3.1
+	pkgrel = 1
+	url = https://github.com/Han8931/gorae
+	arch = x86_64
+	license = MIT
+	depends = poppler
+	optdepends = chafa: ASCII/sixel preview fallback for non-Kitty/iTerm2 terminals
+	optdepends = zathura: recommended PDF viewer with vi-style navigation
+	optdepends = zathura-pdf-mupdf: MuPDF backend for zathura
+	provides = gorae
+	conflicts = gorae
+	noextract = gorae-2.3.1
+	source = gorae-2.3.1::https://github.com/Han8931/gorae/releases/download/v2.3.1/gorae-linux-amd64
+	source = LICENSE-gorae-2.3.1::https://raw.githubusercontent.com/Han8931/gorae/v2.3.1/LICENSE
+	sha256sums = e1667f5b8d2f4843027e9c54695f7f87c2ff0297df0a31abc2a1d1160b67ad2a
+	sha256sums = SKIP
+
+pkgname = gorae-bin
