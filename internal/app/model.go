@@ -179,6 +179,7 @@ type Model struct {
 	aiClient          *ai.Client
 	aiSearchResults   []meta.NameMatch   // live find results shown in overlay
 	aiSearchSelecting bool               // true while the find overlay is active
+	aiFindMode        bool               // true while the /load fuzzy-find box owns the input
 	aiSearchCursor    int                // highlighted row in the overlay
 	aiLiveQuery       string             // last query sent to live find
 	aiFocusedFile     string             // path selected; injected as context
@@ -659,23 +660,21 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		scheduleAutoMetadataScan(autoMetadataInitialScanDelay),
-		m.autoIndexIfEmpty(),
+		m.autoIndexOnStart(),
 	)
 }
 
-// autoIndexIfEmpty triggers a full index on first run (when IndexedCount == 0).
-func (m Model) autoIndexIfEmpty() tea.Cmd {
+// autoIndexOnStart triggers an incremental index every time the app starts.
+// indexAllCmd skips files whose content is unchanged (compared by size), so this
+// is cheap on subsequent runs and automatically picks up newly added documents.
+func (m Model) autoIndexOnStart() tea.Cmd {
 	store := m.meta
 	root := m.root
 	if store == nil || root == "" {
 		return nil
 	}
+	// Return a sentinel that triggers indexing in the update loop.
 	return func() tea.Msg {
-		count, err := store.IndexedCount(context.Background())
-		if err != nil || count > 0 {
-			return nil
-		}
-		// Return a sentinel that triggers indexing in the update loop.
 		return autoIndexMsg{}
 	}
 }

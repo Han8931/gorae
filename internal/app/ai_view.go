@@ -23,7 +23,7 @@ func (m *Model) renderGoraeView() string {
 
 	// Build overlay lines shown between separator and input.
 	var overlayLines []string
-	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
+	if m.aiSearchSelecting {
 		overlayLines = m.buildFindOverlay(width)
 	} else if !m.aiStreaming {
 		muted := m.styles.Preview.Body
@@ -167,7 +167,7 @@ func max(a, b int) int {
 }
 
 var goraeCommandDescs = []struct{ name, desc string }{
-	{"/load", "load a file into chat context (search by title or filename)"},
+	{"/load", "open a fuzzy-find box to pick a file for chat context"},
 	{"/select", "clear focused file"},
 	{"/summarize", "summarize focused file and save to its note"},
 	{"/clear", "clear chat history"},
@@ -338,6 +338,10 @@ func (m Model) buildFindOverlay(width int) []string {
 
 	var lines []string
 	lines = append(lines, mutedStyle.Render("  ↑/↓ navigate · Enter select · Esc cancel"))
+	if len(m.aiSearchResults) == 0 {
+		lines = append(lines, "      "+mutedStyle.Render("no matches"))
+		return lines
+	}
 	for i, r := range m.aiSearchResults {
 		title := runewidth.Truncate(r.Title, wrapW-4, "…")
 		fname := runewidth.Truncate(filepath.Base(r.Path), wrapW-6, "…")

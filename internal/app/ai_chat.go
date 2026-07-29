@@ -54,6 +54,13 @@ type aiCompactDoneMsg struct {
 
 const autoCompactThreshold = 40 // auto-compact after this many messages
 
+// Placeholder shown in the chat input in its default (ask-anything) state and
+// while the /load fuzzy-find box is active, respectively.
+const (
+	goraeAskPlaceholder  = " ask anything…  (Esc → navigate past messages • /help)"
+	goraeFindPlaceholder = " search title or filename…  (↑/↓ move · Enter select · Esc cancel)"
+)
+
 type aiLiveFindMsg struct {
 	query   string
 	results []meta.NameMatch
@@ -62,10 +69,12 @@ type aiLiveFindMsg struct {
 func (m *Model) doLiveFind(query string) tea.Cmd {
 	store := m.meta
 	return func() tea.Msg {
-		if store == nil || strings.TrimSpace(query) == "" {
+		if store == nil {
 			return aiLiveFindMsg{query: query}
 		}
-		results, err := store.SearchByName(context.Background(), query, 8)
+		// An empty query matches every indexed file (SearchByName uses a LIKE
+		// pattern), which is what the /load box shows before the user filters.
+		results, err := store.SearchByName(context.Background(), strings.TrimSpace(query), 8)
 		if err != nil {
 			return aiLiveFindMsg{query: query}
 		}
@@ -108,7 +117,7 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	}
 
 	inp := textinput.New()
-	inp.Placeholder = " ask anything…  (Esc → navigate past messages • /help)"
+	inp.Placeholder = goraeAskPlaceholder
 	inp.CharLimit = 4096
 	inp.Cursor.SetMode(cursor.CursorStatic)
 	inp.Focus()
@@ -122,6 +131,10 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.previewGraphicClear = true
 	m.aiChatScroll = 0
 	m.aiFollowBottom = true
+	m.aiFindMode = false
+	m.aiSearchSelecting = false
+	m.aiSearchResults = nil
+	m.aiLiveQuery = ""
 	m.aiNormalMode = false
 	m.aiMsgCursor = 0
 	m.aiMsgMarks = nil
@@ -173,16 +186,49 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	return nil
 }
 
+// enterFindMode opens the vim-style fuzzy-find box that /load uses to pick a
+// file to focus. The chat input becomes the search query and the results update
+// live as the user types; an empty query lists everything indexed.
+func (m *Model) enterFindMode(query string) tea.Cmd {
+	if m.meta == nil {
+		m.appendAISystem("Metadata store not available.")
+		return nil
+	}
+	m.aiFindMode = true
+	m.aiSearchSelecting = true
+	m.aiSearchResults = nil
+	m.aiSearchCursor = 0
+	m.aiLiveQuery = query
+	m.aiInput.SetValue(query)
+	m.aiInput.CursorEnd()
+	m.aiInput.Placeholder = goraeFindPlaceholder
+	m.aiFollowBottom = true // stick to bottom so the find box stays visible
+	return m.doLiveFind(query)
+}
+
+// exitFindMode closes the find box and restores the normal chat input.
+func (m *Model) exitFindMode() {
+	m.aiFindMode = false
+	m.aiSearchSelecting = false
+	m.aiSearchResults = nil
+	m.aiSearchCursor = 0
+	m.aiLiveQuery = ""
+	m.aiInput.SetValue("")
+	m.aiInput.Placeholder = goraeAskPlaceholder
+}
+
 func (m *Model) goraeSelectCurrent() {
 	if len(m.aiSearchResults) == 0 {
 		return
 	}
 	chosen := m.aiSearchResults[m.aiSearchCursor]
 	m.aiFocusedFile = chosen.Path
+	m.aiFindMode = false
 	m.aiSearchSelecting = false
 	m.aiSearchResults = nil
 	m.aiLiveQuery = ""
 	m.aiInput.SetValue("")
+	m.aiInput.Placeholder = goraeAskPlaceholder
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
@@ -290,7 +336,11 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.aiSearchSelecting {
 			switch key {
 			case "esc":
-				m.aiSearchSelecting = false
+				if m.aiFindMode {
+					m.exitFindMode()
+				} else {
+					m.aiSearchSelecting = false
+				}
 				return m, nil
 			case "up":
 				if m.aiSearchCursor > 0 {
@@ -361,7 +411,9 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Discard stale results from a previous query
 		if msg.query == m.aiLiveQuery {
 			m.aiSearchResults = msg.results
-			m.aiSearchSelecting = len(msg.results) > 0
+			// Keep the box open while in find mode even if nothing matches, so
+			// the user can keep editing the query instead of it snapping shut.
+			m.aiSearchSelecting = m.aiFindMode || len(msg.results) > 0
 			if m.aiSearchCursor >= len(msg.results) {
 				m.aiSearchCursor = 0
 			}
@@ -380,27 +432,13 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.aiInput, inputCmd = m.aiInput.Update(msg)
 	cmds = append(cmds, inputCmd)
 
-	// Live /load (and legacy /find): trigger search whenever the query part changes.
-	if !m.aiStreaming {
-		val := strings.ToLower(m.aiInput.Value())
-		prefix := ""
-		switch {
-		case strings.HasPrefix(val, "/load "):
-			prefix = "/load "
-		case strings.HasPrefix(val, "/find "):
-			prefix = "/find "
-		}
-		if prefix != "" {
-			query := strings.TrimSpace(m.aiInput.Value()[len(prefix):])
-			if query != m.aiLiveQuery {
-				m.aiLiveQuery = query
-				cmds = append(cmds, m.doLiveFind(query))
-			}
-		} else if m.aiSearchSelecting {
-			// Input no longer starts with /load (or /find) — clear overlay.
-			m.aiSearchSelecting = false
-			m.aiSearchResults = nil
-			m.aiLiveQuery = ""
+	// While the /load find box owns the input, re-run the search whenever the
+	// query changes so results filter live as the user types.
+	if !m.aiStreaming && m.aiFindMode {
+		query := strings.TrimSpace(m.aiInput.Value())
+		if query != m.aiLiveQuery {
+			m.aiLiveQuery = query
+			cmds = append(cmds, m.doLiveFind(query))
 		}
 	}
 
@@ -466,29 +504,10 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 	cmd := strings.ToLower(parts[0])
 	switch cmd {
 	case "/load", "/find": // /find is the legacy name; keep it working silently
+		// Open the vim-style fuzzy-find box. Any text after the command is used
+		// as the initial query so "/load foo" jumps straight to filtered results.
 		query := strings.TrimSpace(strings.TrimPrefix(raw, parts[0]))
-		if query == "" {
-			m.appendAISystem("Usage: /load <keyword or title>")
-			return nil
-		}
-		if m.meta == nil {
-			m.appendAISystem("Metadata store not available.")
-			return nil
-		}
-		matches, err := m.meta.SearchByName(context.Background(), query, 20)
-		if err != nil {
-			m.appendAISystem("Search error: " + err.Error())
-			return nil
-		}
-		if len(matches) == 0 {
-			m.appendAISystem(fmt.Sprintf("No files found matching %q.", query))
-			return nil
-		}
-		m.aiSearchResults = matches
-		m.aiSearchCursor = 0
-		m.aiSearchSelecting = true
-		m.aiFollowBottom = true // stick to bottom so the find list is visible
-		return nil
+		return m.enterFindMode(query)
 
 	case "/summarize":
 		return m.startSummarize()
@@ -569,7 +588,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 func goraeHelpText() string {
 	return strings.TrimSpace(`
 Gorae AI slash commands:
-  /load <q>   — find files and load one into chat context; ↑/↓/Enter select
+  /load       — open a fuzzy-find box to load a file into chat context; type to filter, ↑/↓/Enter select
   /select     — clear the current file focus
   /summarize  — summarize focused file and save to its note
   /clear      — clear chat history (also removes from saved session)
