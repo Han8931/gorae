@@ -10,11 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/cursor"
+	key "github.com/charmbracelet/bubbles/key"
+	textarea "github.com/charmbracelet/bubbles/textarea"
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Han8931/gorae/internal/ai"
 	"github.com/Han8931/gorae/internal/config"
@@ -57,8 +61,16 @@ const autoCompactThreshold = 40 // auto-compact after this many messages
 // Placeholder shown in the chat input in its default (ask-anything) state and
 // while the /load fuzzy-find box is active, respectively.
 const (
-	goraeAskPlaceholder  = " ask anything…  (Esc → navigate past messages • /help)"
-	goraeFindPlaceholder = " search title or filename…  (↑/↓ move · Enter select · Esc cancel)"
+	goraeAskPlaceholder  = "ask anything…  (Ctrl+J newline · Esc navigate · /help)"
+	goraeFindPlaceholder = "type to search titles & contents…"
+)
+
+// Chat input box geometry: the multi-line textarea shows goraeInputTextareaRows
+// rows, and the whole boxed region (badge/hint header + top & bottom borders)
+// occupies goraeInputBoxRows rows in the layout.
+const (
+	goraeInputTextareaRows = 3
+	goraeInputBoxRows      = goraeInputTextareaRows + 3
 )
 
 type aiLiveFindMsg struct {
@@ -72,17 +84,97 @@ func (m *Model) doLiveFind(query string) tea.Cmd {
 		if store == nil {
 			return aiLiveFindMsg{query: query}
 		}
-		// An empty query matches every indexed file (SearchByName uses a LIKE
-		// pattern), which is what the /load box shows before the user filters.
-		results, err := store.SearchByName(context.Background(), strings.TrimSpace(query), 8)
+		ctx := context.Background()
+		q := strings.TrimSpace(query)
+
+		// Title / filename matches first. An empty query matches every indexed
+		// file (SearchByName uses a LIKE pattern), so the box lists everything
+		// before the user starts typing.
+		results, err := store.SearchByName(ctx, q, 8)
 		if err != nil {
-			return aiLiveFindMsg{query: query}
+			results = nil
 		}
+		seen := make(map[string]bool, len(results))
+		for _, r := range results {
+			seen[r.Path] = true
+		}
+
+		// Full-text content matches, so a paper can be found by what it says and
+		// not just its title. Each carries a snippet around the hit.
+		if ftsQuery := buildFTSPrefixQuery(q); ftsQuery != "" {
+			if hits, err := store.SearchFTS(ctx, ftsQuery, 8); err == nil {
+				for _, h := range hits {
+					if seen[h.Path] {
+						continue
+					}
+					seen[h.Path] = true
+					results = append(results, meta.NameMatch{
+						Path:    h.Path,
+						Title:   titleForPath(store, ctx, h.Path),
+						Snippet: cleanFTSSnippet(h.Snippet),
+					})
+				}
+			}
+		}
+
 		return aiLiveFindMsg{query: query, results: results}
 	}
 }
 
+// buildFTSPrefixQuery turns a free-text query into a safe FTS5 MATCH expression.
+// Each word becomes a prefix term (word*) so results update as the user types;
+// non-alphanumeric characters are dropped to avoid FTS5 syntax errors. Returns
+// "" when there is nothing searchable (e.g. an empty query).
+func buildFTSPrefixQuery(query string) string {
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	if len(fields) == 0 {
+		return ""
+	}
+	for i, f := range fields {
+		fields[i] = f + "*"
+	}
+	return strings.Join(fields, " ")
+}
+
+// cleanFTSSnippet flattens an FTS snippet to a single line: the '**' markers that
+// bracket the matched terms are removed and runs of whitespace are collapsed.
+func cleanFTSSnippet(s string) string {
+	s = strings.ReplaceAll(s, "**", "")
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// titleForPath returns the stored metadata title for a file, falling back to the
+// filename stem when no title is recorded.
+func titleForPath(store *meta.Store, ctx context.Context, path string) string {
+	if md, err := store.Get(ctx, path); err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+		return md.Title
+	}
+	base := filepath.Base(path)
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
 // ── entry / exit ──────────────────────────────────────────────────────────────
+
+// newGoraeTextarea builds the multi-line chat message box with its static
+// configuration. Enter sends (handled in the key loop), so newline insertion is
+// rebound to Ctrl+J. It must be created via textarea.New() — a zero-value
+// textarea.Model panics on SetWidth — so this is used both at model construction
+// and when (re)entering the chat.
+func newGoraeTextarea() textarea.Model {
+	ta := textarea.New()
+	ta.Placeholder = goraeAskPlaceholder
+	ta.CharLimit = 4096
+	ta.ShowLineNumbers = false
+	ta.Prompt = ""
+	ta.EndOfBufferCharacter = ' '
+	ta.SetHeight(goraeInputTextareaRows)
+	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("ctrl+j"), key.WithHelp("ctrl+j", "newline"))
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle() // no full-width current-line highlight
+	ta.Cursor.SetMode(cursor.CursorStatic)
+	return ta
+}
 
 func (m *Model) enterGoraeChat() tea.Cmd {
 	// Always enter the chat view; errors are shown as chat messages so the
@@ -116,12 +208,22 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 		}
 	}
 
+	// Single-line input used only by the /load find box.
 	inp := textinput.New()
-	inp.Placeholder = goraeAskPlaceholder
+	inp.Placeholder = goraeFindPlaceholder
 	inp.CharLimit = 4096
 	inp.Cursor.SetMode(cursor.CursorStatic)
-	inp.Focus()
+	inp.Blur()
 	m.aiInput = inp
+
+	// Multi-line input box for composing chat messages.
+	ta := newGoraeTextarea()
+	if taW := m.width - 4; taW > 0 {
+		ta.SetWidth(taW)
+	}
+	ta.Focus()
+	m.aiTextarea = ta
+
 	m.aiStreaming = false
 	m.aiStreamBuf = ""
 	m.aiMessages = nil
@@ -201,12 +303,13 @@ func (m *Model) enterFindMode(query string) tea.Cmd {
 	m.aiLiveQuery = query
 	m.aiInput.SetValue(query)
 	m.aiInput.CursorEnd()
-	m.aiInput.Placeholder = goraeFindPlaceholder
+	m.aiTextarea.Blur()
+	m.aiInput.Focus()
 	m.aiFollowBottom = true // stick to bottom so the find box stays visible
 	return m.doLiveFind(query)
 }
 
-// exitFindMode closes the find box and restores the normal chat input.
+// exitFindMode closes the find box and returns focus to the chat message box.
 func (m *Model) exitFindMode() {
 	m.aiFindMode = false
 	m.aiSearchSelecting = false
@@ -214,7 +317,9 @@ func (m *Model) exitFindMode() {
 	m.aiSearchCursor = 0
 	m.aiLiveQuery = ""
 	m.aiInput.SetValue("")
-	m.aiInput.Placeholder = goraeAskPlaceholder
+	m.aiInput.Width = 0 // undo the width the modal set on the find input
+	m.aiInput.Blur()
+	m.aiTextarea.Focus()
 }
 
 func (m *Model) goraeSelectCurrent() {
@@ -228,7 +333,9 @@ func (m *Model) goraeSelectCurrent() {
 	m.aiSearchResults = nil
 	m.aiLiveQuery = ""
 	m.aiInput.SetValue("")
-	m.aiInput.Placeholder = goraeAskPlaceholder
+	m.aiInput.Width = 0 // undo the width the modal set on the find input
+	m.aiInput.Blur()
+	m.aiTextarea.Focus()
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
@@ -256,6 +363,7 @@ func (m *Model) exitGoraeChat() {
 	m.aiMsgMarks = nil
 	m.aiLastNavKey = ""
 	m.aiInput.Blur()
+	m.aiTextarea.Blur()
 	m.setPersistentStatus("")
 }
 
@@ -374,26 +482,31 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enterAINormalMode()
 			return m, nil
 		case "up":
-			m.goraeHistoryBack()
-			return m, nil
+			// Recall history only when the cursor is on the very first visual row
+			// (top of the first logical line); otherwise let the cursor move up.
+			if m.aiTextarea.Line() == 0 && m.aiTextarea.LineInfo().RowOffset == 0 {
+				m.goraeHistoryBack()
+				return m, nil
+			}
 		case "down":
-			m.goraeHistoryForward()
-			return m, nil
+			// Recall history only when the cursor is on the very last visual row
+			// (bottom of the last logical line); otherwise let the cursor move down.
+			li := m.aiTextarea.LineInfo()
+			if m.aiTextarea.Line() >= m.aiTextarea.LineCount()-1 && li.RowOffset >= li.Height-1 {
+				m.goraeHistoryForward()
+				return m, nil
+			}
 		case "tab":
 			if cmd := m.goraeAutocomplete(); cmd != nil {
 				return m, cmd
 			}
 			return m, nil
 		case "enter":
-			if m.aiSearchSelecting {
-				m.goraeSelectCurrent()
-				return m, nil
-			}
-			raw := strings.TrimSpace(m.aiInput.Value())
+			raw := strings.TrimSpace(m.aiTextarea.Value())
 			if raw == "" {
 				return m, nil
 			}
-			m.aiInput.SetValue("")
+			m.aiTextarea.Reset()
 			if strings.HasPrefix(raw, "/") {
 				return m, m.handleGoraeSlashCommand(raw)
 			}
@@ -428,8 +541,14 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Route input to the /load find box (single-line) or the chat message box
+	// (multi-line) depending on which is active.
 	var inputCmd tea.Cmd
-	m.aiInput, inputCmd = m.aiInput.Update(msg)
+	if m.aiFindMode {
+		m.aiInput, inputCmd = m.aiInput.Update(msg)
+	} else if !m.aiNormalMode {
+		m.aiTextarea, inputCmd = m.aiTextarea.Update(msg)
+	}
 	cmds = append(cmds, inputCmd)
 
 	// While the /load find box owns the input, re-run the search whenever the
@@ -453,7 +572,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 var goraeSlashCommands = []string{"/load", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
 
 func (m *Model) goraeAutocomplete() tea.Cmd {
-	val := m.aiInput.Value()
+	val := m.aiTextarea.Value()
 	if !strings.HasPrefix(val, "/") {
 		return nil
 	}
@@ -485,23 +604,53 @@ func (m *Model) goraeAutocomplete() tea.Cmd {
 		}
 	}
 	if len(matches) == 1 {
-		m.aiInput.SetValue(lcp + " ")
+		m.aiTextarea.SetValue(lcp + " ")
 	} else {
-		m.aiInput.SetValue(lcp)
+		m.aiTextarea.SetValue(lcp)
 	}
-	m.aiInput.CursorEnd()
+	m.aiTextarea.CursorEnd()
 
 	// When Tab uniquely resolves to /sessions, open the list immediately.
 	if len(matches) == 1 && lcp == "/sessions" {
-		m.aiInput.SetValue("")
+		m.aiTextarea.SetValue("")
 		return m.enterSessionList()
 	}
 	return nil
 }
 
+// resolveSlashCommand expands an unambiguous prefix to its full command name so
+// that "/sum" or "/summ" resolve to "/summarize". An exact match always wins; an
+// ambiguous prefix (e.g. "/s", which could be /select, /summarize, …) or an
+// unknown one is returned unchanged so the caller can report it.
+func (m *Model) resolveSlashCommand(cmd string) string {
+	known := make([]string, 0, len(goraeSlashCommands)+len(m.aiUserSkills))
+	known = append(known, goraeSlashCommands...)
+	for _, sk := range m.aiUserSkills {
+		known = append(known, "/"+sk.Name)
+	}
+	for _, k := range known {
+		if k == cmd {
+			return cmd
+		}
+	}
+	match := ""
+	for _, k := range known {
+		if strings.HasPrefix(k, cmd) {
+			if match != "" {
+				return cmd // ambiguous — leave it to the caller to reject
+			}
+			match = k
+		}
+	}
+	if match != "" {
+		return match
+	}
+	return cmd
+}
+
 func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 	parts := strings.Fields(raw)
-	cmd := strings.ToLower(parts[0])
+	cmd := m.resolveSlashCommand(strings.ToLower(parts[0]))
 	switch cmd {
 	case "/load", "/find": // /find is the legacy name; keep it working silently
 		// Open the vim-style fuzzy-find box. Any text after the command is used
@@ -635,7 +784,7 @@ func (m *Model) enterAINormalMode() {
 		return
 	}
 	m.aiNormalMode = true
-	m.aiInput.Blur()
+	m.aiTextarea.Blur()
 	// Snap cursor to the last message — most users land here from "I just sent
 	// something, let me look at the answer".
 	m.aiMsgCursor = len(m.aiMessages) - 1
@@ -655,7 +804,7 @@ func (m *Model) enterAINormalMode() {
 func (m *Model) enterAIInsertMode() {
 	m.aiNormalMode = false
 	m.aiLastNavKey = ""
-	m.aiInput.Focus()
+	m.aiTextarea.Focus()
 	m.aiFollowBottom = true
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
@@ -802,8 +951,8 @@ func (m *Model) handleGoraeNormalKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/":
 		m.enterAIInsertMode()
-		m.aiInput.SetValue("/")
-		m.aiInput.CursorEnd()
+		m.aiTextarea.SetValue("/")
+		m.aiTextarea.CursorEnd()
 		return m, nil
 	case "?":
 		m.appendAISystem(goraeHelpText())
@@ -862,7 +1011,7 @@ func (m *Model) handleGoraeNormalKey(key string) (tea.Model, tea.Cmd) {
 // current chat content and viewport. Mirrors the layout maths in renderGoraeView.
 func (m *Model) aiChatMaxScroll() int {
 	width := m.width
-	height := m.viewportHeight
+	height := m.windowHeight
 	if width <= 0 {
 		width = 80
 	}
@@ -871,17 +1020,15 @@ func (m *Model) aiChatMaxScroll() int {
 	}
 
 	overlayLines := 0
-	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
-		overlayLines = len(m.buildFindOverlay(width))
-	} else if !m.aiStreaming {
+	if !m.aiStreaming {
 		muted := m.styles.Preview.Body
 		accent := m.styles.StatusValue
 		bright := m.styles.Preview.Info
 		overlayLines = len(m.goraeCommandHint(muted, accent, bright))
 	}
 
-	const inputRows, statusRows, sepRows, paddingRows = 1, 1, 1, 1
-	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - overlayLines
+	const statusRows, sepRows = 1, 1
+	chatHeight := height - m.goraeInputRegionRows() - statusRows - sepRows - overlayLines
 	if chatHeight < 3 {
 		chatHeight = 3
 	}
@@ -903,7 +1050,7 @@ func (m *Model) ensureMessageCursorVisible() {
 		return
 	}
 	width := m.width
-	height := m.viewportHeight
+	height := m.windowHeight
 	if width <= 0 {
 		width = 80
 	}
@@ -912,16 +1059,14 @@ func (m *Model) ensureMessageCursorVisible() {
 	}
 
 	overlayLines := 0
-	if m.aiSearchSelecting && len(m.aiSearchResults) > 0 {
-		overlayLines = len(m.buildFindOverlay(width))
-	} else if !m.aiStreaming {
+	if !m.aiStreaming {
 		muted := m.styles.Preview.Body
 		accent := m.styles.StatusValue
 		bright := m.styles.Preview.Info
 		overlayLines = len(m.goraeCommandHint(muted, accent, bright))
 	}
-	const inputRows, statusRows, sepRows, paddingRows = 1, 1, 1, 1
-	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - overlayLines
+	const statusRows, sepRows = 1, 1
+	chatHeight := height - m.goraeInputRegionRows() - statusRows - sepRows - overlayLines
 	if chatHeight < 3 {
 		chatHeight = 3
 	}
@@ -1100,13 +1245,13 @@ func (m *Model) goraeHistoryBack() {
 		return
 	}
 	if m.aiHistoryCursor == -1 {
-		m.aiHistoryDraft = m.aiInput.Value()
+		m.aiHistoryDraft = m.aiTextarea.Value()
 		m.aiHistoryCursor = len(m.aiInputHistory) - 1
 	} else if m.aiHistoryCursor > 0 {
 		m.aiHistoryCursor--
 	}
-	m.aiInput.SetValue(m.aiInputHistory[m.aiHistoryCursor])
-	m.aiInput.CursorEnd()
+	m.aiTextarea.SetValue(m.aiInputHistory[m.aiHistoryCursor])
+	m.aiTextarea.CursorEnd()
 }
 
 func (m *Model) goraeHistoryForward() {
@@ -1116,11 +1261,11 @@ func (m *Model) goraeHistoryForward() {
 	m.aiHistoryCursor++
 	if m.aiHistoryCursor >= len(m.aiInputHistory) {
 		m.aiHistoryCursor = -1
-		m.aiInput.SetValue(m.aiHistoryDraft)
+		m.aiTextarea.SetValue(m.aiHistoryDraft)
 	} else {
-		m.aiInput.SetValue(m.aiInputHistory[m.aiHistoryCursor])
+		m.aiTextarea.SetValue(m.aiInputHistory[m.aiHistoryCursor])
 	}
-	m.aiInput.CursorEnd()
+	m.aiTextarea.CursorEnd()
 }
 
 // ── message submission + RAG ──────────────────────────────────────────────────

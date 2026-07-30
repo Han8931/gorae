@@ -164,6 +164,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewportHeight = 1
 		}
 		m.width = msg.Width
+		// Keep the chat message box's wrap width in sync. Guarded to stateGorae:
+		// the textarea is only initialized/used there, and SetWidth panics on a
+		// zero-value textarea (e.g. in unit tests that build a bare Model).
+		if m.state == stateGorae {
+			if taW := m.width - 4; taW > 0 {
+				m.aiTextarea.SetWidth(taW)
+			}
+		}
 		m.ensureCursorVisible()
 		m.clampMetaPopupOffset()
 		if m.state == stateSearchResults {

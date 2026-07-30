@@ -456,8 +456,9 @@ WHERE path LIKE ? ESCAPE '\'
 
 // NameMatch is a single result from SearchByName.
 type NameMatch struct {
-	Path  string
-	Title string // metadata title if available, otherwise stem of the filename
+	Path    string
+	Title   string // metadata title if available, otherwise stem of the filename
+	Snippet string // set for full-text content matches: a short excerpt around the hit
 }
 
 // SearchByName searches the metadata table for files whose title or filename

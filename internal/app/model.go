@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	textarea "github.com/charmbracelet/bubbles/textarea"
 	textinput "github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -166,8 +167,9 @@ type Model struct {
 	metaDraft       meta.Metadata // draft being edited
 
 	// AI chat (:gorae)
-	aiMessages        []ai.Message // full conversation history
-	aiInput           textinput.Model
+	aiMessages        []ai.Message    // full conversation history
+	aiInput           textinput.Model // single-line input for the /load find box
+	aiTextarea        textarea.Model  // multi-line input box for chat messages
 	aiStreaming       bool
 	aiRawBuf          string   // raw stream including <think> tags
 	aiStreamBuf       string   // display content (outside <think> blocks)
@@ -565,6 +567,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		cwd:                   root,
 		selected:              make(map[string]bool),
 		input:                 ti,
+		aiTextarea:            newGoraeTextarea(),
 		viewportHeight:        20,
 		meta:                  store,
 		sortMode:              sortByName,

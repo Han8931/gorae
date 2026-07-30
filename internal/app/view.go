@@ -719,12 +719,8 @@ func (m Model) View() string {
 	case stateArxivPrompt:
 		promptLine = m.renderPromptLine("arxiv", m.input.View())
 	}
-	b.WriteString("\n")
-	b.WriteString(m.renderStatusBar())
-	b.WriteString("\n")
-	if promptLine != "" {
-		b.WriteString(promptLine + "\n")
-	}
+	// Inline command output (e.g. the result of a : command) renders above the
+	// prompt and status bar.
 	if len(m.commandOutput) > 0 {
 		lines := m.commandOutput
 		if m.width > 0 {
@@ -767,6 +763,17 @@ func (m Model) View() string {
 			b.WriteString(summary + "\n")
 		}
 	}
+
+	// The prompt (or a blank spacer when idle) sits directly above the status
+	// bar. The status bar is written last, with no trailing newline, so it stays
+	// pinned to the very bottom row of the screen.
+	b.WriteString("\n")
+	if promptLine != "" {
+		b.WriteString(promptLine + "\n")
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString(m.renderStatusBar())
 
 	if overlay := m.graphicPreviewOverlay(); overlay != "" {
 		b.WriteString(overlay)

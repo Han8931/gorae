@@ -13,7 +13,11 @@ import (
 
 func (m *Model) renderGoraeView() string {
 	width := m.width
-	height := m.viewportHeight
+	// The chat view is full-screen (no "Dir:" header), so it fills the whole
+	// window height. Using windowHeight — not viewportHeight, which is reserved
+	// for the file browser's header/footer chrome — keeps the status bar pinned
+	// to the very bottom row instead of floating a few lines above it.
+	height := m.windowHeight
 	if width <= 0 {
 		width = 80
 	}
@@ -21,23 +25,25 @@ func (m *Model) renderGoraeView() string {
 		height = 24
 	}
 
+	// The /load fuzzy-find box takes over the screen as a centered modal.
+	if m.aiFindMode {
+		return m.renderFindModal(width, height)
+	}
+
 	// Build overlay lines shown between separator and input.
 	var overlayLines []string
-	if m.aiSearchSelecting {
-		overlayLines = m.buildFindOverlay(width)
-	} else if !m.aiStreaming {
+	if !m.aiStreaming {
 		muted := m.styles.Preview.Body
 		accent := m.styles.StatusValue
 		bright := m.styles.Preview.Info
 		overlayLines = m.goraeCommandHint(muted, accent, bright)
 	}
 
-	// Layout: status(1) + input(1) + separator(1) + overlay + padding(1)
-	const inputRows = 1
+	// Layout, bottom-anchored: chat + separator(1) + overlay + input region + status(1).
 	const statusRows = 1
 	const sepRows = 1
-	const paddingRows = 1
-	chatHeight := height - inputRows - statusRows - sepRows - paddingRows - len(overlayLines)
+	inputRegionRows := m.goraeInputRegionRows()
+	chatHeight := height - inputRegionRows - statusRows - sepRows - len(overlayLines)
 	if chatHeight < 3 {
 		chatHeight = 3
 	}
@@ -95,17 +101,18 @@ func (m *Model) renderGoraeView() string {
 		fmt.Fprintln(&b, ol)
 	}
 
-	// Input row — the leftmost badge doubles as the mode indicator so it sits
-	// right next to where the user is looking when they wonder why typing
-	// doesn't work.
+	// Input region. During streaming/compacting/normal mode it collapses to a
+	// single status line; while composing it is the multi-line message box.
 	if m.aiStreaming {
 		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
 		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
 		b.WriteString(m.styles.StatusValue.Render(" Thinking…  Esc to stop"))
+		b.WriteString("\n")
 	} else if m.aiCompacting {
 		frame := spinnerFrames[m.aiSpinnerFrame%len(spinnerFrames)]
 		b.WriteString(m.styles.StatusLabel.Render(" " + frame + " "))
 		b.WriteString(m.styles.StatusValue.Render(" Compacting…"))
+		b.WriteString("\n")
 	} else if m.aiNormalMode {
 		normalBadge := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#000000")).
@@ -119,13 +126,15 @@ func (m *Model) renderGoraeView() string {
 		}
 		b.WriteString(normalBadge)
 		b.WriteString(hintStyle.Render(hint))
+		b.WriteString("\n")
 	} else {
-		b.WriteString(m.styles.StatusLabel.Render(" YOU "))
-		b.WriteString(" " + m.aiInput.View())
+		for _, line := range m.renderGoraeInputBox(width) {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
 	}
-	b.WriteString("\n")
 
-	// Status bar
+	// Status bar — the final line, pinned to the bottom row.
 	b.WriteString(m.renderStatusBar())
 
 	return b.String()
@@ -324,41 +333,139 @@ func renderToolResultLines(name, content string, wrapW int) []string {
 	return lines
 }
 
-// buildFindOverlay renders the live /find results as an fzf-style bottom overlay.
-func (m Model) buildFindOverlay(width int) []string {
-	labelStyle := m.styles.StatusValue
+// renderFindModal renders the /load fuzzy-find box as a centered floating modal,
+// telescope/fzf style: a search input on top and a scroll of results below, each
+// row showing the title, the filename, and (for content hits) a matching snippet.
+// The main status bar stays pinned to the bottom row of the screen.
+func (m *Model) renderFindModal(width, height int) string {
 	titleStyle := m.styles.Preview.Info
+	labelStyle := m.styles.StatusValue
 	mutedStyle := m.styles.Preview.Body
 	cursorStyle := m.styles.StatusLabel
+	borderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7aa2f7")).
+		Padding(0, 1)
 
-	wrapW := width - 6
-	if wrapW < 20 {
-		wrapW = 20
+	// Box is ~3/4 of the screen, clamped to a comfortable range.
+	boxW := width * 3 / 4
+	if boxW > 96 {
+		boxW = 96
+	}
+	if boxW < 30 {
+		boxW = 30
+	}
+	innerW := boxW - 2 // account for horizontal padding
+	if innerW < 20 {
+		innerW = 20
 	}
 
-	var lines []string
-	lines = append(lines, mutedStyle.Render("  ↑/↓ navigate · Enter select · Esc cancel"))
+	// Search input row.
+	m.aiInput.Width = innerW - 3
+	var b strings.Builder
+	b.WriteString(labelStyle.Render(" Load file into context"))
+	b.WriteByte('\n')
+	b.WriteString(m.aiInput.View())
+	b.WriteByte('\n')
+	b.WriteString(mutedStyle.Render(strings.Repeat("─", innerW)))
+	b.WriteByte('\n')
+
+	// How many result lines fit: leave room for borders, the three header rows
+	// above, the footer row, and a little breathing space around the box.
+	maxBodyLines := height - 8
+	if maxBodyLines < 2 {
+		maxBodyLines = 2
+	}
+
 	if len(m.aiSearchResults) == 0 {
-		lines = append(lines, "      "+mutedStyle.Render("no matches"))
-		return lines
-	}
-	for i, r := range m.aiSearchResults {
-		title := runewidth.Truncate(r.Title, wrapW-4, "…")
-		fname := runewidth.Truncate(filepath.Base(r.Path), wrapW-6, "…")
-		if i == m.aiSearchCursor {
-			lines = append(lines, "  "+cursorStyle.Render(" ▶ ")+labelStyle.Render(" "+title+" "))
-			lines = append(lines, "      "+mutedStyle.Render(fname))
-		} else {
-			lines = append(lines, "      "+titleStyle.Render(title))
-			lines = append(lines, "        "+mutedStyle.Render(fname))
+		b.WriteString(mutedStyle.Render("  no matches"))
+	} else {
+		used := 0
+		for i, r := range m.aiSearchResults {
+			// Each result needs up to 2 lines (title + detail); stop before overflow.
+			if used+2 > maxBodyLines && i != m.aiSearchCursor {
+				break
+			}
+			title := runewidth.Truncate(r.Title, innerW-4, "…")
+			detail := filepath.Base(r.Path)
+			if strings.TrimSpace(r.Snippet) != "" {
+				detail = r.Snippet
+			}
+			detail = runewidth.Truncate(detail, innerW-4, "…")
+			if i == m.aiSearchCursor {
+				b.WriteString(cursorStyle.Render(" › ") + labelStyle.Render(title))
+				b.WriteByte('\n')
+				b.WriteString("   " + mutedStyle.Render(detail))
+			} else {
+				b.WriteString("   " + titleStyle.Render(title))
+				b.WriteByte('\n')
+				b.WriteString("   " + mutedStyle.Render(detail))
+			}
+			b.WriteByte('\n')
+			used += 2
 		}
 	}
-	return lines
+
+	// Footer hint.
+	b.WriteByte('\n')
+	b.WriteString(mutedStyle.Render("↑/↓ move · Enter select · Esc cancel · searches titles + contents"))
+
+	box := borderStyle.Width(boxW).Render(b.String())
+
+	// Center the box in every row except the last, which holds the status bar.
+	centerArea := height - 1
+	if centerArea < 1 {
+		centerArea = 1
+	}
+	placed := lipgloss.Place(width, centerArea, lipgloss.Center, lipgloss.Center, box)
+	return placed + "\n" + m.renderStatusBar()
+}
+
+// goraeInputRegionRows reports how many rows the input region occupies for the
+// current mode. It must match what renderGoraeView emits so the status bar stays
+// pinned to the bottom and scroll math (aiChatMaxScroll) lines up.
+func (m *Model) goraeInputRegionRows() int {
+	if m.aiStreaming || m.aiCompacting || m.aiNormalMode {
+		return 1
+	}
+	return goraeInputBoxRows
+}
+
+// renderGoraeInputBox renders the multi-line chat message box: a " YOU " badge
+// and hint line, then the textarea framed in a rounded border. It always returns
+// exactly goraeInputBoxRows lines.
+func (m *Model) renderGoraeInputBox(width int) []string {
+	if width < 12 {
+		width = 12
+	}
+	// Total box width == width; the border adds 2 columns, padding adds 2 more.
+	boxContentW := width - 2
+	m.aiTextarea.SetWidth(boxContentW - 2)
+	m.aiTextarea.SetHeight(goraeInputTextareaRows)
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#7aa2f7")).
+		Padding(0, 1).
+		Width(boxContentW)
+
+	badge := m.styles.StatusLabel.Render(" YOU ")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true).
+		Render("  Enter send · Ctrl+J newline · Esc navigate")
+
+	lines := []string{badge + hint}
+	lines = append(lines, strings.Split(boxStyle.Render(m.aiTextarea.View()), "\n")...)
+
+	// Guard against geometry surprises so the caller's row budget always holds.
+	for len(lines) < goraeInputBoxRows {
+		lines = append(lines, "")
+	}
+	return lines[:goraeInputBoxRows]
 }
 
 func (m Model) goraeCommandHint(muted, accent, bright lipgloss.Style) []string {
-	val := m.aiInput.Value()
-	if !strings.HasPrefix(val, "/") || strings.ContainsRune(val, ' ') {
+	val := m.aiTextarea.Value()
+	if !strings.HasPrefix(val, "/") || strings.ContainsRune(val, ' ') || strings.ContainsRune(val, '\n') {
 		return nil
 	}
 	lower := strings.ToLower(val)
