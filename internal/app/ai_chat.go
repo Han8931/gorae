@@ -311,6 +311,7 @@ func (m *Model) enterFindMode(query string) tea.Cmd {
 	m.aiSearchSelecting = true
 	m.aiSearchResults = nil
 	m.aiSearchCursor = 0
+	m.aiFindMarked = nil
 	m.aiLiveQuery = query
 	m.aiInput.SetValue(query)
 	m.aiInput.CursorEnd()
@@ -326,6 +327,7 @@ func (m *Model) exitFindMode() {
 	m.aiSearchSelecting = false
 	m.aiSearchResults = nil
 	m.aiSearchCursor = 0
+	m.aiFindMarked = nil
 	m.aiLiveQuery = ""
 	m.aiInput.SetValue("")
 	m.aiInput.Width = 0 // undo the width the modal set on the find input
@@ -511,27 +513,55 @@ func parseFocusedPaths(stored string) []string {
 	return out
 }
 
-func (m *Model) goraeSelectCurrent() {
-	if len(m.aiSearchResults) == 0 {
-		return
+// toggleFindMark checks/unchecks a paper path in the find box's multi-select set.
+func (m *Model) toggleFindMark(path string) {
+	for i, p := range m.aiFindMarked {
+		if p == path {
+			m.aiFindMarked = append(m.aiFindMarked[:i], m.aiFindMarked[i+1:]...)
+			return
+		}
 	}
-	chosen := m.aiSearchResults[m.aiSearchCursor]
-	added := m.addFocusedPaper(chosen.Path)
-	m.aiFindMode = false
-	m.aiSearchSelecting = false
-	m.aiSearchResults = nil
-	m.aiLiveQuery = ""
-	m.aiInput.SetValue("")
-	m.aiInput.Width = 0 // undo the width the modal set on the find input
-	m.aiInput.Blur()
-	m.aiTextarea.Focus()
+	m.aiFindMarked = append(m.aiFindMarked, path)
+}
+
+func (m *Model) isFindMarked(path string) bool { return sliceContains(m.aiFindMarked, path) }
+
+// goraeConfirmFind loads the checked papers (or, if none are checked, the paper
+// under the cursor) into the conversation context and closes the find box.
+func (m *Model) goraeConfirmFind() {
+	// Gather the paths to load: the marked set, else the cursor row.
+	type pick struct{ path, title string }
+	var picks []pick
+	if len(m.aiFindMarked) > 0 {
+		ctx := context.Background()
+		for _, p := range m.aiFindMarked {
+			picks = append(picks, pick{p, titleForPath(m.meta, ctx, p)})
+		}
+	} else if len(m.aiSearchResults) > 0 {
+		c := m.aiSearchResults[m.aiSearchCursor]
+		picks = append(picks, pick{c.Path, c.Title})
+	}
+
+	m.exitFindMode() // resets find state (incl. marks) and returns focus to the chat box
+
+	var added []string
+	for _, pk := range picks {
+		if m.addFocusedPaper(pk.path) {
+			added = append(added, pk.title)
+		}
+	}
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
-	if added {
-		m.appendAISystem(fmt.Sprintf("Added to context: %s  (%d in context — /unfocus to clear)", chosen.Title, len(m.aiFocusedFiles)))
-	} else {
-		m.appendAISystem("Already in context: " + chosen.Title)
+	switch len(added) {
+	case 0:
+		if len(picks) > 0 {
+			m.appendAISystem("Already in context.")
+		}
+	case 1:
+		m.appendAISystem(fmt.Sprintf("Added to context: %s  (%d in context — /unfocus to clear)", added[0], len(m.aiFocusedFiles)))
+	default:
+		m.appendAISystem(fmt.Sprintf("Added %d papers to context: %s  (%d total — /unfocus to clear)", len(added), strings.Join(added, ", "), len(m.aiFocusedFiles)))
 	}
 	m.persistFocusedPapers()
 }
@@ -655,8 +685,14 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.aiSearchCursor++
 				}
 				return m, nil
+			case "tab":
+				// Toggle the current row in the multi-select set.
+				if m.aiSearchCursor < len(m.aiSearchResults) {
+					m.toggleFindMark(m.aiSearchResults[m.aiSearchCursor].Path)
+				}
+				return m, nil
 			case "enter":
-				m.goraeSelectCurrent()
+				m.goraeConfirmFind()
 				return m, nil
 			}
 			// Typing keys fall through to the input so the live filter updates.
@@ -951,7 +987,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 func goraeHelpText() string {
 	return strings.TrimSpace(`
 Gorae AI slash commands:
-  /load       — add a paper to the conversation (fuzzy-find box; ↑/↓/Enter). Or just mention a paper and it's pulled in.
+  /load       — add paper(s) to the conversation (fuzzy-find box; ↑/↓ move, Tab multi-select, Enter load). Or just mention a paper.
   /unfocus    — clear all papers from the conversation
   /summarize  — summarize the focused paper and save to its note
   /clear      — clear chat history (also removes from saved session)

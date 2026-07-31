@@ -182,6 +182,7 @@ type Model struct {
 	aiSearchResults   []meta.NameMatch   // live find results shown in overlay
 	aiSearchSelecting bool               // true while the find overlay is active
 	aiFindMode        bool               // true while the /load fuzzy-find box owns the input
+	aiFindMarked      []string           // paper paths checked in the find box for multi-load (mark order)
 	aiSearchCursor    int                // highlighted row in the overlay
 	aiLiveQuery       string             // last query sent to live find
 	aiFocusedFiles    []string           // paper paths injected as context (most recent last)

@@ -176,7 +176,7 @@ func max(a, b int) int {
 }
 
 var goraeCommandDescs = []struct{ name, desc string }{
-	{"/load", "add a paper to the conversation (fuzzy-find box)"},
+	{"/load", "add paper(s) to the conversation — Tab to multi-select"},
 	{"/unfocus", "clear all papers from the conversation"},
 	{"/summarize", "summarize the focused paper and save to its note"},
 	{"/clear", "clear chat history"},
@@ -363,7 +363,11 @@ func (m *Model) renderFindModal(width, height int) string {
 	// Search input row.
 	m.aiInput.Width = innerW - 3
 	var b strings.Builder
-	b.WriteString(labelStyle.Render(" Load file into context"))
+	header := " Load papers into context"
+	if n := len(m.aiFindMarked); n > 0 {
+		header += fmt.Sprintf("  (%d selected)", n)
+	}
+	b.WriteString(labelStyle.Render(header))
 	b.WriteByte('\n')
 	b.WriteString(m.aiInput.View())
 	b.WriteByte('\n')
@@ -386,21 +390,24 @@ func (m *Model) renderFindModal(width, height int) string {
 			if used+2 > maxBodyLines && i != m.aiSearchCursor {
 				break
 			}
-			title := runewidth.Truncate(r.Title, innerW-4, "…")
+			title := runewidth.Truncate(r.Title, innerW-6, "…")
 			detail := filepath.Base(r.Path)
 			if strings.TrimSpace(r.Snippet) != "" {
 				detail = r.Snippet
 			}
-			detail = runewidth.Truncate(detail, innerW-4, "…")
-			if i == m.aiSearchCursor {
-				b.WriteString(cursorStyle.Render(" › ") + labelStyle.Render(title))
-				b.WriteByte('\n')
-				b.WriteString("   " + mutedStyle.Render(detail))
-			} else {
-				b.WriteString("   " + titleStyle.Render(title))
-				b.WriteByte('\n')
-				b.WriteString("   " + mutedStyle.Render(detail))
+			detail = runewidth.Truncate(detail, innerW-6, "…")
+
+			check := mutedStyle.Render("○ ")
+			if m.isFindMarked(r.Path) {
+				check = titleStyle.Render("◉ ")
 			}
+			if i == m.aiSearchCursor {
+				b.WriteString(cursorStyle.Render(" › ") + check + labelStyle.Render(title))
+			} else {
+				b.WriteString("   " + check + titleStyle.Render(title))
+			}
+			b.WriteByte('\n')
+			b.WriteString("     " + mutedStyle.Render(detail))
 			b.WriteByte('\n')
 			used += 2
 		}
@@ -408,7 +415,7 @@ func (m *Model) renderFindModal(width, height int) string {
 
 	// Footer hint.
 	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("↑/↓ move · Enter select · Esc cancel · searches titles + contents"))
+	b.WriteString(mutedStyle.Render("↑/↓ move · Tab select · Enter load · Esc cancel"))
 
 	box := borderStyle.Width(boxW).Render(b.String())
 

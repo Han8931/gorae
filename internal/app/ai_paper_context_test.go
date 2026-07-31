@@ -33,6 +33,26 @@ func TestAddFocusedPaperDedupAndCap(t *testing.T) {
 	}
 }
 
+func TestToggleFindMark(t *testing.T) {
+	var m Model
+	m.toggleFindMark("/a")
+	m.toggleFindMark("/b")
+	if !m.isFindMarked("/a") || !m.isFindMarked("/b") {
+		t.Fatal("expected /a and /b to be marked")
+	}
+	if len(m.aiFindMarked) != 2 {
+		t.Fatalf("expected 2 marks, got %d", len(m.aiFindMarked))
+	}
+	// Toggling again unmarks and preserves order of the rest.
+	m.toggleFindMark("/a")
+	if m.isFindMarked("/a") {
+		t.Fatal("expected /a to be unmarked")
+	}
+	if len(m.aiFindMarked) != 1 || m.aiFindMarked[0] != "/b" {
+		t.Fatalf("expected only /b to remain, got %v", m.aiFindMarked)
+	}
+}
+
 func TestParseFocusedPaths(t *testing.T) {
 	cases := []struct {
 		in   string
