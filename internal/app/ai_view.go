@@ -176,9 +176,9 @@ func max(a, b int) int {
 }
 
 var goraeCommandDescs = []struct{ name, desc string }{
-	{"/load", "open a fuzzy-find box to pick a file for chat context"},
-	{"/select", "clear focused file"},
-	{"/summarize", "summarize focused file and save to its note"},
+	{"/load", "add a paper to the conversation (fuzzy-find box)"},
+	{"/unfocus", "clear all papers from the conversation"},
+	{"/summarize", "summarize the focused paper and save to its note"},
 	{"/clear", "clear chat history"},
 	{"/compact", "summarise old messages to free up context window"},
 	{"/export", "save conversation to a file"},

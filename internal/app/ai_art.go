@@ -49,11 +49,13 @@ func (m Model) goraeWelcomeLines() []string {
 	lines = append(lines, "")
 	lines = append(lines,
 		infoStyle.Render("  고래 (Gorae) — your document library assistant."),
-		infoStyle.Render("  Ask anything. I'll find relevant context from your library."),
+		infoStyle.Render("  Just talk about a paper — \"summarize the paper on X\" or"),
+		infoStyle.Render("  \"compare the retrieval paper with the long-context one\" —"),
+		infoStyle.Render("  and I'll pull it from your library into the conversation."),
 	)
 	lines = append(lines, "")
 	lines = append(lines,
-		mutedStyle.Render("  /clear   /export   /sources   /help"),
+		mutedStyle.Render("  /load add a paper   /unfocus clear   /sources   /help"),
 		mutedStyle.Render("  Esc to return to the file browser."),
 	)
 

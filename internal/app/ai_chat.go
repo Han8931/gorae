@@ -78,47 +78,58 @@ type aiLiveFindMsg struct {
 	results []meta.NameMatch
 }
 
+// aiFocusResolvedMsg carries papers the no-tools resolver pulled into context so
+// the main update loop can add them to the focus set and persist them.
+type aiFocusResolvedMsg struct {
+	paths []string
+}
+
 func (m *Model) doLiveFind(query string) tea.Cmd {
 	store := m.meta
 	return func() tea.Msg {
-		if store == nil {
-			return aiLiveFindMsg{query: query}
-		}
-		ctx := context.Background()
-		q := strings.TrimSpace(query)
+		return aiLiveFindMsg{query: query, results: searchPapers(context.Background(), store, query, 8)}
+	}
+}
 
-		// Title / filename matches first. An empty query matches every indexed
-		// file (SearchByName uses a LIKE pattern), so the box lists everything
-		// before the user starts typing.
-		results, err := store.SearchByName(ctx, q, 8)
-		if err != nil {
-			results = nil
-		}
-		seen := make(map[string]bool, len(results))
-		for _, r := range results {
-			seen[r.Path] = true
-		}
+// searchPapers finds papers by title/filename (SearchByName) and by full-text
+// content (SearchFTS), merged with title matches first and content-only matches
+// carrying a snippet. An empty query lists everything (up to limit). This is the
+// shared engine for both the /load box and the find_papers tool.
+func searchPapers(ctx context.Context, store *meta.Store, query string, limit int) []meta.NameMatch {
+	if store == nil {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	q := strings.TrimSpace(query)
 
-		// Full-text content matches, so a paper can be found by what it says and
-		// not just its title. Each carries a snippet around the hit.
-		if ftsQuery := buildFTSPrefixQuery(q); ftsQuery != "" {
-			if hits, err := store.SearchFTS(ctx, ftsQuery, 8); err == nil {
-				for _, h := range hits {
-					if seen[h.Path] {
-						continue
-					}
-					seen[h.Path] = true
-					results = append(results, meta.NameMatch{
-						Path:    h.Path,
-						Title:   titleForPath(store, ctx, h.Path),
-						Snippet: cleanFTSSnippet(h.Snippet),
-					})
+	results, err := store.SearchByName(ctx, q, limit)
+	if err != nil {
+		results = nil
+	}
+	seen := make(map[string]bool, len(results))
+	for _, r := range results {
+		seen[r.Path] = true
+	}
+
+	if ftsQuery := buildFTSPrefixQuery(q); ftsQuery != "" {
+		if hits, err := store.SearchFTS(ctx, ftsQuery, limit); err == nil {
+			for _, h := range hits {
+				if seen[h.Path] {
+					continue
 				}
+				seen[h.Path] = true
+				results = append(results, meta.NameMatch{
+					Path:    h.Path,
+					Title:   titleForPath(store, ctx, h.Path),
+					Snippet: cleanFTSSnippet(h.Snippet),
+				})
 			}
 		}
-
-		return aiLiveFindMsg{query: query, results: results}
 	}
+
+	return results
 }
 
 // buildFTSPrefixQuery turns a free-text query into a safe FTS5 MATCH expression.
@@ -253,11 +264,11 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 
 	// Load persisted messages and focused file when resuming a saved session.
 	if m.aiSessionID > 0 && m.meta != nil {
-		// Restore focused file.
+		// Restore focused papers (stored newline-joined for multi-paper sessions).
 		if sessions, err := m.meta.ListSessions(context.Background()); err == nil {
 			for _, s := range sessions {
 				if s.ID == m.aiSessionID && s.FocusedFile != "" {
-					m.aiFocusedFile = s.FocusedFile
+					m.aiFocusedFiles = parseFocusedPaths(s.FocusedFile)
 					break
 				}
 			}
@@ -322,12 +333,190 @@ func (m *Model) exitFindMode() {
 	m.aiTextarea.Focus()
 }
 
+// ── focused paper set ─────────────────────────────────────────────────────────
+
+const (
+	maxFocusedPapers     = 5    // cap on how many papers are held in context at once
+	defaultMaxPaperChars = 8000 // per-paper injection cap when cfg.AI.MaxPaperChars is 0
+)
+
+// addFocusedPaper adds a paper to the context set (most recent last), de-duping
+// and dropping the oldest once the cap is exceeded. Returns false if it was
+// already present.
+func (m *Model) addFocusedPaper(path string) bool {
+	for _, p := range m.aiFocusedFiles {
+		if p == path {
+			return false
+		}
+	}
+	m.aiFocusedFiles = append(m.aiFocusedFiles, path)
+	if len(m.aiFocusedFiles) > maxFocusedPapers {
+		m.aiFocusedFiles = m.aiFocusedFiles[len(m.aiFocusedFiles)-maxFocusedPapers:]
+	}
+	return true
+}
+
+// primaryFocusedPaper returns the most recently added paper, or "".
+func (m *Model) primaryFocusedPaper() string {
+	if len(m.aiFocusedFiles) == 0 {
+		return ""
+	}
+	return m.aiFocusedFiles[len(m.aiFocusedFiles)-1]
+}
+
+// maxPaperChars is the per-paper context cap (config override or default).
+func (m *Model) maxPaperChars() int {
+	if m.cfg != nil && m.cfg.AI != nil && m.cfg.AI.MaxPaperChars > 0 {
+		return m.cfg.AI.MaxPaperChars
+	}
+	return defaultMaxPaperChars
+}
+
+// persistFocusedPapers records the focus set on the active session. Multiple
+// paths are stored newline-joined in the single focused_file column.
+func (m *Model) persistFocusedPapers() {
+	if m.aiSessionID > 0 && m.meta != nil {
+		_ = m.meta.UpdateSessionFocusedFile(context.Background(), m.aiSessionID, strings.Join(m.aiFocusedFiles, "\n"))
+	}
+}
+
+// paperRefCues reports whether a message plausibly refers to a specific paper
+// the user wants pulled into context. It gates the (LLM-backed) resolver so we
+// don't add latency to ordinary conversational turns.
+func paperRefCues(text string) bool {
+	lower := strings.ToLower(text)
+	cues := []string{
+		"paper", "papers", "article", "study", "studies", "publication",
+		"compare", "comparison", "contrast", "relation", "relationship",
+		"between", "versus", " vs ", " vs.", "author", "this work",
+	}
+	for _, c := range cues {
+		if strings.Contains(lower, c) {
+			return true
+		}
+	}
+	return strings.Contains(text, "\"") // quoted title
+}
+
+// isGenericPaperRef reports whether a descriptor is only filler/pronoun words
+// (e.g. "this paper", "the study") and so names no specific paper to search for.
+func isGenericPaperRef(desc string) bool {
+	generic := map[string]bool{
+		"this": true, "that": true, "the": true, "a": true, "an": true, "paper": true,
+		"papers": true, "work": true, "it": true, "article": true, "study": true,
+		"above": true, "below": true, "current": true, "same": true, "one": true,
+		"these": true, "those": true, "and": true, "of": true, "about": true, "on": true,
+	}
+	fields := strings.FieldsFunc(strings.ToLower(desc), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	if len(fields) == 0 {
+		return true
+	}
+	for _, f := range fields {
+		if !generic[f] {
+			return false
+		}
+	}
+	return true
+}
+
+// extractPaperRefs asks the model for short search phrases naming specific papers
+// the user wants to discuss, returning at most 3. It is only used in the no-tools
+// fallback and fails soft (returns nil) so a slow or unhelpful model never blocks
+// the answer for long.
+func extractPaperRefs(ctx context.Context, userText string, client *ai.Client) []string {
+	if client == nil {
+		return nil
+	}
+	exCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	prompt := "From the user's message, extract up to 3 short search phrases that each identify a SPECIFIC paper " +
+		"they want to pull from their library to discuss or compare. Use the user's own words (a topic, title " +
+		"fragment, or author). If the message does not reference a specific paper to load, return an empty list.\n" +
+		"Reply with JSON only: {\"papers\": [\"...\"]}\n" +
+		"Message: \"" + userText + "\""
+
+	ch := client.StreamChat(exCtx, []ai.Message{{Role: ai.RoleUser, Content: prompt}}, nil)
+	var buf strings.Builder
+	for tok := range ch {
+		if tok.Err != nil {
+			return nil
+		}
+		buf.WriteString(tok.Text)
+		if tok.Done {
+			break
+		}
+	}
+	raw := buf.String()
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return nil
+	}
+	var parsed struct {
+		Papers []string `json:"papers"`
+	}
+	if err := json.Unmarshal([]byte(raw[start:end+1]), &parsed); err != nil {
+		return nil
+	}
+	var out []string
+	for _, p := range parsed.Papers {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
+// sliceContains reports whether v is present in s.
+func sliceContains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// prependUnique returns front followed by the items of rest not already in front.
+func prependUnique(front, rest []string) []string {
+	out := append([]string(nil), front...)
+	seen := make(map[string]bool, len(front))
+	for _, f := range front {
+		seen[f] = true
+	}
+	for _, r := range rest {
+		if !seen[r] {
+			out = append(out, r)
+			seen[r] = true
+		}
+	}
+	return out
+}
+
+// parseFocusedPaths splits a stored focused_file value (possibly newline-joined)
+// into individual paper paths.
+func parseFocusedPaths(stored string) []string {
+	var out []string
+	for _, line := range strings.Split(stored, "\n") {
+		if p := strings.TrimSpace(line); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (m *Model) goraeSelectCurrent() {
 	if len(m.aiSearchResults) == 0 {
 		return
 	}
 	chosen := m.aiSearchResults[m.aiSearchCursor]
-	m.aiFocusedFile = chosen.Path
+	added := m.addFocusedPaper(chosen.Path)
 	m.aiFindMode = false
 	m.aiSearchSelecting = false
 	m.aiSearchResults = nil
@@ -339,16 +528,22 @@ func (m *Model) goraeSelectCurrent() {
 	if m.aiClient != nil {
 		m.updateGoraeStatus(m.aiClient.Model())
 	}
-	m.appendAISystem("Focused: " + chosen.Title + "\nQuestions will now use this file as primary context.")
-	if m.aiSessionID > 0 && m.meta != nil {
-		_ = m.meta.UpdateSessionFocusedFile(context.Background(), m.aiSessionID, chosen.Path)
+	if added {
+		m.appendAISystem(fmt.Sprintf("Added to context: %s  (%d in context — /unfocus to clear)", chosen.Title, len(m.aiFocusedFiles)))
+	} else {
+		m.appendAISystem("Already in context: " + chosen.Title)
 	}
+	m.persistFocusedPapers()
 }
 
 func (m *Model) updateGoraeStatus(modelName string) {
 	status := "Gorae AI  model:" + modelName + "  Esc:normal mode  Ctrl+C:exit"
-	if m.aiFocusedFile != "" {
-		status += "  focus:" + filepath.Base(m.aiFocusedFile)
+	switch n := len(m.aiFocusedFiles); n {
+	case 0:
+	case 1:
+		status += "  focus:" + filepath.Base(m.aiFocusedFiles[0])
+	default:
+		status += fmt.Sprintf("  focus:%d papers", n)
 	}
 	if m.aiShowThinking {
 		status += "  [think:on]"
@@ -520,6 +715,22 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.aiSources = msg.paths
 		return m, nil
 
+	case aiFocusResolvedMsg:
+		var added []string
+		for _, p := range msg.paths {
+			if m.addFocusedPaper(p) {
+				added = append(added, titleForPath(m.meta, context.Background(), p))
+			}
+		}
+		if len(added) > 0 {
+			m.persistFocusedPapers()
+			if m.aiClient != nil {
+				m.updateGoraeStatus(m.aiClient.Model())
+			}
+			m.appendAISystem("Pulled into context: " + strings.Join(added, ", ") + "  (use /load if I picked the wrong one)")
+		}
+		return m, nil
+
 	case aiLiveFindMsg:
 		// Discard stale results from a previous query
 		if msg.query == m.aiLiveQuery {
@@ -569,7 +780,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 // goraeSlashCommands drives autocomplete and the on-screen hint overlay. The
 // legacy "/find" command still works as a silent alias (see handleGoraeSlashCommand)
 // but is intentionally absent here so new users see only "/load".
-var goraeSlashCommands = []string{"/load", "/select", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
+var goraeSlashCommands = []string{"/load", "/unfocus", "/summarize", "/clear", "/compact", "/export", "/sources", "/sessions", "/new", "/skills", "/help"}
 
 func (m *Model) goraeAutocomplete() tea.Cmd {
 	val := m.aiTextarea.Value()
@@ -661,15 +872,17 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 	case "/summarize":
 		return m.startSummarize()
 
-	case "/select":
-		if m.aiFocusedFile == "" {
-			m.appendAISystem("No file focused. Use /load to pick a file.")
+	case "/select", "/unfocus": // /select is the legacy name
+		if len(m.aiFocusedFiles) == 0 {
+			m.appendAISystem("No papers in context. Use /load or just mention a paper to add one.")
 		} else {
-			m.aiFocusedFile = ""
+			n := len(m.aiFocusedFiles)
+			m.aiFocusedFiles = nil
 			if m.aiClient != nil {
 				m.updateGoraeStatus(m.aiClient.Model())
 			}
-			m.appendAISystem("File focus cleared.")
+			m.persistFocusedPapers()
+			m.appendAISystem(fmt.Sprintf("Cleared %d paper(s) from context.", n))
 		}
 		return nil
 	case "/clear":
@@ -691,6 +904,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiSessionID = 0
 		m.aiMessages = nil
 		m.aiSources = nil
+		m.aiFocusedFiles = nil
 		m.aiChatScroll = 0
 		m.aiFollowBottom = true
 		m.aiMsgCursor = 0
@@ -737,9 +951,9 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 func goraeHelpText() string {
 	return strings.TrimSpace(`
 Gorae AI slash commands:
-  /load       — open a fuzzy-find box to load a file into chat context; type to filter, ↑/↓/Enter select
-  /select     — clear the current file focus
-  /summarize  — summarize focused file and save to its note
+  /load       — add a paper to the conversation (fuzzy-find box; ↑/↓/Enter). Or just mention a paper and it's pulled in.
+  /unfocus    — clear all papers from the conversation
+  /summarize  — summarize the focused paper and save to its note
   /clear      — clear chat history (also removes from saved session)
   /compact    — summarise old messages to free up context window
   /export     — save conversation to a markdown file
@@ -1147,22 +1361,23 @@ func (m *Model) startSummarize() tea.Cmd {
 		m.appendAISystem("No AI provider configured.")
 		return nil
 	}
-	if m.aiFocusedFile == "" {
-		m.appendAISystem("No file focused. Use /load to select a file first.")
+	focused := m.primaryFocusedPaper()
+	if focused == "" {
+		m.appendAISystem("No paper in context. Use /load or mention a paper to add one first.")
 		return nil
 	}
 	if m.meta == nil {
 		m.appendAISystem("Metadata store not available.")
 		return nil
 	}
-	body, err := m.meta.GetFileContent(context.Background(), m.aiFocusedFile)
+	body, err := m.meta.GetFileContent(context.Background(), focused)
 	if err != nil || strings.TrimSpace(body) == "" {
 		m.appendAISystem("No indexed content found for this file. Run :index first.")
 		return nil
 	}
 
-	title := filepath.Base(m.aiFocusedFile)
-	if md, err2 := m.meta.Get(context.Background(), m.aiFocusedFile); err2 == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+	title := filepath.Base(focused)
+	if md, err2 := m.meta.Get(context.Background(), focused); err2 == nil && md != nil && strings.TrimSpace(md.Title) != "" {
 		title = md.Title
 	}
 
@@ -1173,7 +1388,7 @@ func (m *Model) startSummarize() tea.Cmd {
 
 	userMsg := fmt.Sprintf("Summarize the following document titled %q:\n\n%s", title, body)
 
-	m.aiSummarizeTarget = m.aiFocusedFile
+	m.aiSummarizeTarget = focused
 	m.aiMessages = append(m.aiMessages, ai.Message{Role: ai.RoleUser, Content: "/summarize " + title})
 	m.aiInputHistory = append(m.aiInputHistory, "/summarize")
 	m.aiHistoryCursor = -1
@@ -1314,7 +1529,8 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 	history := make([]ai.Message, len(m.aiMessages))
 	copy(history, m.aiMessages)
 
-	focusedFile := m.aiFocusedFile
+	focusedFiles := append([]string(nil), m.aiFocusedFiles...)
+	maxChars := m.maxPaperChars()
 
 	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
 
@@ -1325,18 +1541,65 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, userText, plan)
 		}
 
-		// Prepend focused file content if set.
-		if focusedFile != "" && store != nil {
-			if body, err := store.GetFileContent(ctx, focusedFile); err == nil && body != "" {
-				focused := fmt.Sprintf("[Focused file: %s]\n%s", filepath.Base(focusedFile), body)
+		// Prepend every focused paper as primary context, each capped so a few
+		// full papers don't blow the model's context window.
+		if len(focusedFiles) > 0 && store != nil {
+			var blocks []string
+			var focusSources []string
+			for _, fp := range focusedFiles {
+				body, err := store.GetFileContent(ctx, fp)
+				if err != nil || strings.TrimSpace(body) == "" {
+					continue
+				}
+				if r := []rune(body); len(r) > maxChars {
+					body = string(r[:maxChars]) + "\n…[truncated]"
+				}
+				blocks = append(blocks, fmt.Sprintf("[Paper in focus: %s]\n%s", titleForPath(store, ctx, fp), body))
+				focusSources = append(focusSources, fp)
+			}
+			if len(blocks) > 0 {
+				joined := strings.Join(blocks, "\n\n")
 				if docContext != "" {
-					docContext = focused + "\n\n" + docContext
+					docContext = joined + "\n\n" + docContext
 				} else {
-					docContext = focused
+					docContext = joined
 				}
-				if len(sources) == 0 || sources[0] != focusedFile {
-					sources = append([]string{focusedFile}, sources...)
+				sources = prependUnique(focusSources, sources)
+			}
+		}
+
+		// No-tools fallback: when tool calling is off, resolve papers the user
+		// referenced in natural language and inject them as whole-paper context.
+		// (When tools are on, the model does this itself via find_papers/open_paper.)
+		var resolved []string
+		if len(tools) == 0 && store != nil && paperRefCues(userText) {
+			for _, desc := range extractPaperRefs(ctx, userText, client) {
+				if isGenericPaperRef(desc) {
+					continue // "this paper" etc. refers to something already in context
 				}
+				hits := searchPapers(ctx, store, desc, 1)
+				if len(hits) == 0 {
+					continue
+				}
+				path := hits[0].Path
+				if sliceContains(focusedFiles, path) || sliceContains(resolved, path) {
+					continue
+				}
+				body, err := store.GetFileContent(ctx, path)
+				if err != nil || strings.TrimSpace(body) == "" {
+					continue
+				}
+				if r := []rune(body); len(r) > maxChars {
+					body = string(r[:maxChars]) + "\n…[truncated]"
+				}
+				block := fmt.Sprintf("[Paper in focus: %s]\n%s", titleForPath(store, ctx, path), body)
+				if docContext != "" {
+					docContext = block + "\n\n" + docContext
+				} else {
+					docContext = block
+				}
+				sources = prependUnique([]string{path}, sources)
+				resolved = append(resolved, path)
 			}
 		}
 
@@ -1350,10 +1613,13 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 		ch := client.StreamChat(ctx, msgs, tools)
 
-		return tea.Batch(
-			func() tea.Msg { return aiSourcesMsg{paths: sources} },
-			pumpTokenCmd(ch),
-		)()
+		cmds := []tea.Cmd{func() tea.Msg { return aiSourcesMsg{paths: sources} }}
+		if len(resolved) > 0 {
+			rp := resolved
+			cmds = append(cmds, func() tea.Msg { return aiFocusResolvedMsg{paths: rp} })
+		}
+		cmds = append(cmds, pumpTokenCmd(ch))
+		return tea.Batch(cmds...)()
 	})
 }
 
@@ -1798,6 +2064,14 @@ func goraeSystemPrompt(cfg *config.Config, docContext string) string {
 	}
 	var parts []string
 	parts = append(parts, base)
+	if cfg != nil && cfg.AI != nil && cfg.AI.EnableTools {
+		parts = append(parts,
+			"\nYou can search the user's paper library with the find_papers tool and pull a paper's full text "+
+				"into the conversation with the open_paper tool. When the user refers to a paper by description "+
+				"(\"the paper about X\", \"compare this with that\"), call find_papers to locate it, then call "+
+				"open_paper with the exact path for each paper you need before answering. To compare or relate "+
+				"papers, open each one. Papers shown as 'Paper in focus' below are already loaded — do not re-open them.")
+	}
 	if docContext != "" {
 		parts = append(parts,
 			"\nRelevant excerpts are provided below. [Local] entries are from the user's personal library; [Web] entries are live web results.",
@@ -2050,16 +2324,17 @@ func (m *Model) invokeUserSkill(skill UserSkill, extraArgs string) tea.Cmd {
 
 	needsFile := strings.Contains(prompt, "{focused_file}") || strings.Contains(prompt, "{title}")
 	if needsFile {
-		if m.aiFocusedFile == "" {
-			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused file. Use /load to select one first.", skill.Name))
+		focused := m.primaryFocusedPaper()
+		if focused == "" {
+			m.appendAISystem(fmt.Sprintf("Skill %q needs a focused paper. Use /load to select one first.", skill.Name))
 			return nil
 		}
 		if m.meta != nil {
-			if body, err := m.meta.GetFileContent(context.Background(), m.aiFocusedFile); err == nil {
+			if body, err := m.meta.GetFileContent(context.Background(), focused); err == nil {
 				prompt = strings.ReplaceAll(prompt, "{focused_file}", body)
 			}
-			title := filepath.Base(m.aiFocusedFile)
-			if md, err := m.meta.Get(context.Background(), m.aiFocusedFile); err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
+			title := filepath.Base(focused)
+			if md, err := m.meta.Get(context.Background(), focused); err == nil && md != nil && strings.TrimSpace(md.Title) != "" {
 				title = md.Title
 			}
 			prompt = strings.ReplaceAll(prompt, "{title}", title)

@@ -184,7 +184,7 @@ type Model struct {
 	aiFindMode        bool               // true while the /load fuzzy-find box owns the input
 	aiSearchCursor    int                // highlighted row in the overlay
 	aiLiveQuery       string             // last query sent to live find
-	aiFocusedFile     string             // path selected; injected as context
+	aiFocusedFiles    []string           // paper paths injected as context (most recent last)
 	aiCancelFunc      context.CancelFunc // cancels the in-flight request
 	aiSpinnerFrame    int                // current spinner animation frame
 	aiSummarizeTarget string             // if set, flush writes summary to this file's note

@@ -41,9 +41,14 @@ type AIConfig struct {
 	VectorSearch   bool   `json:"vector_search"`
 	EmbeddingModel string `json:"embedding_model,omitempty"`
 	// EnableTools turns on function/tool calling so the model can invoke
-	// in-app actions (e.g. save the chat as markdown). Requires a provider/
-	// model that supports tool calls. Disabled by default.
+	// in-app actions (e.g. search for and open papers, save the chat as
+	// markdown). Requires a provider/model that supports tool calls. Disabled
+	// by default; when off, gorae falls back to a resolver that pulls papers
+	// referenced in natural language into context.
 	EnableTools bool `json:"enable_tools"`
+	// MaxPaperChars caps how many characters of each focused paper are injected
+	// as context, protecting the model's context window. 0 uses the default.
+	MaxPaperChars int `json:"max_paper_chars,omitempty"`
 }
 
 type Config struct {
