@@ -686,9 +686,13 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "tab":
-				// Toggle the current row in the multi-select set.
+				// Toggle the current row and advance the cursor, so selecting
+				// always moves the highlight bar down (lf/ranger style).
 				if m.aiSearchCursor < len(m.aiSearchResults) {
 					m.toggleFindMark(m.aiSearchResults[m.aiSearchCursor].Path)
+					if m.aiSearchCursor < len(m.aiSearchResults)-1 {
+						m.aiSearchCursor++
+					}
 				}
 				return m, nil
 			case "enter":

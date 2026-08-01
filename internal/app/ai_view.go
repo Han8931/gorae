@@ -341,7 +341,6 @@ func (m *Model) renderFindModal(width, height int) string {
 	titleStyle := m.styles.Preview.Info
 	labelStyle := m.styles.StatusValue
 	mutedStyle := m.styles.Preview.Body
-	cursorStyle := m.styles.StatusLabel
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#7aa2f7")).
@@ -384,30 +383,50 @@ func (m *Model) renderFindModal(width, height int) string {
 	if len(m.aiSearchResults) == 0 {
 		b.WriteString(mutedStyle.Render("  no matches"))
 	} else {
+		// Both the cursor row and every selected row are drawn as solid,
+		// full-width highlight bars (lf/ranger style) — no marker glyph. Two
+		// distinct bar colours keep the cursor identifiable among selections:
+		//   • cursor (marked or not) → warm bar (List.Cursor) — "you are here"
+		//   • selected, off-cursor   → selection bar (List.CursorSelected)
+		// The cursor bar wins on a selected row it happens to sit on, just as lf
+		// lets the cursor highlight override the selection highlight.
+		cursorBar := m.styles.List.Cursor
+		if isZeroStyle(cursorBar) {
+			cursorBar = lipgloss.NewStyle().
+				Background(lipgloss.Color("#e0af68")).
+				Foreground(lipgloss.Color("#1a1b26")).
+				Bold(true)
+		}
+		selBar := m.styles.List.CursorSelected
+		if isZeroStyle(selBar) {
+			selBar = lipgloss.NewStyle().
+				Background(lipgloss.Color("#2ac3de")).
+				Foreground(lipgloss.Color("#1a1b26")).
+				Bold(true)
+		}
 		used := 0
 		for i, r := range m.aiSearchResults {
 			// Each result needs up to 2 lines (title + detail); stop before overflow.
 			if used+2 > maxBodyLines && i != m.aiSearchCursor {
 				break
 			}
-			title := runewidth.Truncate(r.Title, innerW-6, "…")
+			title := runewidth.Truncate(r.Title, innerW-4, "…")
 			detail := filepath.Base(r.Path)
 			if strings.TrimSpace(r.Snippet) != "" {
 				detail = r.Snippet
 			}
-			detail = runewidth.Truncate(detail, innerW-6, "…")
+			detail = runewidth.Truncate(detail, innerW-4, "…")
 
-			check := mutedStyle.Render("○ ")
-			if m.isFindMarked(r.Path) {
-				check = titleStyle.Render("◉ ")
-			}
-			if i == m.aiSearchCursor {
-				b.WriteString(cursorStyle.Render(" › ") + check + labelStyle.Render(title))
-			} else {
-				b.WriteString("   " + check + titleStyle.Render(title))
+			switch {
+			case i == m.aiSearchCursor:
+				b.WriteString(cursorBar.Render(panelContent(innerW, title)))
+			case m.isFindMarked(r.Path):
+				b.WriteString(selBar.Render(panelContent(innerW, title)))
+			default:
+				b.WriteString(" " + titleStyle.Render(title))
 			}
 			b.WriteByte('\n')
-			b.WriteString("     " + mutedStyle.Render(detail))
+			b.WriteString("  " + mutedStyle.Render(detail))
 			b.WriteByte('\n')
 			used += 2
 		}
