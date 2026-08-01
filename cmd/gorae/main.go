@@ -15,11 +15,15 @@ import (
 
 func main() {
 	rootFlag := flag.String("root", "", "Root directory to start in (overrides config watch_dir)")
+	migrateConfigFlag := flag.Bool("migrate-config", false, "Upgrade an existing config file and exit")
 	flag.Parse()
 
 	cfg, err := config.LoadOrInit()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *migrateConfigFlag {
+		return
 	}
 	app.SetTextPreviewOnly(cfg.TextPreviewOnly)
 

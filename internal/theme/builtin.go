@@ -18,6 +18,9 @@ type builtinSpec struct {
 // Default() so custom on-disk themes and built-ins render identically.
 func buildTheme(s builtinSpec) Theme {
 	p := s.palette
+	selectionFG := readableForeground(p, p.Selection)
+	cursorFG := readableForeground(p, p.Warning)
+	promptFG := readableForeground(p, p.Accent)
 	return Theme{
 		Meta:    Meta{Name: s.name, Version: 1},
 		Palette: p,
@@ -32,9 +35,9 @@ func buildTheme(s builtinSpec) Theme {
 
 			ListHeader:       StyleSpec{FG: p.FG, BG: s.headerBG, Bold: true},
 			ListBody:         StyleSpec{FG: p.FG},
-			ListSelected:     StyleSpec{FG: p.BG, BG: p.Selection, Bold: true},
-			ListCursor:       StyleSpec{FG: p.BG, BG: p.Warning, Bold: true},
-			ListCursorSelect: StyleSpec{FG: p.BG, BG: p.Selection, Bold: true},
+			ListSelected:     StyleSpec{FG: selectionFG, BG: p.Selection, Bold: true},
+			ListCursor:       StyleSpec{FG: cursorFG, BG: p.Warning, Bold: true},
+			ListCursorSelect: StyleSpec{FG: cursorFG, BG: p.Warning, Bold: true},
 
 			PreviewHeader: StyleSpec{FG: p.Accent, BG: s.headerBG, Bold: true},
 			PreviewBody:   StyleSpec{FG: p.FG},
@@ -44,7 +47,7 @@ func buildTheme(s builtinSpec) Theme {
 			StatusBar:   StyleSpec{FG: p.FG, BG: s.statusBG},
 			StatusLabel: StyleSpec{FG: p.Selection, Bold: true},
 			StatusValue: StyleSpec{FG: p.Warning},
-			PromptLabel: StyleSpec{FG: p.BG, BG: p.Accent, Bold: true},
+			PromptLabel: StyleSpec{FG: promptFG, BG: p.Accent, Bold: true},
 			PromptValue: StyleSpec{FG: p.FG, BG: p.BG},
 			MetaOverlay: StyleSpec{FG: p.FG, BG: s.headerBG},
 			Markdown: MarkdownStyle{
@@ -61,6 +64,13 @@ func buildTheme(s builtinSpec) Theme {
 	}
 }
 
+func readableForeground(p Palette, background string) string {
+	if contrastRatio(p.FG, background) >= contrastRatio(p.BG, background) {
+		return p.FG
+	}
+	return p.BG
+}
+
 // builtinSpecs lists the modern themes bundled with Gorae.
 var builtinSpecs = []builtinSpec{
 	{
@@ -75,7 +85,7 @@ var builtinSpecs = []builtinSpec{
 		key: "catppuccin-mocha", name: "Catppuccin Mocha",
 		border: "#313244", headerBG: "#181825", statusBG: "#11111b",
 		palette: Palette{
-			BG: "#1e1e2e", FG: "#cdd6f4", Muted: "#6c7086", Accent: "#89b4fa",
+			BG: "#1e1e2e", FG: "#cdd6f4", Muted: "#9399b2", Accent: "#89b4fa",
 			Success: "#a6e3a1", Warning: "#f9e2af", Danger: "#f38ba8", Selection: "#94e2d5",
 		},
 	},
@@ -83,15 +93,15 @@ var builtinSpecs = []builtinSpec{
 		key: "catppuccin-latte", name: "Catppuccin Latte",
 		border: "#ccd0da", headerBG: "#e6e9ef", statusBG: "#dce0e8",
 		palette: Palette{
-			BG: "#eff1f5", FG: "#4c4f69", Muted: "#8c8fa1", Accent: "#1e66f5",
-			Success: "#40a02b", Warning: "#df8e1d", Danger: "#d20f39", Selection: "#179299",
+			BG: "#eff1f5", FG: "#4c4f69", Muted: "#5c5f77", Accent: "#174fc4",
+			Success: "#28751f", Warning: "#805200", Danger: "#d20f39", Selection: "#0d655f",
 		},
 	},
 	{
 		key: "tokyo-night", name: "Tokyo Night",
 		border: "#292e42", headerBG: "#16161e", statusBG: "#13131a",
 		palette: Palette{
-			BG: "#1a1b26", FG: "#c0caf5", Muted: "#565f89", Accent: "#7aa2f7",
+			BG: "#1a1b26", FG: "#c0caf5", Muted: "#8992b8", Accent: "#7aa2f7",
 			Success: "#9ece6a", Warning: "#e0af68", Danger: "#f7768e", Selection: "#2ac3de",
 		},
 	},
@@ -99,7 +109,7 @@ var builtinSpecs = []builtinSpec{
 		key: "dracula", name: "Dracula",
 		border: "#44475a", headerBG: "#21222c", statusBG: "#191a21",
 		palette: Palette{
-			BG: "#282a36", FG: "#f8f8f2", Muted: "#6272a4", Accent: "#bd93f9",
+			BG: "#282a36", FG: "#f8f8f2", Muted: "#8994c6", Accent: "#bd93f9",
 			Success: "#50fa7b", Warning: "#f1fa8c", Danger: "#ff5555", Selection: "#8be9fd",
 		},
 	},
@@ -107,7 +117,7 @@ var builtinSpecs = []builtinSpec{
 		key: "nord", name: "Nord",
 		border: "#3b4252", headerBG: "#272c36", statusBG: "#21262e",
 		palette: Palette{
-			BG: "#2e3440", FG: "#eceff4", Muted: "#7b88a1", Accent: "#88c0d0",
+			BG: "#2e3440", FG: "#eceff4", Muted: "#9aa7bd", Accent: "#88c0d0",
 			Success: "#a3be8c", Warning: "#ebcb8b", Danger: "#bf616a", Selection: "#8fbcbb",
 		},
 	},
@@ -115,7 +125,7 @@ var builtinSpecs = []builtinSpec{
 		key: "gruvbox", name: "Gruvbox Dark",
 		border: "#3c3836", headerBG: "#1d2021", statusBG: "#1d2021",
 		palette: Palette{
-			BG: "#282828", FG: "#ebdbb2", Muted: "#928374", Accent: "#83a598",
+			BG: "#282828", FG: "#ebdbb2", Muted: "#a89984", Accent: "#83a598",
 			Success: "#b8bb26", Warning: "#fabd2f", Danger: "#fb4934", Selection: "#8ec07c",
 		},
 	},
@@ -123,7 +133,7 @@ var builtinSpecs = []builtinSpec{
 		key: "rose-pine", name: "Rosé Pine",
 		border: "#26233a", headerBG: "#1f1d2e", statusBG: "#16141f",
 		palette: Palette{
-			BG: "#191724", FG: "#e0def4", Muted: "#6e6a86", Accent: "#c4a7e7",
+			BG: "#191724", FG: "#e0def4", Muted: "#908caa", Accent: "#c4a7e7",
 			Success: "#9ccfd8", Warning: "#f6c177", Danger: "#eb6f92", Selection: "#ebbcba",
 		},
 	},
@@ -131,8 +141,8 @@ var builtinSpecs = []builtinSpec{
 		key: "solarized-dark", name: "Solarized Dark",
 		border: "#073642", headerBG: "#073642", statusBG: "#002028",
 		palette: Palette{
-			BG: "#002b36", FG: "#93a1a1", Muted: "#586e75", Accent: "#268bd2",
-			Success: "#859900", Warning: "#b58900", Danger: "#dc322f", Selection: "#2aa198",
+			BG: "#002b36", FG: "#b8c4c4", Muted: "#839496", Accent: "#4aa3d8",
+			Success: "#a3b500", Warning: "#d0a000", Danger: "#ef5350", Selection: "#35b9aa",
 		},
 	},
 }

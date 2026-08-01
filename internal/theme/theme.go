@@ -3,12 +3,40 @@ package theme
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Han8931/gorae/internal/simpletoml"
 )
+
+func contrastRatio(a, b string) float64 {
+	la, oka := relativeLuminance(a)
+	lb, okb := relativeLuminance(b)
+	if !oka || !okb {
+		return 0
+	}
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func relativeLuminance(hex string) (float64, bool) {
+	var r, g, b uint8
+	if _, err := fmt.Sscanf(strings.TrimSpace(hex), "#%02x%02x%02x", &r, &g, &b); err != nil {
+		return 0, false
+	}
+	linear := func(v uint8) float64 {
+		c := float64(v) / 255
+		if c <= 0.04045 {
+			return c / 12.92
+		}
+		return math.Pow((c+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(r) + 0.7152*linear(g) + 0.0722*linear(b), true
+}
 
 const defaultThemeFile = `# Gorae color theme.
 # "Gorae Deep" — vibrant ocean-toned dark default.
@@ -83,7 +111,7 @@ bold = true
 
 [components.list_cursor_selected]
 fg = "#0a0f14"
-bg = "#5eead4"
+bg = "#fbbf24"
 bold = true
 
 [components.preview_header]
@@ -289,9 +317,9 @@ func Default() Theme {
 
 			ListHeader:       StyleSpec{FG: "#eef1f6", BG: "#161f29", Bold: true},
 			ListBody:         StyleSpec{FG: "#eef1f6"},
-			ListSelected:     StyleSpec{FG: "#5eead4", Bold: true},
+			ListSelected:     StyleSpec{FG: "#0a0f14", BG: "#5eead4", Bold: true},
 			ListCursor:       StyleSpec{FG: "#0a0f14", BG: "#fbbf24", Bold: true},
-			ListCursorSelect: StyleSpec{FG: "#0a0f14", BG: "#5eead4", Bold: true},
+			ListCursorSelect: StyleSpec{FG: "#0a0f14", BG: "#fbbf24", Bold: true},
 
 			PreviewHeader: StyleSpec{FG: "#5cc8ff", BG: "#11181f", Bold: true},
 			PreviewBody:   StyleSpec{FG: "#eef1f6"},
@@ -373,10 +401,13 @@ func upgradeLegacyDefaultTheme(t *Theme) {
 	if t.Icons.Reading == "▶" {
 		t.Icons.Reading = "◐"
 	}
-	if t.Components.ListSelected.BG == "" &&
+	if (t.Components.ListSelected.BG == "" || t.Components.ListSelected.BG == t.Palette.Selection) &&
 		t.Components.ListSelected.FG == t.Palette.Selection {
 		t.Components.ListSelected.FG = t.Palette.BG
 		t.Components.ListSelected.BG = t.Palette.Selection
+	}
+	if t.Components.ListCursorSelect.BG == t.Palette.Selection {
+		t.Components.ListCursorSelect = t.Components.ListCursor
 	}
 }
 

@@ -67,6 +67,9 @@ type Config struct {
 	// on-disk theme.toml.
 	Theme       string `json:"theme,omitempty"`
 	EnableMouse bool   `json:"enable_mouse"`
+	// ShowTree controls whether the directory tree pane is visible at startup.
+	// It can still be toggled for the current session with ,n.
+	ShowTree bool `json:"show_tree"`
 	// TextPreviewOnly forces the right pane to use the text/ASCII fallback
 	// even on terminals that support kitty/iTerm2/sixel image protocols.
 	// Useful over slow ssh, in tmux without passthrough, or as a personal
@@ -413,6 +416,11 @@ var configUpgrades = []configUpgrade{
   // prefer the text view. Leave false to keep image previews when supported.
   "text_preview_only": false`,
 	},
+	{
+		key: "show_tree",
+		block: `  // Show the directory tree pane at startup. Toggle it temporarily with ,n.
+  "show_tree": true`,
+	},
 }
 
 // upgradeConfigBytes injects any registered top-level keys that are missing
@@ -551,6 +559,7 @@ func LoadOrInit() (*Config, error) {
 		ConfigPath:          path,
 		NeedsConfirm:        true,
 		EnableMouse:         defaultEnableMouse,
+		ShowTree:            true,
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)

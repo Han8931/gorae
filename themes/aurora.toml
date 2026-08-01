@@ -70,7 +70,7 @@ bold = true
 
 [components.list_cursor_selected]
 fg = "#0b1020"
-bg = "#2ac3de"
+bg = "#e0af68"
 bold = true
 
 [components.preview_header]

@@ -608,6 +608,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		toReadDir:             toReadDir,
 		toReadDirCanonical:    toReadDir,
 		notesDir:              strings.TrimSpace(cfg.NotesDir),
+		treePaneHidden:        !cfg.ShowTree,
 		skillsDir:             filepath.Join(strings.TrimSpace(cfg.MetaDir), "skills"),
 	}
 

@@ -31,6 +31,11 @@ target_dir="$(dirname "$dest")"
 mkdir -p "$target_dir"
 install -m 755 "$build_dir/gorae" "$dest"
 
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+if [[ -f "$config_home/gorae/config.json" ]]; then
+	"$dest" --migrate-config
+fi
+
 echo "gorae installed to $dest"
 echo "Add $(dirname "$dest") to your PATH if it is not already available."
 

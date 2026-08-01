@@ -25,3 +25,86 @@ reading  = "◐"
 unread   = "○"
 folder   = ""
 pdf      = ""
+
+[components.app_header]
+fg = "#e6edf3"
+bg = "#0b0f14"
+bold = true
+
+[components.tree_header]
+fg = "#58d26f"
+bg = "#111820"
+bold = true
+
+[components.tree_body]
+fg = "#e6edf3"
+
+[components.tree_active]
+fg = "#f0b84b"
+bold = true
+
+[components.tree_info]
+fg = "#9aa6b2"
+italic = true
+
+[components.list_header]
+fg = "#e6edf3"
+bg = "#151d27"
+bold = true
+
+[components.list_body]
+fg = "#e6edf3"
+
+[components.list_selected]
+fg = "#ffffff"
+bg = "#1f6feb"
+bold = true
+
+[components.list_cursor]
+fg = "#0b0f14"
+bg = "#f0b84b"
+bold = true
+
+[components.list_cursor_selected]
+fg = "#0b0f14"
+bg = "#f0b84b"
+bold = true
+
+[components.preview_header]
+fg = "#78b7ff"
+bg = "#111820"
+bold = true
+
+[components.preview_body]
+fg = "#e6edf3"
+
+[components.preview_info]
+fg = "#78b7ff"
+bold = true
+
+[components.separator]
+fg = "#52606d"
+
+[components.status_bar]
+fg = "#e6edf3"
+bg = "#070a0f"
+
+[components.status_label]
+fg = "#78b7ff"
+bold = true
+
+[components.status_value]
+fg = "#f0b84b"
+
+[components.prompt_label]
+fg = "#0b0f14"
+bg = "#78b7ff"
+bold = true
+
+[components.prompt_value]
+fg = "#e6edf3"
+bg = "#0b0f14"
+
+[components.meta_overlay]
+fg = "#e6edf3"
+bg = "#151d27"

@@ -60,6 +60,57 @@ func TestBuiltinNamesSorted(t *testing.T) {
 	}
 }
 
+func TestBuiltinThemeTextContrast(t *testing.T) {
+	for _, name := range BuiltinNames() {
+		th, _ := Builtin(name)
+		assertThemeTextContrast(t, name, th)
+	}
+}
+
+func TestShippedThemeTextContrast(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "themes", "*.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		th, err := LoadFrom(path)
+		if err != nil {
+			t.Fatalf("load %s: %v", path, err)
+		}
+		assertThemeTextContrast(t, filepath.Base(path), th)
+	}
+}
+
+func assertThemeTextContrast(t *testing.T, name string, th Theme) {
+	t.Helper()
+	p := th.Palette
+	pairs := []struct {
+		label  string
+		fg, bg string
+	}{
+		{"body", th.Components.ListBody.FG, p.BG},
+		{"muted tree info", th.Components.TreeInfo.FG, p.BG},
+		{"tree header", th.Components.TreeHeader.FG, th.Components.TreeHeader.BG},
+		{"list header", th.Components.ListHeader.FG, th.Components.ListHeader.BG},
+		{"preview header", th.Components.PreviewHeader.FG, th.Components.PreviewHeader.BG},
+		{"selected row", th.Components.ListSelected.FG, th.Components.ListSelected.BG},
+		{"cursor row", th.Components.ListCursor.FG, th.Components.ListCursor.BG},
+		{"cursor on selected row", th.Components.ListCursorSelect.FG, th.Components.ListCursorSelect.BG},
+		{"status text", th.Components.StatusBar.FG, th.Components.StatusBar.BG},
+		{"status label", th.Components.StatusLabel.FG, th.Components.StatusBar.BG},
+		{"status value", th.Components.StatusValue.FG, th.Components.StatusBar.BG},
+		{"prompt label", th.Components.PromptLabel.FG, th.Components.PromptLabel.BG},
+	}
+	for _, pair := range pairs {
+		if ratio := contrastRatio(pair.fg, pair.bg); ratio < 4.5 {
+			t.Errorf("%s %s contrast %.2f (%s on %s), want >= 4.5", name, pair.label, ratio, pair.fg, pair.bg)
+		}
+	}
+	if th.Components.ListSelected.BG == th.Components.ListCursorSelect.BG {
+		t.Errorf("%s selected and cursor-selected rows use the same background %s", name, th.Components.ListSelected.BG)
+	}
+}
+
 func TestLoadFromUpgradesLegacyGeneratedDefault(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "theme.toml")
 	legacy := `[meta]
