@@ -52,6 +52,7 @@ const (
 	stateUnmarkPrompt
 	stateGorae
 	stateSessionList
+	stateLaunch
 )
 
 type quickFilterMode int
@@ -161,6 +162,11 @@ type Model struct {
 	state        uiState
 	input        textinput.Model
 	confirmItems []string
+
+	// Launch screen: the splash shown on startup. launchCursor is the selected
+	// menu row; launchQuote is the day's epigraph (stable within a session).
+	launchCursor int
+	launchQuote  launchQuote
 
 	renameTarget  string
 	unmarkTargets []string
@@ -668,6 +674,11 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		m.statusAt = time.Now()
 		m.sticky = true
 	}
+
+	// Open on the launch screen — the whale wordmark, a daily epigraph, and the
+	// read/open/load menu. Esc drops straight into the file browser.
+	m.state = stateLaunch
+	m.launchQuote = dailyLaunchQuote(time.Now())
 	return m
 }
 

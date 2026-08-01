@@ -12,6 +12,11 @@ import (
 // - Scroll wheel: scroll list / search results / AI chat.
 // - Left click: move cursor; double-click (or click) opens file/dir.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// The launch splash has no mouse targets; ignore clicks and wheel so they
+	// don't quietly move the file browser hidden behind it.
+	if m.state == stateLaunch {
+		return m, nil
+	}
 	if m.state == stateGorae {
 		switch msg.Type {
 		case tea.MouseWheelUp:

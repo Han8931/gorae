@@ -626,6 +626,9 @@ func (m Model) View() string {
 	if m.state == stateHelp {
 		return m.renderHelpView()
 	}
+	if m.state == stateLaunch {
+		return m.renderLaunchView()
+	}
 	if m.state == stateGorae {
 		return m.renderGoraeView()
 	}

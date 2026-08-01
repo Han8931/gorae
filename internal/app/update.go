@@ -442,6 +442,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
+		if m.state == stateLaunch {
+			return m.updateLaunch(msg)
+		}
+
 		if m.state == stateGorae {
 			return m.updateGoraeChat(msg)
 		}
