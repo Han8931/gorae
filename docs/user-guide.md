@@ -1,214 +1,162 @@
 # Gorae User Guide
 
-Welcome to **Gorae** (고래) 🐋, a cozy TUI librarian for your PDF collection.
-This guide covers setup, configuration, themes, and daily workflow tips.
-If you only need the short version, check the README; otherwise, swim on!
-
----
+Gorae is a terminal knowledge base for PDF, EPUB, and Markdown libraries. This
+guide covers configuration, themes, browsing, metadata, search, and the AI
+assistant. Run `:help` inside Gorae for the compact key reference.
 
 ## Configuration
 
 On first launch, Gorae creates:
 
-- `~/.config/gorae/config.json`  
-  (or `${XDG_CONFIG_HOME}/gorae/config.json` if `XDG_CONFIG_HOME` is set)
+- `${XDG_CONFIG_HOME:-~/.config}/gorae/config.json`
+- `${XDG_CONFIG_HOME:-~/.config}/gorae/theme.toml`
 
-You can edit the config from inside the app:
+Open the configuration with `:config`, or inspect it with `:config show`.
+Gorae automatically adds newly introduced top-level settings without replacing
+existing values or comments.
 
-- `:config`  open the config in your editor
+Important settings:
 
-### Important keys
+| Key | Purpose |
+|---|---|
+| `watch_dir` | Root of the document library |
+| `meta_dir` | SQLite database, index, and application data |
+| `notes_dir` | Markdown notes |
+| `editor` | External editor command, such as `nvim` |
+| `pdf_viewer` | PDF viewer command, such as `zathura` |
+| `theme` | Bundled theme name; takes precedence over `theme_path` |
+| `theme_path` | Custom TOML theme path |
+| `show_tree` | Show the directory tree at startup; default `true` |
+| `enable_mouse` | Enable mouse input and scrolling |
+| `text_preview_only` | Disable inline image previews |
+| `recent_days` | Age window for Recently Added |
+| `recently_opened_limit` | Maximum entries in Recently Read |
 
-- `watch_dir`: the root folder that Gorae watches (your PDF library).
-- `meta_dir`: where metadata (SQLite DB) is stored.
-- `editor`:  your preferred editor command (e.g., `nvim`).
-- `pdf_viewer`: viewer command (e.g., `zathura`).
-- `notes_dir`: where notes are stored (Markdown).
-- `theme_path`: path to your active theme file.
+The `ai` and `web_search` objects configure providers, models, retrieval, tool
+calling, and optional web search. The generated config documents every field.
 
-### Helper folders
-
-Gorae can maintain helper folders under your library so you can browse curated subsets
-from **any file manager** (not only inside Gorae):
-
-- `To Read/`
-- `Recently Added/`
-- `Recently Read/`
-
-> Tip: Back up `meta_dir` to preserve reading states, tags, and notes.
-
----
+Gorae maintains `Favorites/`, `To Read/`, `Recently Added/`, and
+`Recently Read/` helper directories beneath the library. Back up `meta_dir` and
+`notes_dir` to preserve metadata, reading state, the search index, and notes.
 
 ## Themes
 
-Default theme path:
+Use `:theme list` to see bundled themes and `:theme <name>` to apply one. In the
+theme chooser:
 
-- `~/.config/gorae/theme.toml`
+| Key | Action |
+|---|---|
+| `Tab` | Next theme |
+| `Shift+Tab` | Previous theme |
+| `Enter` | Apply highlighted theme |
+| `Esc` | Cancel command input |
 
-You can start from a built-in theme:
+Other theme commands:
 
-```sh
-cp themes/fancy-dark.toml ~/.config/gorae/theme.toml
-```
+- `:theme show` displays the active theme and path.
+- `:theme reload` reloads the active bundled or custom theme.
 
-### Theme structure
+Custom themes use `[palette]`, `[icons]`, and `[components.*]` sections.
+Component styles support `fg`, `bg`, `bold`, `italic`, and `faint`. Palette
+references such as `fg = "palette.accent"` are supported. Common palette keys
+are `bg`, `fg`, `muted`, `accent`, `success`, `warning`, `danger`, and
+`selection`.
 
-* `[palette]` defines base colors.
-* `[icons]` defines glyphs for the UI (to-read/read states, etc.).
-* `[components.*]` defines styles for specific UI elements.
-
-Supported style keys:
-
-* `fg`, `bg`, `bold`, `italic`, `faint`
-
-Palette references are supported, e.g.:
-
-```toml
-fg = "palette.accent"
-bg = "palette.bg"
-```
-
-Common palette keys:
-`bg`, `fg`, `muted`, `accent`, `success`, `warning`, `danger`, `selection`
-
-### Reloading themes
-
-* `:theme show` show the currently active theme path
-* `:theme reload` reload theme without restarting (or restart Gorae)
-
-### Component reference (overview)
-
-Most UI parts map 1:1 to TOML keys (e.g., `tree_body`, `list_cursor`, `preview_info`).
-Borders can be set to styles like `rounded`, `square`, or `none`.
-
----
+Selected file rows use the selection background. The cursor uses a distinct
+cursor background and wins visually when it rests on a selected row.
 
 ## File browsing
 
-Gorae's file browsing is inspired by tools like `lf` and `ranger`.
+| Key | Action |
+|---|---|
+| `j` / `k` or arrows | Move down/up |
+| `l`, `Right`, or `Enter` | Enter a directory or open a document |
+| `h`, `Left`, or `Backspace` | Parent directory |
+| `g` / `G` | Top/bottom; `g` also begins a reading-state filter |
+| `,n` | Toggle the tree pane for this session |
+| `Space` | Toggle selection and advance |
+| `v` | Select/clear all PDF files |
+| `a` | Create a directory |
+| `R` | Rename |
+| `D` | Delete with confirmation |
+| `d` / `p` | Cut/paste |
+| `st` / `sy` | Sort by title/year |
+| `q` or `Ctrl+C` | Quit |
 
-Navigation:
-* `j` / `k`: move down / up
-* `l`: enter directory
-* `h`: go up to parent directory
-- `g`: go to the top (start) of the list
-- `G`: go to the bottom (end) of the list
-* `a`: creates a directory 
-* `R`: rename a directory
-* `D`: delete files or dirs. 
-* `q` or `Esc`: quit Gorae
+Set `"show_tree": false` to start with the tree folded. When folded, the list
+and detail panes share the reclaimed width.
 
-> Arrow keys are also supported.
+## Metadata, notes, and flags
 
-Selection:
+- `e` opens metadata preview. Press `e` again to edit metadata in the
+  configured external editor.
+- `n` edits the current document's Markdown note.
+- `f` toggles Favorite.
+- `t` toggles To Read.
+- `u` opens the flag-removal prompt.
+- `r` cycles Unread → Reading → Read.
+- `yy` copies BibTeX.
+- `yt` copies title, author, and year.
 
-* `Space`  toggle selection for the current item
-* `v` toggle selection for all PDF files (select all / clear all). 
+Use `:arxiv <id>` to import arXiv metadata. Add `-v` to operate on the current
+selection. `:autofetch` detects DOI and arXiv identifiers automatically;
+`:autofetch -v` restricts it to selected files. These features require
+`pdftotext` from Poppler.
 
-Sort:
-* `sy`: sort by year
-* `st`: sort by title
+## Search and filters
 
+Press `/` to search. Supported flags include:
 
----
+- `-t <title>`
+- `-a <author>`
+- `-y <year>`
+- `-c <content>`
+- `--tag <tag>` or `--tag <tag1,tag2>`
 
-## Metadata & notes
+Run `:index` to build/update the entire FTS5 index, or `:index here` for the
+current directory.
 
-Metadata:
+Search-result keys:
 
-* `e`  open the metadata editor for the current PDF
-* From the editor:
-  * `e`  edit inline
-  * `v`  open in your external editor (configured via `editor`)
+| Key | Action |
+|---|---|
+| `j` / `k` | Move between matching documents |
+| `n` / `N` or `Tab` / `Shift+Tab` | Move between hits within a document |
+| `Enter` | Open at the selected hit/page |
+| `PgUp` / `PgDn` | Page through results |
+| `/` | Search again |
+| `Esc` / `q` | Close results |
 
-Notes:
+Quick filters: `F` Favorites, `T` To Read, and `O` Recently Read. Use `g r`,
+`g u`, and `g d` to filter Reading, Unread, and Read states.
 
-* `n`  edit the note (Markdown) for the current PDF
+## AI assistant
 
----
+Run `:index`, then `:gorae`. The assistant supports retrieval from the library,
+streaming responses, saved sessions, focused papers, summaries, skills, and
+optional tool calling and web search.
 
-## Copy BibTeX
+In `/load` mode:
 
-* `y`  copy BibTeX for the current file (current cursor)
+| Key | Action |
+|---|---|
+| Type | Filter papers live |
+| `↑` / `↓` | Move through results |
+| `Tab` | Mark the current paper and advance |
+| `Enter` | Load marked papers, or the current paper when none are marked |
+| `Esc` | Cancel |
 
----
+Use `/unfocus` to clear focused papers. `/select` remains a legacy alias.
+Press `/help` in chat for all slash commands and insert/navigation-mode keys.
 
-## Fetch arXiv metadata
+## Status and command output
 
-Commands:
-* `:arxiv <id> [files...]`
+The status bar shows the current mode, directory, active item or selection
+count, and the latest message. `:` opens command mode, `:help` opens the full
+help view, and `:clear` closes displayed command output.
 
-Batch apply:
-* Select multiple files, then run:
-  * `:arxiv -v <id>` (applies to selected files)
+## Preview requirements
 
-> Tip: Want zero typing? Run `:autofetch` to detect DOI or arXiv IDs from the PDF text automatically.
-
-## Auto metadata detection
-
-Use `:autofetch` to scan PDFs for DOI or arXiv identifiers and pull metadata automatically (Crossref + arXiv):
-
-* `:autofetch` operates on the current file (or the selection if nothing is passed).
-* `:autofetch -v` restricts the command to the current selection.
-* `:autofetch <files...>` takes explicit file paths relative to the current directory.
-
-The command relies on `pdftotext` (Poppler) to read the PDF text. Make sure Poppler tools are installed and reachable from `PATH`.
-
----
-
-## To-read and reading states
-
-Flags:
-* `t`  toggle To-read
-* `u`  clear flags (opens a prompt)
-
-Reading state:
-
-* `r`  cycle reading state:
-
-  * Unread → Reading → Read
-
----
-
-## Search & filters
-
-Search:
-
-* `/`  open search
-
-Flags:
-
-* `-t <title>`
-* `-y <year>`
-* `-a <author>`
-* `-c <content>`
-
-Results view:
-
-* `j/k`  move
-* `Enter`  open the selected result
-* `Esc` or `q`  exit
-
-Quick filters:
-
-* `T`  Show to-read papers
-* `O`  Show recently read papers (DB history)
-
-
-## Status bar & command palette
-
-* Status bar shows: mode, current directory, selection summary, and last message.
-* `:` opens command mode.
-* `:help` lists available commands.
-* `?` also opens help (if enabled).
-
----
-
-## Tips
-
-* Keep Poppler updated for faster previews and better text extraction.
-* Kitty uses native image previews for the first PDF page. Install `chafa` only if you want the fallback image/text-art preview path in other terminals.
-* Back up `meta_dir` regularly to preserve annotations and reading states.
-* Use helper folders (`To Read/`, `Recently Added/`, `Recently Read/`) in your desktop file manager to open curated subsets outside of Gorae.
-
-Enjoy exploring your papers with Gorae! If you run into issues or have feature ideas, please open a GitHub issuewe'd love to hear from fellow readers.
+Install Poppler (`pdftotext`, `pdfinfo`, and `pdftocairo`) for extraction,
+metadata, and PDF previews. Kitty and iTerm2 support inline first-page images;
+other terminals can use optional `chafa` fallback rendering.

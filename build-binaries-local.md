@@ -1,10 +1,10 @@
-# Local Binary Builds (Not for Git)
+# Local release binary builds
 
 These notes walk through building standalone binaries for each supported platform without requiring Go on the target machine.
 
 ## Prerequisites
 
-- Go 1.21+ and the project dependencies installed on this machine.
+- Go 1.25+ and the project dependencies installed on this machine.
 - Poppler CLI tools (`pdftotext`, `pdfinfo`) available so you can test the Linux build; end users still need these tools, but not Go.
 
 From the repo root (the `gorae` checkout):
@@ -17,7 +17,7 @@ mkdir -p dist
 
 1. **Linux (amd64)**
    ```sh
-    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -o dist/gorae-linux-amd64 ./cmd/gorae
 
     ./dist/gorae-linux-amd64 -help   # sanity-check
@@ -34,11 +34,7 @@ mkdir -p dist
    ```
 4. **Windows (amd64)**
    ```sh
-    sudo apt-get update
-    sudo apt-get install -y mingw-w64
-
-    CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-    CC=x86_64-w64-mingw32-gcc \
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
     go build -o dist/gorae-windows-amd64.exe ./cmd/gorae
    ```
 
@@ -48,4 +44,4 @@ mkdir -p dist
 - Users copy the binary to a directory on their `PATH` (e.g., `~/.local/bin`, `/usr/local/bin`, `%USERPROFILE%\\bin`) and run `gorae -root /path/to/Papers`.
 - No Go toolchain required on the target system, but Poppler tools must be installed for metadata/text extraction features.
 
-*(Keep this file out of version control; see `.gitignore`.)*
+The generated `dist/` artifacts are ignored by Git.

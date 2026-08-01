@@ -11,7 +11,8 @@ The PKGBUILDs here are the **canonical** copies. The AUR-side repos are pure mir
 
 ## Per-release update workflow
 
-After cutting a new GitHub release (e.g. `v2.3.0`):
+After cutting a new GitHub release (the commands below use `v2.3.0` only as an
+example; replace it with the release being published):
 
 1. **Compute hashes** for the new release artefacts (run from the repo root):
    ```sh

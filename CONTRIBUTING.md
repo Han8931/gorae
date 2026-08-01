@@ -11,7 +11,7 @@ go build -o gorae ./cmd/gorae
 ./gorae
 ```
 
-Prereqs: **Go 1.25+** and Poppler (`pdftotext`, `pdfinfo`, `pdftocairo`). See [README → Install Option B](README.md#option-b-quick-install-script) for OS-specific commands.
+Prereqs: **Go 1.25+** and Poppler (`pdftotext`, `pdfinfo`, `pdftocairo`). See [README → Install](README.md#install) for OS-specific commands.
 
 ## Project layout
 

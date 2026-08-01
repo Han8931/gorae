@@ -5,13 +5,13 @@
 <h1 align="center">Gorae</h1>
 
 <p align="center">
-  <em>A terminal-first knowledge base for PDFs, EPUBs, and Markdown — with a built-in AI assistant that talks to your library.</em>
+  <em>Browse, search, annotate, and discuss your document library without leaving the terminal.</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/Han8931/gorae/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Han8931/gorae?sort=semver"></a>
   <a href="https://github.com/Han8931/gorae/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Han8931/gorae"></a>
-  <img alt="Go" src="https://img.shields.io/badge/go-1.21%2B-00ADD8?logo=go&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white">
   <a href="https://github.com/Han8931/gorae/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Han8931/gorae?style=social"></a>
 </p>
 
@@ -19,13 +19,18 @@
   <img src="assets/gorae_final_demo.gif" alt="App Demo" width="800">
 </p>
 
-## Why Gorae
+## What is Gorae?
 
-- **Lives in your terminal.** Vim-style browsing, mouse support, no Electron, no browser tab.
-- **AI assistant that knows your library.** Chat, summarize, and RAG-Q&A directly against your indexed documents.
-- **Open and local-first.** Your files, your metadata store, your choice of model (Ollama, OpenAI, anything OpenAI-compatible).
+Gorae is a small, keyboard-focused knowledge base for PDFs, EPUBs, and Markdown.
+It combines file browsing, metadata, notes, full-text search, and an optional AI
+assistant in one terminal interface.
 
-Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
+Your documents stay as ordinary files. Metadata and the search index are stored
+locally, and AI is optional: use Ollama on your machine or configure an
+OpenAI-compatible provider.
+
+Gorae may be a good fit if you prefer terminal tools, keep a folder-based paper
+library, or want fast search and notes without running a larger desktop app.
 
 ## Quickstart
 
@@ -37,7 +42,8 @@ Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
 2. **Rename it to `gorae`, make it executable**, and move it onto your `PATH`:
    ```sh
    mv gorae-linux-amd64 gorae                 # use the file you downloaded
-   chmod +x gorae && mv gorae ~/.local/bin/   # or /usr/local/bin
+   mkdir -p ~/.local/bin
+   chmod +x gorae && mv gorae ~/.local/bin/
    ```
 3. **Run it:**
    ```sh
@@ -54,18 +60,21 @@ Like Obsidian + Zotero, but in your terminal — and Vim-friendly.
 
 > Prefer building from source or using a package manager? See [Install](#install) below.
 
-## Features at a glance
+## Highlights
 
 | Area | What you get |
 |---|---|
-| **Browsing** | Vim-style nav, to-read queue, reading states, hierarchical tags (`ml/cnn`) |
-| **Search** | FTS5 full-text index with stemming; scope by `-t/-a/-y/-c/--tag`; every hit in a document, jump between them, open at the hit's page |
-| **Preview** | First-page PDF previews on Kitty / iTerm2; `chafa` fallback elsewhere |
-| **Metadata** | Auto-detect DOI / arXiv IDs, in-app editor, BibTeX copy |
-| **Links** | `[[wikilinks]]` in Markdown with auto backlinks |
-| **AI chat** | RAG against your library, streaming responses, sessions, skills |
-| **AI tools** | Model can invoke in-app actions like `save_markdown` (optional) |
-| **UI** | Themeable colors, glyphs, borders; mouse + Vim modal navigation |
+| **Browse** | Vim-style navigation, mouse support, reading states, favorites, and a to-read queue |
+| **Search** | Fast FTS5 metadata and full-text search, including every matching passage and PDF page |
+| **Preview** | Metadata, text, and first-page PDF previews in supported terminals |
+| **Organize** | Markdown notes, hierarchical tags, `[[wikilinks]]`, backlinks, and BibTeX copy |
+| **Import** | DOI and arXiv detection with metadata retrieval from Crossref and arXiv |
+| **AI (optional)** | Grounded chat, focused papers, summaries, sessions, skills, and streaming responses |
+| **Customize** | Accessible bundled themes, custom colors and glyphs, and a foldable tree pane |
+
+Gorae is under active development. The interface and configuration may continue
+to evolve, but existing config files are migrated when new top-level settings
+are introduced.
 
 ## AI Chat (`:gorae`)
 
@@ -76,11 +85,11 @@ A built-in RAG chat assistant grounded in your indexed library. Responses stream
 :index         build the FTS index first so the assistant has context
 ```
 
-**Headline features:**
+Features:
 
-- **RAG out of the box** — relevant chunks are retrieved from your library and injected into every query.
+- **Library retrieval** — relevant indexed passages are included with each question.
 - **Sessions** — conversations are auto-saved; resume with `/sessions`, fork with `/new`.
-- **`/load <query>`** — fzf-style live picker pins a file as primary context for follow-up questions.
+- **`/load <query>`** — a live fuzzy picker focuses one or more papers for follow-up questions.
 - **Vim-style navigation mode** — `Esc` switches from typing to a message cursor: `j/k` between messages, `Space` to mark, `y` to yank one or many to the clipboard.
 - **Tool calling** — with `enable_tools: true`, the model can invoke in-app actions like `save_markdown` to write summaries straight to `notes_dir`.
 - **Reasoning display** — collapsible `<think>` blocks for DeepSeek-R1 / Qwen3 / QwQ.
@@ -144,9 +153,9 @@ Pull the local model first if you haven't: `ollama pull llama3.2`. Good picks fo
 
 | Key | Action |
 |---|---|
-| `Enter` | Send message / select file in `/load` picker |
-| `↑` / `↓` | Browse input history · navigate `/load` results |
-| `Tab` | Autocomplete `/` command |
+| `Enter` | Send a message · load marked/current papers in `/load` |
+| `↑` / `↓` | Browse input history · move through `/load` results |
+| `Tab` | Autocomplete `/` commands · mark and advance in `/load` |
 | `Ctrl+T` | Toggle reasoning display |
 | `Esc` | Switch to navigation mode (or exit if chat is empty) |
 | `Ctrl+C` | Exit chat |
@@ -174,8 +183,8 @@ Mouse input is enabled by default. Set `"enable_mouse": false` in `config.json` 
 
 | Command | Description |
 |---|---|
-| `/load <query>` | Live fzf-style file picker; pin a file as focused context |
-| `/select` | Clear the currently focused file |
+| `/load <query>` | Live fuzzy picker; mark papers with `Tab`, then load with `Enter` |
+| `/unfocus` | Clear all focused papers (`/select` remains a legacy alias) |
 | `/summarize` | Summarize the focused file and save to its note |
 | `/sources` | Documents cited in the last answer |
 | `/clear` | Clear the conversation |
@@ -198,6 +207,7 @@ Vim-style navigation everywhere. Cheat sheet:
 |---|---|
 | Move / enter / up | `j/k`, `l/h` (or arrow keys) |
 | Select | `Space` |
+| Toggle tree pane | `,n` |
 | To-read queue | `t` |
 | Reading state | `r` |
 | Edit metadata | `ee` |
@@ -236,6 +246,21 @@ Opening at a specific page works with viewers that support it (`zathura`, `sioye
 
 **Bidirectional links:** write `[[filename]]` in any Markdown file, run `:index`, and backlinks appear at the bottom of the info pane for every document that points to it.
 
+### Themes and layout
+
+Use `:theme <name>` to switch among bundled themes. After typing `:theme `,
+press `Tab` for the next theme, `Shift+Tab` for the previous theme, and `Enter`
+to apply the highlighted choice. `:theme list` shows every bundled theme, while
+`:theme reload` reloads a custom `theme.toml`.
+
+Press `,n` in normal mode to toggle the directory tree for the current session.
+Set its startup behavior in `~/.config/gorae/config.json` (or the equivalent
+`XDG_CONFIG_HOME` path):
+
+```json
+"show_tree": true
+```
+
 ## Install
 
 ### Option A — Pre-built binary (recommended)
@@ -247,7 +272,7 @@ Covered in [Quickstart](#quickstart) above.
 
 #### Requirements
 
-- **Go 1.21+**
+- **Go 1.25+**
 - **Poppler CLI tools** (`pdftotext`, `pdfinfo`, `pdftocairo`)
 - **Optional fallback preview:** `chafa` for non-Kitty / non-iTerm2 terminals
 
@@ -330,17 +355,25 @@ Gorae auto-detects `zathura` on `PATH`, so the default works for most users.
 
 ```sh
 rm <path-to-installed-binary>
-rm -rf ~/.config/gorae        # config + theme
-rm -rf ~/.local/share/gorae   # metadata, notes, db
+rm -rf ~/.config/gorae        # permanently removes config + custom theme
+rm -rf ~/.local/share/gorae   # permanently removes metadata, notes, and database
 ```
 
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) — what's shipped, what's in progress, and what's planned.
 
+## Documentation
+
+- [User guide](docs/user-guide.md) — configuration, themes, keybindings, search, and AI
+- [Contributing](CONTRIBUTING.md) — development setup and pull requests
+- [Roadmap](ROADMAP.md) — shipped and planned work
+
 ## Contributing
 
-PRs, bug reports, and feature ideas welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for dev setup, conventions, and the PR checklist.
+PRs, bug reports, and feature ideas are welcome. See
+**[CONTRIBUTING.md](CONTRIBUTING.md)** for development setup and the pull-request
+checklist. If Gorae is useful to you, a star helps other terminal users find it.
 
 ## License & credit
 

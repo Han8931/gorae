@@ -13,7 +13,7 @@ dist_dir="${1:-$repo_root/dist}"
 mkdir -p "$dist_dir"
 
 targets=(
-	"linux amd64 gorae"
+	"linux amd64 gorae-linux-amd64"
 	"darwin amd64 gorae-darwin-amd64"
 	"darwin arm64 gorae-darwin-arm64"
 	"windows amd64 gorae-windows-amd64.exe"
@@ -23,7 +23,7 @@ cd "$repo_root"
 for target in "${targets[@]}"; do
 	read -r goos goarch filename <<<"$target"
 	echo "Building $goos/$goarch -> $dist_dir/$filename"
-	GOOS="$goos" GOARCH="$goarch" go build -o "$dist_dir/$filename" ./cmd/gorae
+	CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -o "$dist_dir/$filename" ./cmd/gorae
 done
 
 echo "All binaries written to $dist_dir"

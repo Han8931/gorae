@@ -10,7 +10,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] **Skills** — user-defined prompt templates as `.md` files, invoked as slash commands
 - [x] **`/summarize`** — streams a summary and saves to the file's note
 - [x] **Reasoning display** — collapsible `<think>` blocks (`Ctrl+T`) for DeepSeek-R1, Qwen3, QwQ
-- [x] **Live `/load` picker** — fzf-style file finder, results update as you type
+- [x] **Live `/load` picker** — fuzzy file finder with multi-file marking
 - [x] **Vim-style navigation mode** — `Esc`/`i`, `hjkl`, `gg`/`G`, marks (`Space`), yank (`y`)
 - [x] **Tool calling** — model can invoke in-app actions like `save_markdown`
 - [x] **Mouse-wheel scrolling** in chat
@@ -22,6 +22,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] Hierarchical tags
 - [x] Bidirectional `[[wikilinks]]` with backlinks
 - [x] Auto DOI / arXiv metadata + BibTeX copy
+- [x] Delete confirmation
 
 ## In progress
 
@@ -33,7 +34,6 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 - [ ] Semantic search in Gorae mode
 - [ ] Daily digest — `:digest` command summarising recent additions + matching arXiv papers
-- [ ] Multi-file handling
 - [ ] Session renaming
 - [ ] Text extraction / OCR
 - [ ] TTS
@@ -48,5 +48,4 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 ### Fixes
 
-- [ ] Delete-confirmation prompt
 - [ ] Metadata view improvements
