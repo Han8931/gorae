@@ -884,8 +884,12 @@ func (m Model) renderSearchResultsView() string {
 	}
 	b.WriteString("\n")
 
+	// The results list is the primary pane on this screen; the detail panel below
+	// it stays muted to keep the same visual hierarchy as the main browser.
+	detailStyles := m.styles.List
+	detailStyles.Border = m.styles.Border
 	detailLines := m.searchResultDetailLines(detailHeight+1, width)
-	for _, line := range m.renderPanelBlock("", detailLines, width, detailHeight+3, m.styles.List) {
+	for _, line := range m.renderPanelBlock("", detailLines, width, detailHeight+3, detailStyles) {
 		b.WriteString(line + "\n")
 	}
 
@@ -1608,7 +1612,11 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 		bodyHeight = 1
 	}
 
-	top := m.styles.Border.Render(m.borderChars.TopLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.TopRight)
+	// Each pane carries its own border style so the primary (Files) pane can be
+	// emphasized; fall back to the shared muted border when unset.
+	border := fallbackStyle(styles.Border, m.styles.Border)
+
+	top := border.Render(m.borderChars.TopLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.TopRight)
 	result := []string{top}
 
 	// When title is non-empty, reserve the first body row for the header.
@@ -1617,7 +1625,7 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 	if title != "" {
 		header := panelContent(innerWidth, title)
 		headerLine := fallbackStyle(styles.Header, lipgloss.NewStyle()).Render(header)
-		result = append(result, m.borderRow(headerLine, width))
+		result = append(result, m.borderRow(headerLine, width, border))
 	} else {
 		bodyRows = bodyHeight
 	}
@@ -1647,10 +1655,10 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 			content := panelContent(innerWidth, text)
 			styled = m.styleForPanelLine(styles, kind).Render(content)
 		}
-		result = append(result, m.borderRow(styled, width))
+		result = append(result, m.borderRow(styled, width, border))
 	}
 
-	bottom := m.styles.Border.Render(m.borderChars.BottomLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.BottomRight)
+	bottom := border.Render(m.borderChars.BottomLeft + strings.Repeat(m.borderChars.Horizontal, innerWidth) + m.borderChars.BottomRight)
 	result = append(result, bottom)
 	return result
 }
@@ -1676,12 +1684,12 @@ func panelContent(innerWidth int, text string) string {
 	return strings.Repeat(" ", margin) + padded + strings.Repeat(" ", margin)
 }
 
-func (m Model) borderRow(content string, width int) string {
+func (m Model) borderRow(content string, width int, border lipgloss.Style) string {
 	if width <= 2 {
 		return content
 	}
-	left := m.styles.Border.Render(m.borderChars.Vertical)
-	right := m.styles.Border.Render(m.borderChars.Vertical)
+	left := border.Render(m.borderChars.Vertical)
+	right := border.Render(m.borderChars.Vertical)
 	return left + content + right
 }
 

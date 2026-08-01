@@ -16,6 +16,10 @@ type panelStyles struct {
 	Selected       lipgloss.Style
 	Cursor         lipgloss.Style
 	CursorSelected lipgloss.Style
+	// Border is the style used for this panel's frame. The primary (Files) pane
+	// carries a stronger accent border while passive panes stay muted, giving
+	// the layout a clear visual hierarchy.
+	Border lipgloss.Style
 }
 
 type mdStyles struct {
@@ -59,6 +63,15 @@ type borderCharset struct {
 
 func newViewStyles(th theme.Theme) viewStyles {
 	palette := th.Palette
+	// Passive panes (Tree, Details) use the muted theme border color. The Files
+	// pane is the primary interactive pane, so it gets a stronger accent border to
+	// make the visual hierarchy obvious. Falls back to the muted border when the
+	// palette defines no accent.
+	mutedBorder := lipgloss.NewStyle().Foreground(lipgloss.Color(resolveColor(th.Borders.Color, palette)))
+	primaryBorder := mutedBorder
+	if accent := resolveColor(palette.Accent, palette); accent != "" {
+		primaryBorder = lipgloss.NewStyle().Foreground(lipgloss.Color(accent)).Bold(true)
+	}
 	return viewStyles{
 		AppHeader: styleFromSpec(palette, th.Components.AppHeader),
 		Tree: panelStyles{
@@ -66,6 +79,7 @@ func newViewStyles(th theme.Theme) viewStyles {
 			Body:   styleFromSpec(palette, th.Components.TreeBody),
 			Info:   styleFromSpec(palette, th.Components.TreeInfo),
 			Active: styleFromSpec(palette, th.Components.TreeActive),
+			Border: mutedBorder,
 		},
 		List: panelStyles{
 			Header:         styleFromSpec(palette, th.Components.ListHeader),
@@ -73,11 +87,13 @@ func newViewStyles(th theme.Theme) viewStyles {
 			Selected:       styleFromSpec(palette, th.Components.ListSelected),
 			Cursor:         styleFromSpec(palette, th.Components.ListCursor),
 			CursorSelected: styleFromSpec(palette, th.Components.ListCursorSelect),
+			Border:         primaryBorder,
 		},
 		Preview: panelStyles{
 			Header: styleFromSpec(palette, th.Components.PreviewHeader),
 			Body:   styleFromSpec(palette, th.Components.PreviewBody),
 			Info:   styleFromSpec(palette, th.Components.PreviewInfo),
+			Border: mutedBorder,
 		},
 		StatusBar:   styleFromSpec(palette, th.Components.StatusBar),
 		StatusLabel: styleFromSpec(palette, th.Components.StatusLabel),
