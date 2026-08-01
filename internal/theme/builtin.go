@@ -32,7 +32,7 @@ func buildTheme(s builtinSpec) Theme {
 
 			ListHeader:       StyleSpec{FG: p.FG, BG: s.headerBG, Bold: true},
 			ListBody:         StyleSpec{FG: p.FG},
-			ListSelected:     StyleSpec{FG: p.Selection, Bold: true},
+			ListSelected:     StyleSpec{FG: p.BG, BG: p.Selection, Bold: true},
 			ListCursor:       StyleSpec{FG: p.BG, BG: p.Warning, Bold: true},
 			ListCursorSelect: StyleSpec{FG: p.BG, BG: p.Selection, Bold: true},
 

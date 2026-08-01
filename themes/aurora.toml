@@ -22,13 +22,12 @@ color = "#2a3558"
 [icons]
 mode = "unicode"
 favorite = "★"
-toread = "•"
+toread = "☐"
 read = "✓"
-reading = "🕮"
-unread = "⛔"
+reading = "◐"
+unread = "○"
 folder = "▸"
 pdf = "▣"
-selected = "▌"
 
 [components.app_header]
 fg = "#e6edf3"
@@ -60,7 +59,8 @@ bold = true
 fg = "#e6edf3"
 
 [components.list_selected]
-fg = "#2ac3de"
+fg = "#0b1020"
+bg = "#2ac3de"
 bold = true
 
 [components.list_cursor]

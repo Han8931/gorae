@@ -170,6 +170,9 @@ func (m *Model) submitRename(raw string) tea.Cmd {
 // commandPromptPreKey handles command-history recall and autocomplete, which
 // must run before the key reaches the textinput.
 func (m *Model) commandPromptPreKey(key string) (bool, tea.Cmd) {
+	if key != "tab" {
+		m.resetThemeCompletion()
+	}
 	switch key {
 	case "tab":
 		if m.handleCommandAutocomplete() {

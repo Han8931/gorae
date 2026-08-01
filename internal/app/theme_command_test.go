@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	textinput "github.com/charmbracelet/bubbles/textinput"
@@ -52,14 +53,46 @@ func TestAutocompleteThemeSharedPrefix(t *testing.T) {
 }
 
 func TestAutocompleteThemeEmptyListsAll(t *testing.T) {
-	// ":theme " with a trailing space lists every candidate and leaves the
-	// buffer untouched.
+	// ":theme " starts the selectable candidate list.
 	m := newThemeTestModel(":theme ")
 	if !m.autocompleteTheme(":theme", true) {
 		t.Fatal("expected autocomplete to handle the empty token")
 	}
-	if len(m.commandOutput) == 0 {
-		t.Fatal("expected candidate list output")
+	if len(m.themeCompletionCandidates) == 0 {
+		t.Fatal("expected selectable theme candidates")
+	}
+	first := themeCompletionCandidates()[0]
+	if got, want := m.input.Value(), ":theme "+first; got != want {
+		t.Fatalf("input = %q, want %q", got, want)
+	}
+	if !m.autocompleteTheme(m.input.Value(), false) {
+		t.Fatal("expected repeated Tab to advance the selection")
+	}
+	second := themeCompletionCandidates()[1]
+	if got, want := m.input.Value(), ":theme "+second; got != want {
+		t.Fatalf("input after second Tab = %q, want %q", got, want)
+	}
+}
+
+func TestThemeCompletionDoesNotIncreaseFrameHeight(t *testing.T) {
+	m := newThemeTestModel(":theme ")
+	m.width = 120
+	m.viewportHeight = 18
+	m.cwd = "/tmp"
+	before := strings.Count(m.View(), "\n")
+	m.autocompleteTheme(":theme", true)
+	after := strings.Count(m.View(), "\n")
+	if after != before {
+		t.Fatalf("theme chooser changed frame height from %d to %d lines", before, after)
+	}
+}
+
+func TestThemeCompletionResetsWhenTyping(t *testing.T) {
+	m := newThemeTestModel(":theme ")
+	m.autocompleteTheme(":theme", true)
+	m.commandPromptPreKey("x")
+	if len(m.themeCompletionCandidates) != 0 {
+		t.Fatal("expected typing to reset the theme completion cycle")
 	}
 }
 

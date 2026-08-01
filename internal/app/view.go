@@ -154,17 +154,17 @@ func (m Model) renderListPanel(width, height int) []string {
 		}
 
 		kind := panelLineBody
-		if i == m.cursor {
+		selected := m.selected[full]
+		switch {
+		case i == m.cursor && selected:
+			kind = panelLineCursorSelected
+		case i == m.cursor:
 			kind = panelLineCursor
+		case selected:
+			kind = panelLineSelected
 		}
 
-		selMarker := " "
-		if m.selected[full] {
-			selMarker = m.selectionIndicator()
-		}
-
-		text := fmt.Sprintf("%s %s", selMarker, display)
-		lines = append(lines, panelLine{text: text, kind: kind})
+		lines = append(lines, panelLine{text: display, kind: kind})
 	}
 
 	title := fmt.Sprintf("Files (%d)", len(m.entries))
@@ -669,6 +669,9 @@ func (m Model) View() string {
 				}
 			}
 		}
+		if m.state == stateCommand && len(m.themeCompletionCandidates) > 0 {
+			overlayLines = m.renderThemeCompletionPanel(middleWidth, height)
+		}
 
 		gapWidth := panelSeparatorWidth / 2
 		if gapWidth < 1 {
@@ -780,6 +783,21 @@ func (m Model) View() string {
 	}
 
 	return b.String()
+}
+
+func (m Model) renderThemeCompletionPanel(width, height int) []string {
+	lines := make([]panelLine, 0, len(m.themeCompletionCandidates)+1)
+	for i, name := range m.themeCompletionCandidates {
+		marker := "  "
+		kind := panelLineBody
+		if i == m.themeCompletionIndex {
+			marker = "▸ "
+			kind = panelLineCursor
+		}
+		lines = append(lines, panelLine{text: marker + name, kind: kind})
+	}
+	lines = append(lines, panelLine{text: "Tab: next  Enter: apply", kind: panelLineInfo})
+	return m.renderPanelBlock("Themes", lines, width, height, m.styles.List)
 }
 
 func (m Model) graphicPreviewOverlay() string {

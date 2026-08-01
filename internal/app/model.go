@@ -130,6 +130,9 @@ type Model struct {
 	commandHistory             []string
 	commandHistoryIndex        int
 	commandHistoryBuffer       string
+	themeCompletionCandidates  []string
+	themeCompletionPrefix      string
+	themeCompletionIndex       int
 	entryTitles                map[string]string
 	sortMode                   sortMode
 	awaitingSort               bool
@@ -712,7 +715,7 @@ func (m Model) readingStateIcon(value string) string {
 	}
 	switch normalizeReadingStateValue(value) {
 	case readingStateReading:
-		return "▶"
+		return "◐"
 	case readingStateRead:
 		return "✓"
 	default:
@@ -728,13 +731,6 @@ func (m Model) entryIcon(isDir bool) string {
 		return "▸"
 	}
 	if icon := strings.TrimSpace(m.iconSet.PDF); icon != "" {
-		return icon
-	}
-	return "▣"
-}
-
-func (m Model) selectionIndicator() string {
-	if icon := strings.TrimSpace(m.iconSet.Selected); icon != "" {
 		return icon
 	}
 	return "▣"
@@ -767,7 +763,7 @@ func (m Model) toReadIcon() string {
 	if icon := strings.TrimSpace(m.iconSet.ToRead); icon != "" {
 		return icon
 	}
-	return "T"
+	return "☐"
 }
 
 func (m Model) listVisibleRows() int {

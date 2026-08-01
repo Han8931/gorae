@@ -35,14 +35,12 @@ color = "#2d3a4a"
 [icons]
 mode = "unicode"
 favorite = "★"
-toread = "•"
+toread = "☐"
 read = "✓"
-reading = "▶"
+reading = "◐"
 unread = "○"
 folder = "▸"
 pdf = "▣"
-selected = "✔"
-selection = "▌"
 
 [components.app_header]
 fg = "#eef1f6"
@@ -74,7 +72,8 @@ bold = true
 fg = "#eef1f6"
 
 [components.list_selected]
-fg = "#5eead4"
+fg = "#0a0f14"
+bg = "#5eead4"
 bold = true
 
 [components.list_cursor]
@@ -272,9 +271,9 @@ func Default() Theme {
 		Icons: Icons{
 			Mode:      "unicode",
 			Favorite:  "★",
-			ToRead:    "•",
+			ToRead:    "☐",
 			Read:      "✓",
-			Reading:   "▶",
+			Reading:   "◐",
 			Unread:    "○",
 			Folder:    "▸",
 			PDF:       "▣",
@@ -356,7 +355,29 @@ func loadTheme(path string) (Theme, error) {
 	if err := simpletoml.Decode(data, &base); err != nil {
 		return base, fmt.Errorf("parse theme: %w", err)
 	}
+	upgradeLegacyDefaultTheme(&base)
 	return base, nil
+}
+
+// upgradeLegacyDefaultTheme keeps an old, generated Gorae Deep theme from
+// masking newer built-in defaults after the application is reinstalled. Only
+// values that exactly match the former defaults are migrated; user-selected
+// colors and other custom themes are left alone.
+func upgradeLegacyDefaultTheme(t *Theme) {
+	if t == nil || t.Meta.Name != "Gorae Deep" || t.Meta.Version != 1 {
+		return
+	}
+	if t.Icons.ToRead == "•" {
+		t.Icons.ToRead = "☐"
+	}
+	if t.Icons.Reading == "▶" {
+		t.Icons.Reading = "◐"
+	}
+	if t.Components.ListSelected.BG == "" &&
+		t.Components.ListSelected.FG == t.Palette.Selection {
+		t.Components.ListSelected.FG = t.Palette.BG
+		t.Components.ListSelected.BG = t.Palette.Selection
+	}
 }
 
 // Path returns the resolved path to the active theme file.
@@ -383,9 +404,9 @@ func (t Theme) IconSet() IconSet {
 	case "nerd":
 		base = IconSet{
 			Favorite:  "",
-			ToRead:    "",
-			Read:      "",
-			Reading:   "",
+			ToRead:    "☐",
+			Read:      "✓",
+			Reading:   "◐",
 			Unread:    "○",
 			Folder:    "",
 			PDF:       "",
@@ -412,9 +433,9 @@ func (t Theme) IconSet() IconSet {
 		// unicode default
 		base = IconSet{
 			Favorite:  "★",
-			ToRead:    "•",
+			ToRead:    "☐",
 			Read:      "✓",
-			Reading:   "▶",
+			Reading:   "◐",
 			Unread:    "○",
 			Folder:    "",
 			PDF:       "§",

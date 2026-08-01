@@ -2954,20 +2954,20 @@ func firstCommandToken(s string) string {
 	return strings.ToLower(fields[0])
 }
 
-// themeCompletionCandidates lists the values that may follow ":theme " — the
-// built-in theme keys plus the theme subcommands — sorted for stable output.
+// themeCompletionCandidates lists selectable built-in theme keys in stable
+// order. Subcommands are still completed when the user begins typing one, but
+// are not mixed into the visual theme chooser.
 func themeCompletionCandidates() []string {
-	names := theme.BuiltinNames()
-	out := make([]string, 0, len(names)+3)
-	out = append(out, "list", "reload", "show")
-	out = append(out, names...)
-	sort.Strings(out)
-	return out
+	return theme.BuiltinNames()
 }
 
 // autocompleteTheme completes the single argument of the :theme command against
 // the known theme names and subcommands.
 func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool {
+	if m.advanceThemeCompletion() {
+		return true
+	}
+
 	body := strings.TrimPrefix(trimmed, ":")
 	fields := strings.Fields(body)
 
@@ -2988,6 +2988,10 @@ func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool 
 
 	tokenLower := strings.ToLower(token)
 	candidates := themeCompletionCandidates()
+	if tokenLower != "" {
+		candidates = append(append([]string(nil), candidates...), "list", "reload", "show")
+		sort.Strings(candidates)
+	}
 	matches := make([]string, 0, len(candidates))
 	for _, c := range candidates {
 		if strings.HasPrefix(c, tokenLower) {
@@ -3009,12 +3013,7 @@ func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool 
 
 	lcp := longestCommonPrefix(matches)
 	if len(matches) > 1 && lcp == tokenLower {
-		lines := []string{"Themes:"}
-		for _, name := range matches {
-			lines = append(lines, "  "+name)
-		}
-		m.setCommandOutput(lines)
-		m.setPersistentStatus("Multiple completions (type more letters)")
+		m.startThemeCompletion(prefix, matches)
 		return true
 	}
 
@@ -3025,6 +3024,44 @@ func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool 
 	m.input.SetValue(newValue)
 	m.input.CursorEnd()
 	return true
+}
+
+func (m *Model) resetThemeCompletion() {
+	m.themeCompletionCandidates = nil
+	m.themeCompletionPrefix = ""
+	m.themeCompletionIndex = -1
+}
+
+func (m *Model) startThemeCompletion(prefix string, candidates []string) {
+	m.themeCompletionPrefix = prefix
+	m.themeCompletionCandidates = append([]string(nil), candidates...)
+	m.themeCompletionIndex = 0
+	m.renderThemeCompletion()
+}
+
+func (m *Model) advanceThemeCompletion() bool {
+	if len(m.themeCompletionCandidates) == 0 || m.themeCompletionIndex < 0 {
+		return false
+	}
+	want := m.themeCompletionPrefix + m.themeCompletionCandidates[m.themeCompletionIndex]
+	if m.input.Value() != want {
+		m.resetThemeCompletion()
+		return false
+	}
+	m.themeCompletionIndex = (m.themeCompletionIndex + 1) % len(m.themeCompletionCandidates)
+	m.renderThemeCompletion()
+	return true
+}
+
+func (m *Model) renderThemeCompletion() {
+	if len(m.themeCompletionCandidates) == 0 || m.themeCompletionIndex < 0 {
+		return
+	}
+	selected := m.themeCompletionCandidates[m.themeCompletionIndex]
+	m.input.SetValue(m.themeCompletionPrefix + selected)
+	m.input.CursorEnd()
+	m.clearCommandOutput()
+	m.setPersistentStatus("Tab: next theme  Enter: apply")
 }
 
 func (m *Model) commandPathCompletions(token string) []pathCompletion {
