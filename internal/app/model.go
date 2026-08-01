@@ -112,6 +112,7 @@ type Model struct {
 	cwdIsRecentlyAdded  bool
 	cwdIsFavorites      bool
 	cwdIsToRead         bool
+	treePaneHidden      bool
 	entries             []fs.DirEntry
 	cursor              int
 	err                 error
@@ -414,6 +415,20 @@ func (m Model) panelWidths() (int, int, int) {
 
 	left := int(float64(m.width) * leftPct)
 	right := int(float64(m.width) * rightPct)
+	if m.treePaneHidden {
+		if right < minRightPanelWidth {
+			right = minRightPanelWidth
+		}
+		gap := panelSeparatorWidth / 2
+		if gap < 1 {
+			gap = 1
+		}
+		middle := m.width - gap - right
+		if middle < minMiddlePanelWidth {
+			middle = minMiddlePanelWidth
+		}
+		return 0, middle, right
+	}
 
 	if left < minLeftPanelWidth {
 		left = minLeftPanelWidth

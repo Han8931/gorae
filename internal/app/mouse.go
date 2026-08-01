@@ -171,7 +171,10 @@ func (m Model) clickInListPanel(msg tea.MouseMsg) (int, bool) {
 	if gapWidth < 1 {
 		gapWidth = 1
 	}
-	listStartX := leftWidth + gapWidth
+	listStartX := leftWidth
+	if !m.treePaneHidden {
+		listStartX += gapWidth
+	}
 	listEndX := listStartX + middleWidth
 	if msg.X < listStartX || msg.X >= listEndX {
 		return 0, false

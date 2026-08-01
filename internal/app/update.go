@@ -100,6 +100,32 @@ func (m *Model) yankSequence(key string) string {
 	return ""
 }
 
+func (m *Model) handleNavigationPrefix(key string) bool {
+	now := time.Now()
+	if key == "," {
+		m.lastKey = key
+		m.lastKeyAt = now
+		m.setStatus("Leader: n toggle tree pane")
+		return true
+	}
+	if m.lastKey != "," {
+		return false
+	}
+	prefixAt := m.lastKeyAt
+	m.lastKey = ""
+	m.lastKeyAt = time.Time{}
+	if key != "n" || now.Sub(prefixAt) > 1200*time.Millisecond {
+		return false
+	}
+	m.treePaneHidden = !m.treePaneHidden
+	if m.treePaneHidden {
+		m.setStatus("Tree pane hidden (,n to show)")
+	} else {
+		m.setStatus("Tree pane shown (,n to hide)")
+	}
+	return true
+}
+
 func (m *Model) currentYankTarget() string {
 	// When in search results, use the selected match.
 	if m.state == stateSearchResults {
@@ -711,6 +737,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ===========================
 		// NORMAL MODE
 		// ===========================
+		if m.handleNavigationPrefix(key) {
+			return m, nil
+		}
 		switch key {
 
 		case "q", "ctrl+c":
@@ -2056,6 +2085,7 @@ func buildHelpOutput() []string {
 		"  h ............ go up a directory",
 		"  l/Enter ...... enter/open",
 		"  g g / G ...... top/bottom of list",
+		"  ,n ........... toggle tree pane",
 		"",
 		"Selection & Files",
 		"  space ........ toggle selection",

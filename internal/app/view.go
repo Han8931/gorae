@@ -657,7 +657,10 @@ func (m Model) View() string {
 			height = 3
 		}
 
-		treeLines := m.renderTreePanel(leftWidth, height)
+		var treeLines []string
+		if !m.treePaneHidden {
+			treeLines = m.renderTreePanel(leftWidth, height)
+		}
 		listLines := m.renderListPanel(middleWidth, height)
 		prevLines := m.renderPreviewPanel(rightWidth, height)
 
@@ -696,7 +699,7 @@ func (m Model) View() string {
 			}
 
 			line := tl
-			if gap != "" {
+			if !m.treePaneHidden && gap != "" {
 				line += gap
 			}
 			line += ll
@@ -821,7 +824,10 @@ func (m Model) graphicPreviewOverlay() string {
 	}
 
 	row := 5
-	col := leftWidth + gapWidth + middleWidth + gapWidth + 3
+	col := leftWidth + middleWidth + gapWidth + 3
+	if !m.treePaneHidden {
+		col += gapWidth
+	}
 	if col < 1 {
 		col = 1
 	}
