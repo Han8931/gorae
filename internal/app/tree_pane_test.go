@@ -22,14 +22,22 @@ func TestNavigationPrefixTogglesTreePane(t *testing.T) {
 }
 
 func TestHiddenTreePaneReclaimsWidth(t *testing.T) {
-	m := Model{width: 120, treePaneHidden: true}
-	left, middle, right := m.panelWidths()
+	visible := Model{width: 120}
+	_, visibleMiddle, visibleRight := visible.panelWidths()
+	hidden := Model{width: 120, treePaneHidden: true}
+	left, middle, right := hidden.panelWidths()
 	gap := panelSeparatorWidth / 2
 	if left != 0 {
 		t.Fatalf("hidden tree width = %d, want 0", left)
 	}
-	if got := middle + right + gap; got != m.width {
-		t.Fatalf("panels use %d columns, want %d", got, m.width)
+	if got := middle + right + gap; got != hidden.width {
+		t.Fatalf("panels use %d columns, want %d", got, hidden.width)
+	}
+	if middle <= visibleMiddle {
+		t.Fatalf("hidden-tree list width = %d, want more than %d", middle, visibleMiddle)
+	}
+	if right <= visibleRight {
+		t.Fatalf("hidden-tree detail width = %d, want more than %d", right, visibleRight)
 	}
 }
 

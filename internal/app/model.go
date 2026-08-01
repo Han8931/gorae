@@ -412,6 +412,12 @@ func (m Model) panelWidths() (int, int, int) {
 		leftPct = 0.18
 		rightPct = 0.28
 	}
+	if m.treePaneHidden {
+		// With the tree folded, share its space between the list and preview.
+		// Favor the detail pane so long metadata and document previews benefit
+		// meaningfully instead of assigning all reclaimed width to the list.
+		rightPct = 0.45
+	}
 
 	left := int(float64(m.width) * leftPct)
 	right := int(float64(m.width) * rightPct)
