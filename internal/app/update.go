@@ -2994,7 +2994,11 @@ func themeCompletionCandidates() []string {
 // autocompleteTheme completes the single argument of the :theme command against
 // the known theme names and subcommands.
 func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool {
-	if m.advanceThemeCompletion() {
+	return m.autocompleteThemeDirection(trimmed, trailingWhitespace, 1)
+}
+
+func (m *Model) autocompleteThemeDirection(trimmed string, trailingWhitespace bool, direction int) bool {
+	if m.advanceThemeCompletion(direction) {
 		return true
 	}
 
@@ -3043,7 +3047,7 @@ func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool 
 
 	lcp := longestCommonPrefix(matches)
 	if len(matches) > 1 && lcp == tokenLower {
-		m.startThemeCompletion(prefix, matches)
+		m.startThemeCompletion(prefix, matches, direction)
 		return true
 	}
 
@@ -3062,14 +3066,17 @@ func (m *Model) resetThemeCompletion() {
 	m.themeCompletionIndex = -1
 }
 
-func (m *Model) startThemeCompletion(prefix string, candidates []string) {
+func (m *Model) startThemeCompletion(prefix string, candidates []string, direction int) {
 	m.themeCompletionPrefix = prefix
 	m.themeCompletionCandidates = append([]string(nil), candidates...)
 	m.themeCompletionIndex = 0
+	if direction < 0 {
+		m.themeCompletionIndex = len(candidates) - 1
+	}
 	m.renderThemeCompletion()
 }
 
-func (m *Model) advanceThemeCompletion() bool {
+func (m *Model) advanceThemeCompletion(direction int) bool {
 	if len(m.themeCompletionCandidates) == 0 || m.themeCompletionIndex < 0 {
 		return false
 	}
@@ -3078,7 +3085,13 @@ func (m *Model) advanceThemeCompletion() bool {
 		m.resetThemeCompletion()
 		return false
 	}
-	m.themeCompletionIndex = (m.themeCompletionIndex + 1) % len(m.themeCompletionCandidates)
+	m.themeCompletionIndex += direction
+	if m.themeCompletionIndex < 0 {
+		m.themeCompletionIndex = len(m.themeCompletionCandidates) - 1
+	}
+	if m.themeCompletionIndex >= len(m.themeCompletionCandidates) {
+		m.themeCompletionIndex = 0
+	}
 	m.renderThemeCompletion()
 	return true
 }
@@ -3091,7 +3104,31 @@ func (m *Model) renderThemeCompletion() {
 	m.input.SetValue(m.themeCompletionPrefix + selected)
 	m.input.CursorEnd()
 	m.clearCommandOutput()
-	m.setPersistentStatus("Tab: next theme  Enter: apply")
+	m.setPersistentStatus("Tab: next  Shift+Tab: previous  Enter: apply")
+}
+
+func (m *Model) handleThemeAutocompleteReverse() bool {
+	if m.state != stateCommand {
+		return false
+	}
+	value := m.input.Value()
+	runes := []rune(value)
+	if m.input.Position() != len(runes) {
+		return false
+	}
+	trimmedLen := len(runes)
+	for trimmedLen > 0 && unicode.IsSpace(runes[trimmedLen-1]) {
+		trimmedLen--
+	}
+	if trimmedLen == 0 {
+		return false
+	}
+	trimmed := string(runes[:trimmedLen])
+	trailingWhitespace := trimmedLen != len(runes)
+	if firstCommandToken(trimmed) != "theme" {
+		return false
+	}
+	return m.autocompleteThemeDirection(trimmed, trailingWhitespace, -1)
 }
 
 func (m *Model) commandPathCompletions(token string) []pathCompletion {

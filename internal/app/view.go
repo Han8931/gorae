@@ -797,7 +797,7 @@ func (m Model) renderThemeCompletionPanel(width, height int) []string {
 		}
 		lines = append(lines, panelLine{text: name, kind: kind})
 	}
-	lines = append(lines, panelLine{text: "Tab: next  Enter: apply", kind: panelLineInfo})
+	lines = append(lines, panelLine{text: "Tab next  S-Tab previous  Enter apply", kind: panelLineInfo})
 	return m.renderPanelBlock("Themes", lines, width, height, m.styles.List)
 }
 

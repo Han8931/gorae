@@ -397,7 +397,7 @@ func (m *Model) renderFindModal(width, height int) string {
 				Foreground(lipgloss.Color("#1a1b26")).
 				Bold(true)
 		}
-		selBar := m.styles.List.CursorSelected
+		selBar := m.styles.List.Selected
 		if isZeroStyle(selBar) {
 			selBar = lipgloss.NewStyle().
 				Background(lipgloss.Color("#2ac3de")).
@@ -417,11 +417,12 @@ func (m *Model) renderFindModal(width, height int) string {
 			}
 			detail = runewidth.Truncate(detail, innerW-4, "…")
 
+			titleLine := panelContent(innerW, title)
 			switch {
 			case i == m.aiSearchCursor:
-				b.WriteString(cursorBar.Render(panelContent(innerW, title)))
+				b.WriteString(cursorBar.Render(titleLine))
 			case m.isFindMarked(r.Path):
-				b.WriteString(selBar.Render(panelContent(innerW, title)))
+				b.WriteString(selBar.Render(titleLine))
 			default:
 				b.WriteString(" " + titleStyle.Render(title))
 			}

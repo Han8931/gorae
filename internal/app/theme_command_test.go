@@ -100,6 +100,23 @@ func TestThemeCompletionResetsWhenTyping(t *testing.T) {
 	}
 }
 
+func TestThemeCompletionShiftTabMovesBackward(t *testing.T) {
+	m := newThemeTestModel(":theme ")
+	if handled, _ := m.commandPromptPreKey("shift+tab"); !handled {
+		t.Fatal("expected Shift+Tab to open the theme chooser")
+	}
+	candidates := themeCompletionCandidates()
+	if got, want := m.input.Value(), ":theme "+candidates[len(candidates)-1]; got != want {
+		t.Fatalf("initial Shift+Tab = %q, want %q", got, want)
+	}
+	if handled, _ := m.commandPromptPreKey("shift+tab"); !handled {
+		t.Fatal("expected repeated Shift+Tab to move backward")
+	}
+	if got, want := m.input.Value(), ":theme "+candidates[len(candidates)-2]; got != want {
+		t.Fatalf("second Shift+Tab = %q, want %q", got, want)
+	}
+}
+
 func TestAutocompleteThemeStopsAfterArg(t *testing.T) {
 	// A completed argument means there is nothing left to complete.
 	m := newThemeTestModel(":theme dracula ")
