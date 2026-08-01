@@ -85,6 +85,10 @@ func TestThemeCompletionDoesNotIncreaseFrameHeight(t *testing.T) {
 	if after != before {
 		t.Fatalf("theme chooser changed frame height from %d to %d lines", before, after)
 	}
+	chooser := strings.Join(m.renderThemeCompletionPanel(40, 18), "\n")
+	if strings.Contains(chooser, "▸") {
+		t.Fatal("theme chooser should use row highlighting without a wedge marker")
+	}
 }
 
 func TestThemeCompletionResetsWhenTyping(t *testing.T) {

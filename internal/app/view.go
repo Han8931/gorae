@@ -791,13 +791,11 @@ func (m Model) View() string {
 func (m Model) renderThemeCompletionPanel(width, height int) []string {
 	lines := make([]panelLine, 0, len(m.themeCompletionCandidates)+1)
 	for i, name := range m.themeCompletionCandidates {
-		marker := "  "
 		kind := panelLineBody
 		if i == m.themeCompletionIndex {
-			marker = "▸ "
 			kind = panelLineCursor
 		}
-		lines = append(lines, panelLine{text: marker + name, kind: kind})
+		lines = append(lines, panelLine{text: name, kind: kind})
 	}
 	lines = append(lines, panelLine{text: "Tab: next  Enter: apply", kind: panelLineInfo})
 	return m.renderPanelBlock("Themes", lines, width, height, m.styles.List)
