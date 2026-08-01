@@ -185,7 +185,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevWidth := m.width
 		prevViewportHeight := m.viewportHeight
 		m.windowHeight = msg.Height
-		m.viewportHeight = msg.Height - 5
+		// The main view now reserves only the status-bar row as fixed chrome; the
+		// optional prompt row is carved out of the panels when it is active. This
+		// gives the reclaimed header/spacer rows back to the three panes.
+		m.viewportHeight = msg.Height - 1
 		if m.viewportHeight < 1 {
 			m.viewportHeight = 1
 		}

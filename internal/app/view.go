@@ -635,8 +635,22 @@ func (m Model) View() string {
 	var b strings.Builder
 	var overlayLines []string
 
-	// Header (full width)
-	fmt.Fprintf(&b, "Dir : %s\n\n", m.cwd)
+	// The prompt sits directly above the status bar and is only shown while a
+	// prompt is active. Compute it first so the panels can reclaim its row
+	// whenever no prompt is present.
+	var promptLine string
+	switch m.state {
+	case stateNewDir:
+		promptLine = m.renderPromptLine("new dir", m.input.View())
+	case stateRename:
+		promptLine = m.renderPromptLine("rename", m.input.View())
+	case stateCommand:
+		promptLine = m.renderMinimalPrompt(":", m.input.View())
+	case stateSearchPrompt:
+		promptLine = m.renderPromptLine("search", m.input.View())
+	case stateArxivPrompt:
+		promptLine = m.renderPromptLine("arxiv", m.input.View())
+	}
 
 	// If we don't know width yet (no WindowSizeMsg yet), fall back to single-panel list.
 	if m.width <= 0 {
@@ -652,7 +666,12 @@ func (m Model) View() string {
 
 		leftWidth, middleWidth, rightWidth := m.panelWidths()
 
+		// The panels fill the full height when idle; when a prompt is active they
+		// give up one row for it so the status bar stays pinned to the bottom.
 		height := m.viewportHeight
+		if promptLine != "" {
+			height--
+		}
 		if height < 3 {
 			height = 3
 		}
@@ -712,19 +731,6 @@ func (m Model) View() string {
 		}
 	}
 
-	var promptLine string
-	switch m.state {
-	case stateNewDir:
-		promptLine = m.renderPromptLine("new dir", m.input.View())
-	case stateRename:
-		promptLine = m.renderPromptLine("rename", m.input.View())
-	case stateCommand:
-		promptLine = m.renderMinimalPrompt(":", m.input.View())
-	case stateSearchPrompt:
-		promptLine = m.renderPromptLine("search", m.input.View())
-	case stateArxivPrompt:
-		promptLine = m.renderPromptLine("arxiv", m.input.View())
-	}
 	// Inline command output (e.g. the result of a : command) renders above the
 	// prompt and status bar.
 	if len(m.commandOutput) > 0 {
@@ -770,14 +776,11 @@ func (m Model) View() string {
 		}
 	}
 
-	// The prompt (or a blank spacer when idle) sits directly above the status
-	// bar. The status bar is written last, with no trailing newline, so it stays
+	// The prompt appears directly above the status bar only while it is active.
+	// The status bar is written last, with no trailing newline, so it stays
 	// pinned to the very bottom row of the screen.
-	b.WriteString("\n")
 	if promptLine != "" {
 		b.WriteString(promptLine + "\n")
-	} else {
-		b.WriteString("\n")
 	}
 	b.WriteString(m.renderStatusBar())
 
@@ -1377,7 +1380,8 @@ func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
 // hitTestListRow returns the index of the entry for a given mouse Y (relative to viewport start).
 // It assumes the list is rendered from m.viewportStart with m.listVisibleRows() rows.
 func (m Model) hitTestListRow(mouseY int) int {
-	// Adjust for header/padding: we print a "Dir :" header plus one blank line.
+	// Adjust for the list panel's own chrome: the top border row and the title
+	// row sit above the first entry.
 	const headerLines = 2
 	localY := mouseY - headerLines
 	if localY < 0 {

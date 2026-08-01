@@ -180,9 +180,10 @@ func (m Model) clickInListPanel(msg tea.MouseMsg) (int, bool) {
 		return 0, false
 	}
 
-	// Vertical hit test: header lines (Dir + blank), list area of viewportHeight
-	const headerLines = 2
-	listStartY := headerLines
+	// Vertical hit test: the panels now start at the top row (the old Dir header
+	// and blank spacer were removed), so the list area spans viewportHeight rows
+	// from row 0.
+	listStartY := 0
 	listEndY := listStartY + m.viewportHeight
 	if msg.Y < listStartY || msg.Y >= listEndY {
 		return 0, false
