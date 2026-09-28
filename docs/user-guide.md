@@ -26,7 +26,7 @@ Important settings:
 | `pdf_viewer` | PDF viewer command, such as `zathura` |
 | `theme` | Bundled theme name; takes precedence over `theme_path` |
 | `theme_path` | Custom TOML theme path |
-| `show_tree` | Show the directory tree at startup; default `true` |
+| `show_tree` | Show the directory tree at startup; default `false` (folded) |
 | `enable_mouse` | Enable mouse input and scrolling |
 | `text_preview_only` | Disable inline image previews |
 | `recent_days` | Age window for Recently Added |
@@ -83,20 +83,19 @@ cursor background and wins visually when it rests on a selected row.
 | `v` | Select/clear all PDF files |
 | `a` | Create a directory |
 | `R` | Rename |
-| `D` | Delete with confirmation |
+| `D` | Delete; press `y` to confirm, `n`/`Esc` to cancel |
 | `d` / `p` | Cut/paste |
-| `st` / `sy` | Sort by title/year |
+| `sn` / `st` / `sy` | Sort by name/title/year |
 | `q` or `Ctrl+C` | Quit |
 
-Set `"show_tree": false` to start with the tree folded. When folded, the list
-and detail panes share the reclaimed width.
+The tree starts folded, so the list and detail panes share its width. Set
+`"show_tree": true` to show it at startup.
 
 ## Metadata, notes, and flags
 
 - `e` opens metadata preview. Press `e` again to edit metadata in the
   configured external editor.
 - `n` edits the current document's Markdown note.
-- `f` toggles Favorite.
 - `t` toggles To Read.
 - `u` opens the flag-removal prompt.
 - `r` cycles Unread → Reading → Read.

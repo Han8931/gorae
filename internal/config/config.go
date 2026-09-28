@@ -418,8 +418,9 @@ var configUpgrades = []configUpgrade{
 	},
 	{
 		key: "show_tree",
-		block: `  // Show the directory tree pane at startup. Toggle it temporarily with ,n.
-  "show_tree": true`,
+		block: `  // Show the directory tree pane at startup (folded by default). Toggle it
+  // temporarily with ,n.
+  "show_tree": false`,
 	},
 }
 
@@ -559,7 +560,7 @@ func LoadOrInit() (*Config, error) {
 		ConfigPath:          path,
 		NeedsConfirm:        true,
 		EnableMouse:         defaultEnableMouse,
-		ShowTree:            true,
+		ShowTree:            false,
 	}
 	fmt.Printf("  watch_dir: %s\n", cfg.WatchDir)
 	fmt.Printf("  meta_dir : %s\n", cfg.MetaDir)
