@@ -145,7 +145,20 @@ func (m *Model) cycleReadingState() {
 		return
 	}
 	m.refreshMetadataCache(canonical, md)
-	m.refreshEntryTitles()
+	if m.cwdIsStateView {
+		// The file now belongs to a different reading-state tab: rebuild the
+		// views and reload so it leaves this one.
+		if err := m.syncReadingStateViews(); err != nil {
+			m.setStatus("Reading state view sync failed: " + err.Error())
+			return
+		}
+		prev := m.cursor
+		m.loadEntries()
+		m.cursor = clampInt(prev, 0, maxInt(0, len(m.entries)-1))
+		m.ensureCursorVisible()
+	} else {
+		m.refreshEntryTitles()
+	}
 	m.updateTextPreview()
 	m.setStatus("Reading state: " + readingStateLabel(md.ReadingState))
 }

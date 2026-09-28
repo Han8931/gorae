@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -57,6 +56,9 @@ const (
 	// chafa). It bypasses the normal trimming/padding pipeline so that the
 	// escape codes are preserved and the pre-sized art is not mangled.
 	panelLineImage
+	// panelLineStyled is a pre-styled row (e.g. a table row with coloured
+	// cells) already sized to the panel's usable width; it only gets padded.
+	panelLineStyled
 )
 
 type panelLine struct {
@@ -85,6 +87,10 @@ func (m Model) renderTreePanel(width, height int) []string {
 	filtered := make([]os.DirEntry, 0, len(ents))
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		// Collection directories are reached through the Files pane tabs.
+		if e.IsDir() && m.isTabDir(filepath.Join(parent, e.Name())) {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -130,11 +136,14 @@ func (m Model) renderListPanel(width, height int) []string {
 	var lines []panelLine
 
 	if len(m.entries) == 0 {
-		lines = append(lines, panelLine{text: "(empty)", kind: panelLineInfo})
-		return m.renderPanelBlock("Files", lines, width, height, m.styles.List)
+		lines = append(lines, panelLine{text: m.emptyTabMessage(), kind: panelLineInfo})
+		return m.withTabStrip(m.renderPanelBlock("Files", lines, width, height, m.styles.List), width)
 	}
 
-	bodyRows := height - 3
+	cols := m.fileTableColumns(panelContentUsableWidth(width))
+	lines = append(lines, panelLine{text: m.renderFileTableHeader(cols), kind: panelLineStyled})
+
+	bodyRows := height - 4
 	if bodyRows < 1 {
 		bodyRows = 1
 	}
@@ -146,29 +155,31 @@ func (m Model) renderListPanel(width, height int) []string {
 	for i := m.viewportStart; i < end; i++ {
 		e := m.entries[i]
 		full := filepath.Join(m.cwd, e.Name())
-		display := m.entryDisplayName(full, e)
-		if e.IsDir() {
-			if icon := strings.TrimSpace(m.entryIcon(true)); icon != "" {
-				display = fmt.Sprintf("%s %s", icon, display)
-			}
-		}
-
-		kind := panelLineBody
 		selected := m.selected[full]
 		switch {
 		case i == m.cursor && selected:
-			kind = panelLineCursorSelected
+			lines = append(lines, panelLine{text: m.fileTableRow(cols, full, e, false), kind: panelLineCursorSelected})
 		case i == m.cursor:
-			kind = panelLineCursor
+			lines = append(lines, panelLine{text: m.fileTableRow(cols, full, e, false), kind: panelLineCursor})
 		case selected:
-			kind = panelLineSelected
+			lines = append(lines, panelLine{text: m.fileTableRow(cols, full, e, false), kind: panelLineSelected})
+		default:
+			lines = append(lines, panelLine{text: m.fileTableRow(cols, full, e, true), kind: panelLineStyled})
 		}
-
-		lines = append(lines, panelLine{text: display, kind: kind})
 	}
 
 	title := fmt.Sprintf("Files (%d)", len(m.entries))
-	return m.renderPanelBlock(title, lines, width, height, m.styles.List)
+	return m.withTabStrip(m.renderPanelBlock(title, lines, width, height, m.styles.List), width)
+}
+
+// withTabStrip swaps the Files pane's title row for the tab strip.
+func (m Model) withTabStrip(block []string, width int) []string {
+	if len(block) < 2 || width <= 2 {
+		return block
+	}
+	border := fallbackStyle(m.styles.List.Border, m.styles.Border)
+	block[1] = m.borderRow(m.renderTabStrip(width-2), width, border)
+	return block
 }
 
 // renderImagePreviewPanel renders the right panel with chafa block-art in the
@@ -466,7 +477,7 @@ func (m Model) renderMetaPopupLines(width int) []string {
 	if len(lines) == 0 {
 		return nil
 	}
-	height := m.viewportHeight
+	height := m.paneHeight()
 	if height <= 0 {
 		height = len(lines)
 	}
@@ -638,9 +649,7 @@ func (m Model) View() string {
 	var b strings.Builder
 	var overlayLines []string
 
-	// The prompt sits directly above the status bar and is only shown while a
-	// prompt is active. Compute it first so the panels can reclaim its row
-	// whenever no prompt is present.
+	// An active prompt takes over the footer row above the status bar.
 	var promptLine string
 	switch m.state {
 	case stateNewDir:
@@ -657,7 +666,7 @@ func (m Model) View() string {
 
 	// If we don't know width yet (no WindowSizeMsg yet), fall back to single-panel list.
 	if m.width <= 0 {
-		for _, line := range m.renderListPanel(80, m.viewportHeight) {
+		for _, line := range m.renderListPanel(80, m.paneHeight()) {
 			b.WriteString(line + "\n")
 		}
 	} else {
@@ -669,15 +678,9 @@ func (m Model) View() string {
 
 		leftWidth, middleWidth, rightWidth := m.panelWidths()
 
-		// The panels fill the full height when idle; when a prompt is active they
-		// give up one row for it so the status bar stays pinned to the bottom.
-		height := m.viewportHeight
-		if promptLine != "" {
-			height--
-		}
-		if height < 3 {
-			height = 3
-		}
+		// The panels leave one footer row above the status bar for the hint bar,
+		// which an active prompt or delete confirmation replaces.
+		height := m.paneHeight()
 
 		var treeLines []string
 		if !m.treePaneHidden {
@@ -779,12 +782,10 @@ func (m Model) View() string {
 		}
 	}
 
-	// The prompt appears directly above the status bar only while it is active.
-	// The status bar is written last, with no trailing newline, so it stays
-	// pinned to the very bottom row of the screen.
-	if promptLine != "" {
-		b.WriteString(promptLine + "\n")
-	}
+	// The footer (hints, or the active prompt) sits directly above the status
+	// bar. The status bar is written last, with no trailing newline, so it
+	// stays pinned to the very bottom row of the screen.
+	b.WriteString(m.renderBrowserFooter(promptLine) + "\n")
 	b.WriteString(m.renderStatusBar())
 
 	if overlay := m.graphicPreviewOverlay(); overlay != "" {
@@ -1307,28 +1308,6 @@ func metadataStatusBadge(active bool, icon string) string {
 	return "*"
 }
 
-func (m Model) renderStatusBar() string {
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-
-	modeSeg := m.statusSegment("MODE", m.currentModeLabel())
-	dirSeg := m.statusSegment("DIR", m.cwd)
-	label, value := m.selectionSummary()
-	itemSeg := m.statusSegment(strings.ToUpper(label), value)
-	status := m.statusMessage(time.Now())
-	if status == "" {
-		status = "Ready"
-	}
-	statusSeg := m.statusSegment("MSG", status)
-
-	segments := []string{modeSeg, dirSeg, itemSeg, statusSeg}
-	line := strings.Join(segments, " ")
-	line = padStyledLine(line, width)
-	return m.styles.StatusBar.Render(line)
-}
-
 func (m Model) selectionSummary() (string, string) {
 	selectedCount := len(m.selected)
 	if len(m.entries) == 0 {
@@ -1351,27 +1330,6 @@ func (m Model) selectionSummary() (string, string) {
 	return "Item", value
 }
 
-func (m Model) currentModeLabel() string {
-	switch m.state {
-	case stateCommand:
-		return "Command"
-	case stateSearchPrompt, stateSearchResults:
-		return "Search"
-	case stateMetaPreview:
-		return "Meta"
-	case stateNewDir:
-		return "New Dir"
-	case stateRename:
-		return "Rename"
-	case stateArxivPrompt:
-		return "arXiv"
-	case stateUnmarkPrompt:
-		return "Unmark"
-	default:
-		return "Normal"
-	}
-}
-
 func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
 	if title, ok := m.entryTitles[full]; ok && title != "" {
 		return title
@@ -1387,9 +1345,9 @@ func (m Model) entryDisplayName(full string, entry fs.DirEntry) string {
 // hitTestListRow returns the index of the entry for a given mouse Y (relative to viewport start).
 // It assumes the list is rendered from m.viewportStart with m.listVisibleRows() rows.
 func (m Model) hitTestListRow(mouseY int) int {
-	// Adjust for the list panel's own chrome: the top border row and the title
-	// row sit above the first entry.
-	const headerLines = 2
+	// Adjust for the list panel's own chrome: the top border row, the tab
+	// strip and the table header row sit above the first entry.
+	const headerLines = 3
 	localY := mouseY - headerLines
 	if localY < 0 {
 		return -1
@@ -1650,7 +1608,7 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 			kind = entry.kind
 		}
 		var styled string
-		if kind == panelLineImage {
+		if kind == panelLineImage || kind == panelLineStyled {
 			// Pad to imageUsable so the right border always aligns.
 			padded := padStyledLine(text, imageUsable)
 			styled = " " + padded + " "

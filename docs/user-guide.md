@@ -35,8 +35,12 @@ Important settings:
 The `ai` and `web_search` objects configure providers, models, retrieval, tool
 calling, and optional web search. The generated config documents every field.
 
-Gorae maintains `Favorites/`, `To Read/`, `Recently Added/`, and
-`Recently Read/` helper directories beneath the library. Back up `meta_dir` and
+Gorae maintains `To Read/`, `Recently Added/`, and
+`Recently Read/` helper directories beneath the library. They appear as tabs
+along the top of the Files pane (switch with `Left`/`Right`) rather than as
+folders in the Library listing. The Reading, Unread, and Read tabs list papers
+by reading state; their link folders live under `meta_dir/views/`, and a paper
+moves between them as soon as `r` changes its state. Back up `meta_dir` and
 `notes_dir` to preserve metadata, reading state, the search index, and notes.
 
 ## Themes
@@ -69,9 +73,10 @@ cursor background and wins visually when it rests on a selected row.
 
 | Key | Action |
 |---|---|
-| `j` / `k` or arrows | Move down/up |
-| `l`, `Right`, or `Enter` | Enter a directory or open a document |
-| `h`, `Left`, or `Backspace` | Parent directory |
+| `j` / `k` or `Up` / `Down` | Move down/up |
+| `l` or `Enter` | Enter a directory or open a document |
+| `h` or `Backspace` | Parent directory (from the top of a collection tab, back to Library) |
+| `Left` / `Right` | Switch Files tab: Library, Recent, Reading, To Read, Added, Unread, Read |
 | `g` / `G` | Top/bottom; `g` also begins a reading-state filter |
 | `,n` | Toggle the tree pane for this session |
 | `Space` | Toggle selection and advance |

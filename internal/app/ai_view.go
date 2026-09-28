@@ -114,12 +114,8 @@ func (m *Model) renderGoraeView() string {
 		b.WriteString(m.styles.StatusValue.Render(" Compacting…"))
 		b.WriteString("\n")
 	} else if m.aiNormalMode {
-		normalBadge := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#000000")).
-			Background(lipgloss.Color("#FFD580")).
-			Bold(true).
-			Render(" NORMAL ")
-		hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+		normalBadge := m.styles.WarnChip.Render(" NORMAL ")
+		hintStyle := m.styles.Muted.Italic(true)
 		hint := "  i:insert  j/k:nav  gg/G:top/bot  h/l:jump  space:mark  y:yank  q:quit"
 		if n := len(m.aiMsgMarks); n > 0 {
 			hint = fmt.Sprintf("  %d mark(s)  y:yank all  c:clear  i:insert  gg/G:top/bot  q:quit", n)
@@ -144,9 +140,9 @@ func (m *Model) renderGoraeView() string {
 // When expanded=false it shows only the "▶ Thinking…" header line.
 // When expanded=true it shows the full content, like Claude's expanded view.
 func (m Model) renderThinkingBlock(thinking string, wrapW int, expanded bool) []string {
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#777777")).Italic(true)
-	thinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
-	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+	headerStyle := m.styles.Muted.Italic(true)
+	thinkStyle := m.styles.Muted.Italic(true)
+	borderStyle := m.styles.Faint
 
 	// Count lines of content for the collapsed summary
 	contentLines := strings.Count(strings.TrimSpace(thinking), "\n") + 1
@@ -195,11 +191,8 @@ func (m Model) buildChatLines(width int) ([]string, []int) {
 	labelAIStyle := m.styles.StatusValue
 	// Cursor: invert label colours so the active message reads as a bright
 	// chip. Mark: a yellow asterisk to the left of the role badge.
-	cursorBadge := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#000000")).
-		Background(lipgloss.Color("#FFD580")).
-		Bold(true)
-	markStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD580")).Bold(true)
+	cursorBadge := m.styles.WarnChip
+	markStyle := m.styles.Warning.Bold(true)
 
 	wrapW := width - 6
 	if wrapW < 20 {
@@ -246,7 +239,7 @@ func (m Model) buildChatLines(width int) ([]string, []int) {
 				lines = append(lines, "")
 			case ai.RoleAssistant:
 				if msg.IsSummary {
-					compactStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+					compactStyle := m.styles.Muted.Italic(true)
 					lines = append(lines, renderRoleLabel(i, compactStyle, " ╌╌╌ context summary ╌╌╌"))
 					for _, pl := range renderMarkdownCustom(msg.Content, wrapW, m.styles.Markdown) {
 						lines = append(lines, "   "+compactStyle.Render(pl.text))
@@ -268,11 +261,11 @@ func (m Model) buildChatLines(width int) ([]string, []int) {
 						lines = append(lines, "")
 					}
 					if len(msg.ToolCalls) > 0 {
-						lines = append(lines, renderToolCallLines(msg.ToolCalls, wrapW)...)
+						lines = append(lines, m.renderToolCallLines(msg.ToolCalls, wrapW)...)
 					}
 				}
 			case ai.RoleTool:
-				lines = append(lines, renderToolResultLines(msg.Name, msg.Content, wrapW)...)
+				lines = append(lines, m.renderToolResultLines(msg.Name, msg.Content, wrapW)...)
 			}
 		}
 
@@ -295,8 +288,8 @@ func (m Model) buildChatLines(width int) ([]string, []int) {
 
 // renderToolCallLines renders a muted block summarising one or more tool
 // invocations the model requested.
-func renderToolCallLines(calls []ai.ToolCall, wrapW int) []string {
-	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true)
+func (m Model) renderToolCallLines(calls []ai.ToolCall, wrapW int) []string {
+	toolStyle := m.styles.Muted.Italic(true)
 	var lines []string
 	for _, c := range calls {
 		args := strings.TrimSpace(c.Func.Arguments)
@@ -313,9 +306,9 @@ func renderToolCallLines(calls []ai.ToolCall, wrapW int) []string {
 }
 
 // renderToolResultLines renders the reply we sent back to the model.
-func renderToolResultLines(name, content string, wrapW int) []string {
-	resultStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6a9955")).Italic(true)
-	errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#c94a4a")).Italic(true)
+func (m Model) renderToolResultLines(name, content string, wrapW int) []string {
+	resultStyle := m.styles.Success.Italic(true)
+	errStyle := m.styles.Danger.UnsetBold().Italic(true)
 	style := resultStyle
 	if strings.HasPrefix(content, "Error") {
 		style = errStyle
@@ -343,7 +336,7 @@ func (m *Model) renderFindModal(width, height int) string {
 	mutedStyle := m.styles.Preview.Body
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7aa2f7")).
+		BorderForeground(m.styles.ModalBorder).
 		Padding(0, 1)
 
 	// Box is ~3/4 of the screen, clamped to a comfortable range.
@@ -392,17 +385,11 @@ func (m *Model) renderFindModal(width, height int) string {
 		// lets the cursor highlight override the selection highlight.
 		cursorBar := m.styles.List.Cursor
 		if isZeroStyle(cursorBar) {
-			cursorBar = lipgloss.NewStyle().
-				Background(lipgloss.Color("#e0af68")).
-				Foreground(lipgloss.Color("#1a1b26")).
-				Bold(true)
+			cursorBar = m.styles.WarnChip
 		}
 		selBar := m.styles.List.Selected
 		if isZeroStyle(selBar) {
-			selBar = lipgloss.NewStyle().
-				Background(lipgloss.Color("#2ac3de")).
-				Foreground(lipgloss.Color("#1a1b26")).
-				Bold(true)
+			selBar = m.styles.InfoChip
 		}
 		used := 0
 		for i, r := range m.aiSearchResults {
@@ -472,12 +459,12 @@ func (m *Model) renderGoraeInputBox(width int) []string {
 
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#7aa2f7")).
+		BorderForeground(m.styles.ModalBorder).
 		Padding(0, 1).
 		Width(boxContentW)
 
 	badge := m.styles.StatusLabel.Render(" YOU ")
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Italic(true).
+	hint := m.styles.Muted.Italic(true).
 		Render("  Enter send · Ctrl+J newline · Esc navigate")
 
 	lines := []string{badge + hint}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -50,6 +51,22 @@ type viewStyles struct {
 	SepChar     string
 	Markdown    mdStyles
 	ChatUser    lipgloss.Style
+
+	// Semantic roles derived from the palette so every view (including the AI
+	// chat) follows the active theme instead of hardcoded colours.
+	Accent      lipgloss.Style
+	Muted       lipgloss.Style // secondary text, hints
+	Faint       lipgloss.Style // quieter than Muted: rules, dividers
+	Success     lipgloss.Style
+	Warning     lipgloss.Style
+	Danger      lipgloss.Style
+	ModeChip    lipgloss.Style // filled accent chip ( NORMAL )
+	WarnChip    lipgloss.Style // filled warning chip (chat NORMAL, cursor badge)
+	DangerChip  lipgloss.Style // filled danger chip (delete confirmation)
+	InfoChip    lipgloss.Style // filled selection chip (sort/filter/count)
+	KeyCap      lipgloss.Style // key in the hint bar ( j )
+	KeyLabel    lipgloss.Style // its description
+	ModalBorder lipgloss.Color
 }
 
 type borderCharset struct {
@@ -116,9 +133,73 @@ func newViewStyles(th theme.Theme) viewStyles {
 			Body:       styleFromSpec(palette, th.Components.PreviewBody),
 		},
 		ChatUser: lipgloss.NewStyle().
-			Background(lipgloss.Color("#2a2a2a")).
-			Foreground(lipgloss.Color("#e8e8e8")),
+			Background(lipgloss.Color(surfaceColor(palette))).
+			Foreground(lipgloss.Color(palette.FG)),
+
+		Accent:      fgStyle(palette.Accent),
+		Muted:       fgStyle(palette.Muted),
+		Faint:       fgStyle(blendHex(palette.Muted, palette.BG, 0.45)),
+		Success:     fgStyle(palette.Success),
+		Warning:     fgStyle(palette.Warning),
+		Danger:      fgStyle(palette.Danger).Bold(true),
+		ModeChip:    chipStyle(palette.Accent),
+		WarnChip:    chipStyle(palette.Warning),
+		DangerChip:  chipStyle(palette.Danger),
+		InfoChip:    chipStyle(palette.Selection),
+		KeyCap:      lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Accent)).Background(lipgloss.Color(surfaceColor(palette))).Bold(true),
+		KeyLabel:    fgStyle(palette.Muted),
+		ModalBorder: lipgloss.Color(palette.Accent),
 	}
+}
+
+func fgStyle(hex string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(strings.TrimSpace(hex)))
+}
+
+// chipStyle is a filled badge whose text colour is picked for legibility
+// against the fill, so chips stay readable on both light and dark themes.
+func chipStyle(bg string) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(strings.TrimSpace(bg))).
+		Foreground(lipgloss.Color(textOn(bg))).
+		Bold(true)
+}
+
+// textOn returns near-black or white, whichever reads better on bg.
+func textOn(bg string) string {
+	r, g, b, ok := parseHex(bg)
+	if !ok {
+		return ""
+	}
+	if 299*r+587*g+114*b > 140000 {
+		return "#0d1117"
+	}
+	return "#ffffff"
+}
+
+// surfaceColor is a subtle raised background: the theme bg nudged toward fg.
+func surfaceColor(p theme.Palette) string {
+	return blendHex(p.BG, p.FG, 0.12)
+}
+
+// blendHex mixes a toward b by t (0..1). If either colour can't be parsed it
+// returns a unchanged, so themes with partial palettes still render.
+func blendHex(a, b string, t float64) string {
+	ar, ag, ab, ok1 := parseHex(a)
+	br, bg, bb, ok2 := parseHex(b)
+	if !ok1 || !ok2 {
+		return strings.TrimSpace(a)
+	}
+	mix := func(x, y int) int { return int(float64(x) + (float64(y)-float64(x))*t + 0.5) }
+	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
+
+func parseHex(hex string) (int, int, int, bool) {
+	var r, g, b int
+	if _, err := fmt.Sscanf(strings.TrimSpace(hex), "#%02x%02x%02x", &r, &g, &b); err != nil {
+		return 0, 0, 0, false
+	}
+	return r, g, b, true
 }
 
 func styleFromSpec(p theme.Palette, spec theme.StyleSpec) lipgloss.Style {

@@ -205,7 +205,8 @@ Vim-style navigation everywhere. Cheat sheet:
 
 | Action | Key |
 |---|---|
-| Move / enter / up | `j/k`, `l/h` (or arrow keys) |
+| Move / enter / up | `j/k`, `l/h` (or `Up`/`Down`) |
+| Switch tab (Library, Recent, Reading, To Read, Added, Unread, Read) | `Left` / `Right` |
 | Select | `Space` |
 | Toggle tree pane | `,n` |
 | To-read queue | `t` |

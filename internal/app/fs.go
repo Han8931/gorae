@@ -65,6 +65,7 @@ func (m *Model) loadEntries() {
 	} else {
 		m.cwdIsToRead = false
 	}
+	m.cwdIsStateView = m.isReadingStateView(cwdCanonical)
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
 	if err != nil {
@@ -90,6 +91,10 @@ func (m *Model) loadEntries() {
 			if canonicalPath(full) == noteAbs {
 				continue
 			}
+		}
+		// Collection directories are shown as Files pane tabs instead.
+		if e.IsDir() && m.isTabDir(filepath.Join(m.cwd, e.Name())) {
+			continue
 		}
 
 		if !e.IsDir() {
@@ -214,6 +219,8 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 	for k := range m.entryTitles {
 		delete(m.entryTitles, k)
 	}
+	// Keep the structured metadata for the Files table columns.
+	m.entryInfo = entryInfo
 
 	var ctx context.Context
 	useMeta := entryInfo == nil && m.meta != nil
@@ -342,6 +349,9 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 				if t := strings.TrimSpace(md.Title); t != "" {
 					data.title = t
 				}
+				data.author = strings.TrimSpace(md.Author)
+				data.added = md.AddedAt
+				data.opened = md.LastOpenedAt
 				data.year = strings.TrimSpace(md.Year)
 				data.state = normalizeReadingStateValue(md.ReadingState)
 				data.favorite = md.Favorite
@@ -435,15 +445,18 @@ func parseYearValue(year string) int {
 
 type entrySortInfo struct {
 	title    string
+	author   string
 	year     string
 	state    string
 	favorite bool
 	toRead   bool
+	added    time.Time
+	opened   time.Time
 }
 
 func (m *Model) normalizedEntryBase(name, fullPath string) string {
 	base := strings.TrimSuffix(name, filepath.Ext(name))
-	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded || m.cwdIsFavorites || m.cwdIsToRead) {
+	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded || m.cwdIsFavorites || m.cwdIsToRead || m.cwdIsStateView) {
 		if canonical := canonicalPath(fullPath); canonical != "" {
 			targetName := filepath.Base(canonical)
 			if targetName != "" {
