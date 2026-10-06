@@ -105,7 +105,6 @@ func (m *Model) handleNavigationPrefix(key string) bool {
 	if key == "," {
 		m.lastKey = key
 		m.lastKeyAt = now
-		m.setStatus("Leader: n toggle tree pane")
 		return true
 	}
 	if m.lastKey != "," {
@@ -118,6 +117,10 @@ func (m *Model) handleNavigationPrefix(key string) bool {
 		return false
 	}
 	m.treePaneHidden = !m.treePaneHidden
+	// Folders are listed in the Files pane only while the tree is hidden, so the
+	// listing has to be rebuilt around the new state; keep the cursor on the row
+	// the user was looking at rather than on whatever index it lands on.
+	m.reloadEntriesKeepingCursor()
 	if m.treePaneHidden {
 		m.focusedPane = focusFiles
 		m.setStatus("Tree pane hidden (,n to show)")
@@ -562,6 +565,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.state == stateNormal && m.awaitingSort {
 			m.awaitingSort = false
 			switch strings.ToLower(key) {
+			case "n":
+				m.applySortMode(sortByName)
 			case "t":
 				m.applySortMode(sortByTitle)
 			case "y":
@@ -685,7 +690,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ===========================
 		if m.state == stateConfirmDelete {
 			switch key {
-			case "y", "Y", "enter":
+			case "y", "Y":
 				deleted := 0
 				var lastErr error
 				var metaErr error
@@ -780,10 +785,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				return m, nil
 
-			case "n", "N", "esc":
+			case "n", "N", "esc", "q":
 				m.state = stateNormal
 				m.confirmItems = nil
 				m.setStatus("Deletion cancelled")
+				return m, nil
+			default:
+				// Ignore everything else so a stray key can't move the cursor
+				// (and change what is being deleted) while confirming.
 				return m, nil
 			}
 		}
@@ -917,7 +926,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureCursorVisible()
 			prevCmd := m.updateTextPreviewAsync()
 			m.awaitingQuickFilter = true
-			m.setStatus("Filter: g r reading, g u unread, g d read (press other key to cancel)")
 			return m, prevCmd
 
 		case "home":
@@ -951,7 +959,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 		m.status = "Not a PDF"
 		// 	}
 
-		case "enter", "l", "right":
+		case "left":
+			return m, m.cycleTab(-1)
+
+		case "right":
+			return m, m.cycleTab(1)
+
+		case "enter", "l":
 			if len(m.entries) == 0 {
 				return m, nil
 			}
@@ -991,9 +1005,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus("Not a supported document")
 			}
 
-		case "h", "backspace", "left":
+		// Not "left": that cycles tabs now.
+		case "h", "backspace":
 			if m.cwdIsTagView {
 				return m, m.leaveTagView()
+			}
+			// At the top of a collection tab, going up returns to the Library
+			// where it was left rather than to the (hidden) collection's parent.
+			if tab := m.activeTab(); tab != 0 && canonicalPath(m.cwd) == m.listTabs()[tab].dir {
+				return m, m.switchToTab(0)
 			}
 			currentDir := m.cwd
 			parent := filepath.Dir(m.cwd)
@@ -1017,8 +1037,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.updateTextPreviewAsync()
 
 		case "s":
+			// The footer lists the sort keys while this prefix is pending.
 			m.awaitingSort = true
-			m.setStatus("Sort: 't' by title, 'y' by year")
 			return m, nil
 
 		case "t":
@@ -1154,14 +1174,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// The footer renders the danger-styled y/n confirmation.
 			m.confirmItems = targets
 			m.state = stateConfirmDelete
-
-			if len(targets) == 1 {
-				m.setStatus(fmt.Sprintf("Move '%s' to Trash? (y/N)", filepath.Base(targets[0])))
-			} else {
-				m.setStatus(fmt.Sprintf("Move %d items to Trash? (y/N)", len(targets)))
-			}
+			m.clearStatus()
 
 		case "R":
 			if len(m.entries) == 0 {
@@ -1732,7 +1748,7 @@ func (m *Model) clampMetaPopupOffset() {
 		m.metaPopupOffset = 0
 		return
 	}
-	maxOffset := len(lines) - m.viewportHeight
+	maxOffset := len(lines) - m.paneHeight()
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -2205,6 +2221,7 @@ func buildHelpOutput() []string {
 		"  j/k .......... move",
 		"  h ............ go up a directory",
 		"  l/Enter ...... enter/open",
+		"  ←/→ .......... switch tab (Library/Recent/Reading/To Read/Added/Unread/Read)",
 		"  g g / G ...... top/bottom of list",
 		"  ,n ........... toggle tree pane (and focus it)",
 		"",

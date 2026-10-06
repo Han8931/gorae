@@ -172,6 +172,20 @@ type Model struct {
 	favoritesDirCanonical      string
 	toReadDir                  string
 	toReadDirCanonical         string
+	// Where the Library tab was left, restored when switching back to it.
+	// Link directories (under meta_dir/views) listing files by reading state,
+	// shown as the Reading / Unread / Read tabs. Empty when meta_dir is unset.
+	readingViewDir string
+	unreadViewDir  string
+	readViewDir    string
+	cwdIsStateView bool
+
+	// entryInfo holds per-file metadata (title, author, year, dates) for the
+	// Files table, refreshed alongside entryTitles whenever entries re-sort.
+	entryInfo map[string]entrySortInfo
+
+	libraryCwd        string
+	libraryCursorPath string
 
 	viewportStart  int
 	viewportHeight int
@@ -647,6 +661,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	}
 
 	m.applyTheme(th)
+	m.initReadingStateViews(strings.TrimSpace(cfg.MetaDir))
 	if m.recentlyAddedSyncInt <= 0 {
 		m.recentlyAddedSyncInt = defaultRecentlyAddedSyncInterval
 	}
@@ -829,8 +844,23 @@ func (m Model) toReadIcon() string {
 	return "☐"
 }
 
+// browserFooterRows is the row under the three panes that holds the hint bar,
+// or the active prompt / delete confirmation in its place.
+const browserFooterRows = 1
+
+// paneHeight is the height of the Tree/Files/Preview panes: the viewport minus
+// the footer row above the status bar.
+func (m Model) paneHeight() int {
+	h := m.viewportHeight - browserFooterRows
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
 func (m Model) listVisibleRows() int {
-	rows := m.viewportHeight - 3
+	// Border rows, the tab strip and the table header row.
+	rows := m.paneHeight() - 4
 	if rows < 1 {
 		rows = 1
 	}
@@ -863,6 +893,21 @@ func (m *Model) currentEntryPath() string {
 		return ""
 	}
 	return filepath.Join(m.cwd, m.entries[m.cursor].Name())
+}
+
+// reloadEntriesKeepingCursor rebuilds the Files pane listing and puts the
+// cursor back on the row it was on, when that row is still listed. Used when
+// something other than navigation changes which entries are visible — toggling
+// the tree pane adds or removes every folder, which would otherwise slide the
+// cursor onto an unrelated document.
+func (m *Model) reloadEntriesKeepingCursor() {
+	previous := m.currentEntryPath()
+	m.loadEntries()
+	if idx := m.findEntryIndex(previous); idx >= 0 {
+		m.cursor = idx
+		m.ensureCursorVisible()
+	}
+	m.updateTextPreview()
 }
 
 func (m *Model) findEntryIndex(path string) int {
@@ -1447,7 +1492,7 @@ func (m *Model) updateTextPreview() {
 		m.previewGraphic = ""
 		m.previewGraphicClear = true
 		m.previewImage = nil
-		maxLines := m.viewportHeight - 2
+		maxLines := m.paneHeight() - 2
 		if maxLines < 5 {
 			maxLines = 5
 		}
@@ -1524,8 +1569,8 @@ func previewRefreshCmd(clear bool, cmd tea.Cmd) tea.Cmd {
 // blocking is acceptable (rename, delete, flags, etc.).
 func (m *Model) updatePDFPreview(full string) {
 	_, _, rightW := m.panelWidths()
-	imgW := rightW - 4           // 2 border cols + 2 margin cols
-	imgH := m.viewportHeight - 3 // 2 border rows + 1 header row
+	imgW := rightW - 4         // 2 border cols + 2 margin cols
+	imgH := m.paneHeight() - 3 // 2 border rows + 1 header row
 	if imgW < 4 {
 		imgW = 4
 	}
@@ -1600,7 +1645,7 @@ func (m *Model) updatePDFPreview(full string) {
 	}
 
 	// chafa or pdftoppm unavailable — fall back to text extraction.
-	maxLines := m.viewportHeight - 2
+	maxLines := m.paneHeight() - 2
 	if maxLines < 5 {
 		maxLines = 5
 	}
@@ -1652,7 +1697,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 
 	_, _, rightW := m.panelWidths()
 	imgW := rightW - 4
-	imgH := m.viewportHeight - 3
+	imgH := m.paneHeight() - 3
 	if imgW < 4 {
 		imgW = 4
 	}
@@ -1709,7 +1754,7 @@ func (m *Model) updateTextPreviewAsync() tea.Cmd {
 	m.previewText = nil
 
 	seq := m.previewSeq
-	maxLines := m.viewportHeight - 2
+	maxLines := m.paneHeight() - 2
 	if maxLines < 5 {
 		maxLines = 5
 	}
@@ -1797,7 +1842,7 @@ func (m *Model) directoryPreviewContents(dir string) []string {
 		return lines
 	}
 
-	maxLines := m.viewportHeight - 6
+	maxLines := m.paneHeight() - 6
 	if maxLines < 5 {
 		maxLines = 5
 	}

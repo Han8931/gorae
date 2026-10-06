@@ -20,6 +20,62 @@ func (m *Model) syncCollectionDirectories() error {
 	if err := syncMetadataLinkDirectory(ctx, m.toReadDir, m.meta.ListToRead); err != nil {
 		return err
 	}
+	return m.syncReadingStateViews()
+}
+
+// initReadingStateViews sets up the link directories behind the Reading /
+// Unread / Read tabs. They live in meta_dir rather than the library so they
+// never clutter the user's folders.
+func (m *Model) initReadingStateViews(metaDir string) {
+	if metaDir == "" {
+		return
+	}
+	dirs := []*string{&m.readingViewDir, &m.unreadViewDir, &m.readViewDir}
+	for i, name := range []string{"Reading", "Unread", "Read"} {
+		dir := filepath.Join(metaDir, "views", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return
+		}
+		// Canonicalise after creating so the path matches what EvalSymlinks
+		// reports later (e.g. /var vs /private/var on macOS).
+		*dirs[i] = canonicalPath(dir)
+	}
+}
+
+func (m *Model) isReadingStateView(canonicalDir string) bool {
+	if canonicalDir == "" {
+		return false
+	}
+	return canonicalDir == m.readingViewDir || canonicalDir == m.unreadViewDir || canonicalDir == m.readViewDir
+}
+
+// syncReadingStateViews rebuilds the reading-state link directories from the
+// metadata store.
+func (m *Model) syncReadingStateViews() error {
+	if m.meta == nil {
+		return nil
+	}
+	ctx := context.Background()
+	views := []struct {
+		dir   string
+		state string
+	}{
+		{m.readingViewDir, readingStateReading},
+		{m.unreadViewDir, readingStateUnread},
+		{m.readViewDir, readingStateRead},
+	}
+	for _, v := range views {
+		if v.dir == "" {
+			continue
+		}
+		state := v.state
+		fetch := func(ctx context.Context) ([]meta.Metadata, error) {
+			return m.meta.ListByReadingState(ctx, state)
+		}
+		if err := syncMetadataLinkDirectory(ctx, v.dir, fetch); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

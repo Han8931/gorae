@@ -30,7 +30,7 @@ func TestMissingMouseSettingUpgradesToEnabled(t *testing.T) {
 	}
 }
 
-func TestMissingTreeSettingUpgradesToVisible(t *testing.T) {
+func TestMissingTreeSettingUpgradesToFolded(t *testing.T) {
 	out, injected, err := upgradeConfigBytes([]byte(`{"watch_dir":"/tmp","enable_mouse":true,"text_preview_only":false}`))
 	if err != nil {
 		t.Fatalf("upgrade config: %v", err)
@@ -42,7 +42,7 @@ func TestMissingTreeSettingUpgradesToVisible(t *testing.T) {
 	if err := json.Unmarshal(stripJSONComments(out), &cfg); err != nil {
 		t.Fatalf("parse upgraded config: %v", err)
 	}
-	if !cfg.ShowTree {
-		t.Fatal("upgraded config should show the tree pane")
+	if cfg.ShowTree {
+		t.Fatal("upgraded config should start with the tree pane folded")
 	}
 }

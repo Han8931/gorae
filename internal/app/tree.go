@@ -61,7 +61,8 @@ func (m *Model) setTreeExpanded(dir string, expanded bool) {
 
 // readSubdirs returns the browsable subdirectory names of dir, ordered the same
 // way the file list orders folders: special dirs first, then alphabetically.
-// Dotfiles and the notes directory are hidden.
+// Dotfiles, the notes directory, and the collection directories reached through
+// the Files pane tabs are hidden.
 func (m Model) readSubdirs(dir string) []string {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -78,6 +79,10 @@ func (m Model) readSubdirs(dir string) []string {
 		}
 		full := filepath.Join(dir, e.Name())
 		if notesAbs != "" && canonicalPath(full) == notesAbs {
+			continue
+		}
+		// Collection directories are reached through the Files pane tabs.
+		if m.isTabDir(full) {
 			continue
 		}
 		dirs = append(dirs, e.Name())

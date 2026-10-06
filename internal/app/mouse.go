@@ -178,7 +178,7 @@ func (m Model) clickInListPanel(msg tea.MouseMsg) (int, bool) {
 	// and blank spacer were removed), so the list area spans viewportHeight rows
 	// from row 0.
 	listStartY := 0
-	listEndY := listStartY + m.viewportHeight
+	listEndY := listStartY + m.paneHeight()
 	if msg.Y < listStartY || msg.Y >= listEndY {
 		return 0, false
 	}

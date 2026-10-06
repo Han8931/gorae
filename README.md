@@ -64,7 +64,7 @@ library, or want fast search and notes without running a larger desktop app.
 
 | Area | What you get |
 |---|---|
-| **Browse** | Vim-style navigation, mouse support, reading states, favorites, and a to-read queue |
+| **Browse** | Vim-style navigation, mouse support, a sortable file table, and tabs for recent, in-progress, to-read, and finished papers |
 | **Search** | Fast FTS5 metadata and full-text search, including every matching passage and PDF page |
 | **Preview** | Metadata, text, and first-page PDF previews in supported terminals |
 | **Organize** | Markdown notes, hierarchical tags, `[[wikilinks]]`, backlinks, and BibTeX copy |
@@ -205,16 +205,38 @@ Vim-style navigation everywhere. Cheat sheet:
 
 | Action | Key |
 |---|---|
-| Move / enter / up | `j/k`, `l/h` (or arrow keys) |
+| Move / enter / up | `j/k`, `l/h` (or `Up`/`Down`) |
+| Switch tab (Library, Recent, Reading, To Read, Added, Unread, Read) | `Left` / `Right` |
 | Select | `Space` |
 | Toggle tree pane | `,n` |
 | To-read queue | `t` |
-| Reading state | `r` |
+| Reading state (Unread → Reading → Read) | `r` |
+| Sort by name / title / year | `s n` / `s t` / `s y` |
+| Delete (confirm with `y`) | `D` |
 | Edit metadata | `ee` |
 | Search | `/` |
 | AI chat | `:gorae` |
 | Index library | `:index` |
 | Help | `:help` |
+
+**Tabs:** the Files pane has tabs, switched with `Left` / `Right`:
+
+| Tab | Shows |
+|---|---|
+| Library | Your folders — the regular file browser, which remembers where you left it |
+| Recent | Papers you opened most recently |
+| Reading | Papers marked Reading |
+| To Read | Your to-read queue (`t`) |
+| Added | Recently added files |
+| Unread / Read | Papers by reading state |
+
+Papers move between the Reading, Unread, and Read tabs as soon as `r` changes their state.
+
+**File table:** each tab lists papers with State, Title, Author, Year, Added
+(Opened on the Recent tab), and Type columns; the header marks the sort column
+with `▴`. On narrow panes, lower-priority columns drop out so the title stays
+readable. A hint bar above the status bar shows the keys for the current
+context, including what can follow a prefix key such as `g` or `s`.
 
 **Search flags** (after `/`):
 
@@ -253,8 +275,9 @@ press `Tab` for the next theme, `Shift+Tab` for the previous theme, and `Enter`
 to apply the highlighted choice. `:theme list` shows every bundled theme, while
 `:theme reload` reloads a custom `theme.toml`.
 
-Press `,n` in normal mode to toggle the directory tree for the current session.
-Set its startup behavior in `~/.config/gorae/config.json` (or the equivalent
+The directory tree starts folded, giving its width to the file table and
+preview. Press `,n` in normal mode to toggle it for the current session, or show
+it at startup in `~/.config/gorae/config.json` (or the equivalent
 `XDG_CONFIG_HOME` path):
 
 ```json

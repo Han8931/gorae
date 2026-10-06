@@ -65,6 +65,7 @@ func (m *Model) loadEntries() {
 	} else {
 		m.cwdIsToRead = false
 	}
+	m.cwdIsStateView = m.isReadingStateView(cwdCanonical)
 	ents, err := os.ReadDir(m.cwd)
 	m.err = err
 	if err != nil {
@@ -74,17 +75,26 @@ func (m *Model) loadEntries() {
 		return
 	}
 
-	// The Files pane lists documents only. Directories are navigated from the
-	// tree pane now, so hide dotfiles, directories, and non-document files.
+	// The Files pane lists cwd's documents — and its folders too, but only while
+	// the tree pane is folded away. The tree is where folders are navigated, yet
+	// it starts hidden, so the listing has to carry them whenever it is not on
+	// screen or there would be no way down into the library at all. Dotfiles,
+	// the collection directories reachable as tabs, and non-document files are
+	// hidden either way.
 	filtered := make([]fs.DirEntry, 0, len(ents))
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		if e.IsDir() {
-			continue
-		}
-		if !isBrowsableDocument(e.Name()) {
+			if !m.treePaneHidden {
+				continue
+			}
+			// Collection directories are shown as Files pane tabs instead.
+			if m.isTabDir(filepath.Join(m.cwd, e.Name())) {
+				continue
+			}
+		} else if !isBrowsableDocument(e.Name()) {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -178,15 +188,16 @@ func (m Model) selectionOrCurrent() []string {
 
 // cwdIsLinkView reports whether the current directory is one of the synthetic
 // views whose entries are symlinks into the real library rather than documents
-// in their own right: a tag filter, Favorites, To-Read, or either Recently
-// folder. Operations that act on the document itself must resolve through those
-// links first — see resolveLinkTargets.
+// in their own right: a tag filter, Favorites, To-Read, a reading-state view,
+// or either Recently folder. Operations that act on the document itself must
+// resolve through those links first — see resolveLinkTargets.
 func (m Model) cwdIsLinkView() bool {
 	return m.cwdIsTagView ||
 		m.cwdIsFavorites ||
 		m.cwdIsToRead ||
 		m.cwdIsRecentlyAdded ||
-		m.cwdIsRecentlyOpened
+		m.cwdIsRecentlyOpened ||
+		m.cwdIsStateView
 }
 
 // resolveLinkTargets maps the given entry paths to the real documents they
@@ -248,6 +259,8 @@ func (m *Model) refreshEntryTitlesWithInfo(entryInfo map[string]entrySortInfo) {
 	for k := range m.entryTitles {
 		delete(m.entryTitles, k)
 	}
+	// Keep the structured metadata for the Files table columns.
+	m.entryInfo = entryInfo
 
 	var ctx context.Context
 	useMeta := entryInfo == nil && m.meta != nil
@@ -376,6 +389,9 @@ func (m *Model) buildEntrySortInfo(entries []fs.DirEntry) map[string]entrySortIn
 				if t := strings.TrimSpace(md.Title); t != "" {
 					data.title = t
 				}
+				data.author = strings.TrimSpace(md.Author)
+				data.added = md.AddedAt
+				data.opened = md.LastOpenedAt
 				data.year = strings.TrimSpace(md.Year)
 				data.state = normalizeReadingStateValue(md.ReadingState)
 				data.favorite = md.Favorite
@@ -469,10 +485,13 @@ func parseYearValue(year string) int {
 
 type entrySortInfo struct {
 	title    string
+	author   string
 	year     string
 	state    string
 	favorite bool
 	toRead   bool
+	added    time.Time
+	opened   time.Time
 }
 
 func (m *Model) normalizedEntryBase(name, fullPath string) string {
