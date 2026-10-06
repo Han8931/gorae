@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +55,11 @@ const (
 	// chafa). It bypasses the normal trimming/padding pipeline so that the
 	// escape codes are preserved and the pre-sized art is not mangled.
 	panelLineImage
+	// panelLinePreStyled holds content the caller has already styled and padded
+	// to the panel's inner width — used when a single row mixes several colors
+	// (e.g. a tag's colored circle beside its name) that a single row style
+	// cannot express. renderPanelBlock places it verbatim between the borders.
+	panelLinePreStyled
 )
 
 type panelLine struct {
@@ -64,65 +67,138 @@ type panelLine struct {
 	kind panelLineKind
 }
 
-// Left panel: simple "tree" panel from root to cwd.
+// Left panel: a NerdTree-style navigation tree of directories rooted at the
+// watch directory. Only folders are listed — files live in the middle pane —
+// so users can move around the library quickly. The pane is untitled; focus is
+// conveyed by the highlighted cursor row.
 func (m Model) renderTreePanel(width, height int) []string {
-	lines := []panelLine{
-		{text: fmt.Sprintf("Current: %s", filepath.Base(m.cwd)), kind: panelLineInfo},
+	nodes := m.visibleTreeNodes()
+	if len(nodes) == 0 {
+		lines := []panelLine{{text: "(no directories)", kind: panelLineInfo}}
+		return m.renderPanelBlock("", lines, width, height, m.styles.Tree)
 	}
 
-	parent := filepath.Dir(m.cwd)
-	if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
-		lines = append(lines, panelLine{text: "(root directory)", kind: panelLineInfo})
-		return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
+	// No title row, so the body spans everything but the two border rows.
+	bodyRows := height - 2
+	if bodyRows < 1 {
+		bodyRows = 1
 	}
 
-	ents, err := os.ReadDir(parent)
-	if err != nil {
-		lines = append(lines, panelLine{text: "(error reading parent)", kind: panelLineInfo})
-		return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
+	// Clamp the scroll window defensively; the key handlers keep treeViewStart in
+	// range, but a resize can shrink bodyRows between paints.
+	start := m.treeViewStart
+	if max := len(nodes) - bodyRows; start > max {
+		start = max
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := start + bodyRows
+	if end > len(nodes) {
+		end = len(nodes)
 	}
 
-	filtered := make([]os.DirEntry, 0, len(ents))
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		filtered = append(filtered, e)
-	}
+	treeFocused := m.focusedPane == focusTree && !m.treePaneHidden
+	folderIcon := strings.TrimSpace(m.iconSet.Folder)
+	// The tree pane is untitled, so panelContent lays rows out across width-2.
+	innerWidth := width - 2
 
-	sort.SliceStable(filtered, func(i, j int) bool {
-		pathI := filepath.Join(parent, filtered[i].Name())
-		pathJ := filepath.Join(parent, filtered[j].Name())
-		pi := m.specialDirPriority(pathI)
-		pj := m.specialDirPriority(pathJ)
-		if pi != pj {
-			return pi < pj
-		}
-		di, dj := filtered[i].IsDir(), filtered[j].IsDir()
-		if di != dj {
-			return di && !dj
-		}
-		return strings.ToLower(filtered[i].Name()) <
-			strings.ToLower(filtered[j].Name())
-	})
+	lines := make([]panelLine, 0, end-start)
+	for i := start; i < end; i++ {
+		n := nodes[i]
 
-	lines = append(lines, panelLine{text: fmt.Sprintf("Parent: %s", parent), kind: panelLineInfo})
-	for _, e := range filtered {
-		full := filepath.Join(parent, e.Name())
-		name := e.Name()
-		if e.IsDir() {
-			name += "/"
-		}
-		icon := m.entryIcon(e.IsDir())
-		text := fmt.Sprintf("%s %s", icon, name)
+		var sb strings.Builder
 		kind := panelLineBody
-		if full == m.cwd {
-			kind = panelLineActive
+
+		switch n.kind {
+		case treeNodeTagHeader:
+			sb.WriteString("Tags")
+			kind = panelLineInfo
+
+		case treeNodeTag:
+			// A tag row mixes two colors — a per-tag circle and the row's own
+			// text style — so it is composed as a pre-styled line rather than
+			// handed a single row style.
+			rowKind := panelLineBody
+			switch {
+			case treeFocused && i == m.treeCursor:
+				rowKind = panelLineCursor
+			case m.cwdIsTagView && n.tag == m.activeTagFilter:
+				rowKind = panelLineActive
+			}
+			rowStyle := m.styleForPanelLine(m.styles.Tree, rowKind)
+			sb.WriteString(m.styledTagLine(n, rowStyle, innerWidth))
+			kind = panelLinePreStyled
+
+		default: // treeNodeDir
+			marker := " "
+			if n.hasKids {
+				if n.expanded {
+					marker = "▾"
+				} else {
+					marker = "▸"
+				}
+			}
+			sb.WriteString(strings.Repeat("  ", n.depth))
+			sb.WriteString(marker)
+			sb.WriteString(" ")
+			if folderIcon != "" {
+				sb.WriteString(folderIcon)
+				sb.WriteString(" ")
+			}
+			sb.WriteString(n.name)
+			sb.WriteString("/")
+			switch {
+			case treeFocused && i == m.treeCursor:
+				kind = panelLineCursor
+			case !m.cwdIsTagView && n.path == m.cwd:
+				kind = panelLineActive
+			}
 		}
-		lines = append(lines, panelLine{text: text, kind: kind})
+
+		lines = append(lines, panelLine{text: sb.String(), kind: kind})
 	}
 
-	return m.renderPanelBlock("Tree", lines, width, height, m.styles.Tree)
+	return m.renderPanelBlock("", lines, width, height, m.styles.Tree)
+}
+
+// styledTagLine composes a Tags-section row: a colored circle whose hue is
+// derived from the tag, followed by the tag name, padded to innerWidth. Every
+// segment carries rowStyle so a highlighted (cursor/active) row keeps a
+// contiguous background bar, while the circle overrides only its foreground.
+// The result is a fully styled, innerWidth-wide string for panelLinePreStyled.
+func (m Model) styledTagLine(n treeNode, rowStyle lipgloss.Style, innerWidth int) string {
+	if innerWidth < 1 {
+		return ""
+	}
+	// Mirror panelContent's one-space margins so tags align with folder rows.
+	margin := 1
+	if innerWidth <= margin*2 {
+		margin = 0
+	}
+	usable := innerWidth - margin*2
+	if usable <= 0 {
+		usable = innerWidth
+		margin = 0
+	}
+
+	indent := strings.Repeat("  ", n.depth)
+	prefix := indent + "● "
+	prefixWidth := lipgloss.Width(prefix)
+
+	marginStr := rowStyle.Render(strings.Repeat(" ", margin))
+	circleStyle := rowStyle.Foreground(lipgloss.Color(tagCircleColor(n.tag)))
+
+	// Not even the circle fits: fall back to a plain trimmed/padded row.
+	if prefixWidth >= usable {
+		return marginStr + rowStyle.Render(padStyledLine(trimLine(prefix, usable), usable)) + marginStr
+	}
+
+	nameSpace := usable - prefixWidth
+	name := padStyledLine(trimLine(n.name, nameSpace), nameSpace)
+
+	body := rowStyle.Render(indent) + circleStyle.Render("●") + rowStyle.Render(" "+name)
+	return marginStr + body + marginStr
 }
 
 // Middle panel: file list (what your old View used to show).
@@ -1650,7 +1726,10 @@ func (m Model) renderPanelBlock(title string, lines []panelLine, width, height i
 			kind = entry.kind
 		}
 		var styled string
-		if kind == panelLineImage {
+		if kind == panelLinePreStyled {
+			// Already styled and sized to innerWidth by the caller; place as-is.
+			styled = text
+		} else if kind == panelLineImage {
 			// Pad to imageUsable so the right border always aligns.
 			padded := padStyledLine(text, imageUsable)
 			styled = " " + padded + " "

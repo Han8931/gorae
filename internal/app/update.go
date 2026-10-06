@@ -119,11 +119,68 @@ func (m *Model) handleNavigationPrefix(key string) bool {
 	}
 	m.treePaneHidden = !m.treePaneHidden
 	if m.treePaneHidden {
+		m.focusedPane = focusFiles
 		m.setStatus("Tree pane hidden (,n to show)")
 	} else {
-		m.setStatus("Tree pane shown (,n to hide)")
+		// Showing the tree moves focus to it so the user can start navigating
+		// directories immediately; Tab returns focus to the Files pane.
+		m.focusedPane = focusTree
+		m.syncTreeCursorToCwd()
+		m.setStatus("Tree focused — j/k move, l/h expand, Enter opens, Tab to files")
 	}
 	return true
+}
+
+// handleWindowPrefix implements Vim-style window focus motions: <C-w> followed
+// by h focuses the directory tree, l focuses the Files pane.
+func (m *Model) handleWindowPrefix(key string) bool {
+	now := time.Now()
+	if key == "ctrl+w" {
+		m.lastKey = "ctrl+w"
+		m.lastKeyAt = now
+		m.setStatus("Window: h → tree, l → files")
+		return true
+	}
+	if m.lastKey != "ctrl+w" {
+		return false
+	}
+	prefixAt := m.lastKeyAt
+	m.lastKey = ""
+	m.lastKeyAt = time.Time{}
+	if now.Sub(prefixAt) > 1200*time.Millisecond {
+		return false
+	}
+	switch key {
+	case "h", "left":
+		if m.treePaneHidden {
+			m.setStatus("Tree pane hidden (,n to show)")
+			return true
+		}
+		m.focusedPane = focusTree
+		m.syncTreeCursorToCwd()
+		m.setStatus("Tree focused — j/k move, l/h expand, Enter opens")
+		return true
+	case "l", "right":
+		m.focusedPane = focusFiles
+		m.clearStatus()
+		return true
+	}
+	return false
+}
+
+// keyIsPaneIndependent reports whether a key means the same thing regardless of
+// which pane has focus, and so should still work while the tree is focused:
+// quitting, the command line, search, and scrolling the file list. Every other
+// normal-mode key acts on the Files pane's cursor or selection and is swallowed
+// while that cursor is not the one the user is driving.
+func keyIsPaneIndependent(key string) bool {
+	switch key {
+	case "q", "ctrl+c", ":", "/",
+		"pgdown", "ctrl+f", "ctrl+d",
+		"pgup", "ctrl+b", "ctrl+u":
+		return true
+	}
+	return false
 }
 
 func (m *Model) currentYankTarget() string {
@@ -642,7 +699,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err == nil {
 						isDir = info.IsDir()
 					}
-					if err := os.RemoveAll(path); err != nil {
+					// Route the deletion through the Trash (which snapshots the
+					// file's metadata first) rather than destroying it outright.
+					if err := m.moveToTrash(path); err != nil {
 						lastErr = err
 						continue
 					}
@@ -679,6 +738,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.maybeSyncRecentlyAddedDir(true); err != nil {
 					syncErrs = append(syncErrs, "recently added: "+err.Error())
 				}
+				// A tag view is a snapshot, so rebuild it to drop links to the
+				// documents just deleted, and refresh the cached tag list: the
+				// metadata delete also removes the tag rows, so a tag whose last
+				// document is gone must disappear from the tree.
+				if m.cwdIsTagView && m.activeTagFilter != "" && m.meta != nil {
+					if err := rebuildTagDirectory(m.tagViewDir, m.activeTagFilter, m.meta); err != nil {
+						syncErrs = append(syncErrs, "tag view: "+err.Error())
+					} else {
+						m.loadEntries()
+					}
+				}
+				m.reloadTreeTags()
 
 				var extraParts []string
 				if lastErr != nil && deleted == 0 {
@@ -700,7 +771,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if deleted > 0 {
-					m.setStatus(fmt.Sprintf("Deleted %d item(s).%s", deleted, extra))
+					m.setStatus(fmt.Sprintf("Moved %d item(s) to Trash.%s", deleted, extra))
 				} else if lastErr != nil {
 					m.setStatus("Delete failed: " + lastErr.Error())
 				} else {
@@ -747,6 +818,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.handleNavigationPrefix(key) {
 			return m, nil
 		}
+		if m.handleWindowPrefix(key) {
+			return m, nil
+		}
+
+		// Tab switches keyboard focus between the Files pane and the directory
+		// tree. The tree must be visible to receive focus.
+		if key == "tab" {
+			if m.treePaneHidden {
+				m.setStatus("Tree pane hidden (,n to show)")
+			} else if m.focusedPane == focusTree {
+				m.focusedPane = focusFiles
+				m.clearStatus()
+			} else {
+				m.focusedPane = focusTree
+				m.syncTreeCursorToCwd()
+				m.setStatus("Tree focused — j/k move, l/h expand, Enter opens, Tab to files")
+			}
+			return m, nil
+		}
+
+		// While the tree holds focus, it handles navigation keys. Anything it
+		// does not consume is swallowed unless it is pane-independent: the Files
+		// pane's cursor is not even highlighted while the tree has focus, so
+		// letting keys like D or R through would act on a row the user cannot
+		// see. A hint points at Tab rather than failing silently.
+		if m.focusedPane == focusTree && !m.treePaneHidden {
+			if cmd, handled := m.handleTreeKey(key); handled {
+				return m, cmd
+			}
+			if !keyIsPaneIndependent(key) {
+				m.setStatus("Tree pane focused — Tab to return to files")
+				return m, nil
+			}
+		}
+
 		switch key {
 
 		case "q", "ctrl+c":
@@ -859,7 +965,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.updateTextPreviewAsync()
 			} else if isMarkdown(entry.Name()) {
 				openPath := full
-				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
+				if m.cwdIsLinkView() {
 					openPath = canonicalPath(full)
 				}
 				editor := m.configEditor()
@@ -873,7 +979,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			} else if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") || strings.HasSuffix(strings.ToLower(entry.Name()), ".epub") {
 				openPath := full
-				if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
+				if m.cwdIsLinkView() {
 					openPath = canonicalPath(full)
 				}
 				if err := m.openPDF(openPath); err != nil {
@@ -886,6 +992,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "h", "backspace", "left":
+			if m.cwdIsTagView {
+				return m, m.leaveTagView()
+			}
 			currentDir := m.cwd
 			parent := filepath.Dir(m.cwd)
 
@@ -1036,7 +1145,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "D":
-			targets := m.selectionOrCurrent()
+			// In a tag/collection view the rows are links, so resolve them to the
+			// documents they stand for: deleting there means deleting the paper,
+			// not the link that happens to represent it.
+			targets := m.resolveLinkTargets(m.selectionOrCurrent())
 			if len(targets) == 0 {
 				m.setStatus("Nothing to delete")
 				return m, nil
@@ -1046,9 +1158,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateConfirmDelete
 
 			if len(targets) == 1 {
-				m.setStatus(fmt.Sprintf("Delete '%s'? (y/N)", filepath.Base(targets[0])))
+				m.setStatus(fmt.Sprintf("Move '%s' to Trash? (y/N)", filepath.Base(targets[0])))
 			} else {
-				m.setStatus(fmt.Sprintf("Delete %d items? (y/N)", len(targets)))
+				m.setStatus(fmt.Sprintf("Move %d items to Trash? (y/N)", len(targets)))
 			}
 
 		case "R":
@@ -1707,6 +1819,8 @@ func (m *Model) runCommand(raw string) tea.Cmd {
 		return m.handleIndexCommand(args)
 	case "tags":
 		return m.handleTagsCommand(args)
+	case "trash":
+		return m.handleTrashCommand(args)
 	case "gorae", "ai", "llm":
 		return m.enterSessionList()
 	case "q", "quit":
@@ -2092,14 +2206,24 @@ func buildHelpOutput() []string {
 		"  h ............ go up a directory",
 		"  l/Enter ...... enter/open",
 		"  g g / G ...... top/bottom of list",
-		"  ,n ........... toggle tree pane",
+		"  ,n ........... toggle tree pane (and focus it)",
+		"",
+		"Directory tree (left pane)",
+		"  Tab .......... switch focus between tree and files",
+		"  C-w h / C-w l  focus tree / files (Vim-style)",
+		"  j/k .......... move within the tree",
+		"  l / h ........ expand / collapse a directory",
+		"  Enter / o .... open dir in Files pane / apply tag filter",
+		"  (tags are listed below the folders; h clears a tag filter)",
+		"  (file keys such as D and R need the Files pane — press Tab first)",
 		"",
 		"Selection & Files",
 		"  space ........ toggle selection",
 		"  v ............ select all files",
 		"  d / p ........ cut / paste",
 		"  a ............ new directory",
-		"  R / D ........ rename dir / delete selection",
+		"  R ............ rename directory",
+		"  D ............ move selection to Trash (see :trash)",
 		"",
 		"Metadata & Notes",
 		"  e ............ metadata preview + edit in editor",
@@ -2124,6 +2248,7 @@ func buildHelpOutput() []string {
 		"  :theme list ... list bundled themes; :theme reload re-reads theme.toml",
 		"",
 		"Other Commands",
+		"  :trash ....... show Trash item count (:trash restore to put back, :trash empty to clear)",
 		"  :pwd ......... show working directory",
 		"  :clear ....... hide this panel",
 		"  :q or Ctrl+C . quit",
@@ -2855,6 +2980,7 @@ var commandNames = []string{
 	"arxiv",
 	"autofetch",
 	"search",
+	"trash",
 	"gorae",
 	"q", "quit",
 }

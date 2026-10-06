@@ -79,6 +79,9 @@ func newViewStyles(th theme.Theme) viewStyles {
 			Body:   styleFromSpec(palette, th.Components.TreeBody),
 			Info:   styleFromSpec(palette, th.Components.TreeInfo),
 			Active: styleFromSpec(palette, th.Components.TreeActive),
+			// The tree cursor (when the pane is focused) reuses the Files-pane
+			// cursor styling so the highlighted row is clearly visible.
+			Cursor: styleFromSpec(palette, th.Components.ListCursor),
 			Border: mutedBorder,
 		},
 		List: panelStyles{

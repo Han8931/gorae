@@ -118,6 +118,25 @@ type Model struct {
 	cursor              int
 	err                 error
 
+	// Navigation tree (left pane) state. focusedPane selects whether keys drive
+	// the Files pane (default) or the directory tree. treeExpanded records which
+	// directories are open; treeCursor/treeViewStart track the tree's own cursor
+	// and scroll position, independent of the Files pane.
+	focusedPane   paneFocus
+	treeExpanded  map[string]bool
+	treeCursor    int
+	treeViewStart int
+	treeTags      []string // unique tags shown in the tree's Tags section
+
+	// Tag filter: selecting a tag in the tree materializes a symlink directory
+	// (tagViewDir) of the matching documents and makes it the cwd, mirroring how
+	// the Favorites/Recently special folders work. tagReturnDir remembers where
+	// to go back to when the filter is dismissed.
+	cwdIsTagView    bool
+	tagViewDir      string
+	tagReturnDir    string
+	activeTagFilter string
+
 	selected                   map[string]bool
 	cut                        []string
 	status                     string
@@ -397,6 +416,11 @@ func (m *Model) searchSkipDirs() []string {
 	add(m.recentlyOpenedDir)
 	add(m.favoritesDir)
 	add(m.toReadDir)
+	// The tag view and the Trash normally sit under meta_dir, outside the
+	// library — but a meta_dir pointed inside the watch directory would
+	// otherwise have every tagged or trashed document indexed a second time.
+	add(m.tagViewDir)
+	add(m.trashDir())
 	return dirs
 }
 
@@ -597,6 +621,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		root:                  root,
 		cwd:                   root,
 		selected:              make(map[string]bool),
+		treeExpanded:          make(map[string]bool),
 		input:                 ti,
 		aiTextarea:            newGoraeTextarea(),
 		viewportHeight:        20,
@@ -616,6 +641,9 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		notesDir:              strings.TrimSpace(cfg.NotesDir),
 		treePaneHidden:        !cfg.ShowTree,
 		skillsDir:             filepath.Join(strings.TrimSpace(cfg.MetaDir), "skills"),
+	}
+	if md := strings.TrimSpace(cfg.MetaDir); md != "" {
+		m.tagViewDir = canonicalPath(filepath.Join(md, "tagview"))
 	}
 
 	m.applyTheme(th)
@@ -674,6 +702,8 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 		m.statusAt = time.Now()
 		m.sticky = true
 	}
+
+	m.reloadTreeTags()
 
 	// Open on the launch screen — the whale wordmark, a daily epigraph, and the
 	// read/open/load menu. Esc drops straight into the file browser.

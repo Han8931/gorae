@@ -74,28 +74,18 @@ func (m *Model) loadEntries() {
 		return
 	}
 
-	// hide dotfiles and non-document files (but keep directories)
+	// The Files pane lists documents only. Directories are navigated from the
+	// tree pane now, so hide dotfiles, directories, and non-document files.
 	filtered := make([]fs.DirEntry, 0, len(ents))
-	notesDir := strings.TrimSpace(m.notesDir)
-	noteAbs := ""
-	if notesDir != "" {
-		noteAbs = canonicalPath(notesDir)
-	}
 	for _, e := range ents {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		if noteAbs != "" && e.IsDir() {
-			full := filepath.Join(m.cwd, e.Name())
-			if canonicalPath(full) == noteAbs {
-				continue
-			}
+		if e.IsDir() {
+			continue
 		}
-
-		if !e.IsDir() {
-			if !isBrowsableDocument(e.Name()) {
-				continue
-			}
+		if !isBrowsableDocument(e.Name()) {
+			continue
 		}
 		filtered = append(filtered, e)
 	}
@@ -184,6 +174,50 @@ func (m Model) selectionOrCurrent() []string {
 	}
 	full := filepath.Join(m.cwd, m.entries[m.cursor].Name())
 	return []string{full}
+}
+
+// cwdIsLinkView reports whether the current directory is one of the synthetic
+// views whose entries are symlinks into the real library rather than documents
+// in their own right: a tag filter, Favorites, To-Read, or either Recently
+// folder. Operations that act on the document itself must resolve through those
+// links first — see resolveLinkTargets.
+func (m Model) cwdIsLinkView() bool {
+	return m.cwdIsTagView ||
+		m.cwdIsFavorites ||
+		m.cwdIsToRead ||
+		m.cwdIsRecentlyAdded ||
+		m.cwdIsRecentlyOpened
+}
+
+// resolveLinkTargets maps the given entry paths to the real documents they
+// stand for, so that acting on a row in a synthetic view acts on the document
+// and not on the link representing it. Outside those views the paths are
+// returned untouched: a symlink a user put in their own library folder is a
+// real entry there, and deleting it must remove the link, not its target.
+//
+// Unresolvable links are passed through unchanged so the caller still reports a
+// sensible error, and the result is deduplicated — two rows in a view can point
+// at the same document.
+func (m Model) resolveLinkTargets(paths []string) []string {
+	if !m.cwdIsLinkView() || len(paths) == 0 {
+		return paths
+	}
+	out := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		resolved := p
+		if info, err := os.Lstat(p); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if target := canonicalPath(p); target != "" {
+				resolved = target
+			}
+		}
+		if _, dup := seen[resolved]; dup {
+			continue
+		}
+		seen[resolved] = struct{}{}
+		out = append(out, resolved)
+	}
+	return out
 }
 
 func avoidNameClash(dst string) string {
@@ -443,7 +477,7 @@ type entrySortInfo struct {
 
 func (m *Model) normalizedEntryBase(name, fullPath string) string {
 	base := strings.TrimSuffix(name, filepath.Ext(name))
-	if fullPath != "" && (m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded || m.cwdIsFavorites || m.cwdIsToRead) {
+	if fullPath != "" && m.cwdIsLinkView() {
 		if canonical := canonicalPath(fullPath); canonical != "" {
 			targetName := filepath.Base(canonical)
 			if targetName != "" {

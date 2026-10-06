@@ -94,29 +94,18 @@ func (m Model) clickMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	if msg.Button != tea.MouseButtonLeft {
 		if msg.Button == tea.MouseButtonRight {
 			if _, ok := m.clickInListPanel(msg); ok {
-				currentDir := m.cwd
-				parent := filepath.Dir(m.cwd)
-				if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
-					m.setStatus("Already at root")
-					return m, nil
-				}
-
-				m.cwd = parent
-				m.loadEntries()
-				childName := filepath.Base(currentDir)
-				if childName != "" {
-					target := filepath.Join(m.cwd, childName)
-					if idx := m.findEntryIndex(target); idx >= 0 {
-						m.cursor = idx
-						m.ensureCursorVisible()
-					}
-				}
-				m.clearStatus()
-				return m, m.updateTextPreviewAsync()
+				return m, m.goToParentDir()
 			}
 		}
 		return m, nil
 	}
+	// A click in the tree pane activates that row: opening a directory in the
+	// Files pane or applying a tag filter. Either way focus moves to the files.
+	if idx, ok := m.clickInTreePanel(msg); ok {
+		cmd := m.activateTreeNode(idx)
+		return m, cmd
+	}
+
 	localY, ok := m.clickInListPanel(msg)
 	if !ok {
 		return m, nil
@@ -146,7 +135,7 @@ func (m Model) clickMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if ext == ".pdf" || ext == ".epub" {
 			openPath := full
-			if m.cwdIsRecentlyOpened || m.cwdIsRecentlyAdded {
+			if m.cwdIsLinkView() {
 				openPath = canonicalPath(full)
 			}
 			if err := m.openPDF(openPath); err != nil {
@@ -197,13 +186,45 @@ func (m Model) clickInListPanel(msg tea.MouseMsg) (int, bool) {
 	return localY, true
 }
 
-// goToParentDir mirrors the keyboard handler for "h"/left/backspace.
-func (m *Model) goToParentDir() {
+// clickInTreePanel maps a click in the left tree pane to a visible tree-node
+// index, returning ok=false when the click lands outside the pane. The pane has
+// a top border row but no title, so the first node sits at screen row 1.
+func (m Model) clickInTreePanel(msg tea.MouseMsg) (int, bool) {
+	if m.treePaneHidden || m.width <= 0 || m.viewportHeight <= 0 {
+		return 0, false
+	}
+	leftWidth, _, _ := m.panelWidths()
+	if leftWidth <= 0 {
+		return 0, false
+	}
+	if msg.X < 0 || msg.X >= leftWidth {
+		return 0, false
+	}
+	const headerLines = 1 // top border only
+	localY := msg.Y - headerLines
+	if localY < 0 || msg.Y >= m.viewportHeight {
+		return 0, false
+	}
+	idx := m.treeViewStart + localY
+	nodes := m.visibleTreeNodes()
+	if idx < 0 || idx >= len(nodes) {
+		return 0, false
+	}
+	return idx, true
+}
+
+// goToParentDir mirrors the keyboard handler for "h"/left/backspace, and backs
+// the right-click gesture in the Files pane. In a tag view there is no parent to
+// climb to, so it dismisses the filter instead, exactly as "h" does.
+func (m *Model) goToParentDir() tea.Cmd {
+	if m.cwdIsTagView {
+		return m.leaveTagView()
+	}
 	currentDir := m.cwd
 	parent := filepath.Dir(m.cwd)
 	if parent == m.cwd || !strings.HasPrefix(parent, m.root) {
 		m.setStatus("Already at root")
-		return
+		return nil
 	}
 
 	m.cwd = parent
@@ -217,5 +238,5 @@ func (m *Model) goToParentDir() {
 		}
 	}
 	m.clearStatus()
-	m.updateTextPreview()
+	return m.updateTextPreviewAsync()
 }

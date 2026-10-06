@@ -23,6 +23,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] Bidirectional `[[wikilinks]]` with backlinks
 - [x] Auto DOI / arXiv metadata + BibTeX copy
 - [x] Delete confirmation
+- [x] Colorful circles next to tags in the tree pane
 
 ## In progress
 
@@ -40,11 +41,12 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 ### Knowledge base & UX
 
+- [ ] Rethink the full paper list — organize it by tags or some other grouping
 - [ ] Open URL
 - [ ] To-do management
 - [ ] Vault warden for cloud support
 - [ ] Web server
-- [ ] Trash
+- [~] Trash — `D` moves deletions to Trash (metadata snapshotted); `:trash restore [name]` puts items back with their tags and notes; `:trash empty` clears it. Still to come: a way to browse the Trash (listing / tree node) so restorable names are discoverable.
 
 ### Fixes
 

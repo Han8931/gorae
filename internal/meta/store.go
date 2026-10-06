@@ -454,6 +454,36 @@ WHERE path LIKE ? ESCAPE '\'
 	return err
 }
 
+// ListTree returns the metadata for every document whose path lies under dir.
+func (s *Store) ListTree(ctx context.Context, dir string) ([]Metadata, error) {
+	prefix, err := normalizeDirPrefix(dir)
+	if err != nil {
+		return nil, err
+	}
+	pattern := escapeLike(prefix) + "%"
+	query := `
+SELECT` + metadataSelectColumns + `
+  FROM metadata
+ WHERE path LIKE ? ESCAPE '\'
+ORDER BY path
+`
+	rows, err := s.db.QueryContext(ctx, query, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]Metadata, 0)
+	for rows.Next() {
+		md, err := scanMetadataRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, md)
+	}
+	return results, rows.Err()
+}
+
 // NameMatch is a single result from SearchByName.
 type NameMatch struct {
 	Path    string
