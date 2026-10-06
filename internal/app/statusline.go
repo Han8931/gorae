@@ -79,7 +79,7 @@ func (m Model) browserHints() []keyHint {
 	hints := []keyHint{
 		{"j/k", "move"},
 		{"h/l", "dir"},
-		{"←/→", "tabs"},
+		{"tab/←→", "views"},
 		{"/", "search"},
 		{":", "command"},
 		{"e", "meta"},

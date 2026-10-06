@@ -771,8 +771,8 @@ func (m Model) View() string {
 				}
 			}
 		}
-		if m.state == stateCommand && len(m.themeCompletionCandidates) > 0 {
-			overlayLines = m.renderThemeCompletionPanel(middleWidth, height)
+		if m.state == stateCommand && len(m.completionCandidates) > 0 {
+			overlayLines = m.renderCompletionPanel(middleWidth, height)
 		}
 
 		gapWidth := panelSeparatorWidth / 2
@@ -869,17 +869,49 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) renderThemeCompletionPanel(width, height int) []string {
-	lines := make([]panelLine, 0, len(m.themeCompletionCandidates)+1)
-	for i, name := range m.themeCompletionCandidates {
+// renderCompletionPanel lists the candidates of the in-progress Tab cycle in
+// place of the Files pane, marking the one currently in the input. The list is
+// windowed around the selection: a command with dozens of candidates would
+// otherwise be cut off at whatever the panel height allows, hiding the very row
+// the cycle has moved to.
+func (m Model) renderCompletionPanel(width, height int) []string {
+	title := m.completionTitle
+	if title == "" {
+		title = "Completions"
+	}
+	// Two border rows, the title row, and the footer hint.
+	bodyRows := height - 4
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+
+	start := 0
+	if n := len(m.completionCandidates); n > bodyRows {
+		start = m.completionIndex - bodyRows/2
+		if start > n-bodyRows {
+			start = n - bodyRows
+		}
+		if start < 0 {
+			start = 0
+		}
+	}
+	end := start + bodyRows
+	if end > len(m.completionCandidates) {
+		end = len(m.completionCandidates)
+	}
+
+	lines := make([]panelLine, 0, end-start+1)
+	for i := start; i < end; i++ {
 		kind := panelLineBody
-		if i == m.themeCompletionIndex {
+		if i == m.completionIndex {
 			kind = panelLineCursor
 		}
-		lines = append(lines, panelLine{text: name, kind: kind})
+		lines = append(lines, panelLine{text: m.completionCandidates[i], kind: kind})
 	}
-	lines = append(lines, panelLine{text: "Tab next  S-Tab previous  Enter apply", kind: panelLineInfo})
-	return m.renderPanelBlock("Themes", lines, width, height, m.styles.List)
+	footer := fmt.Sprintf("%d/%d  Tab next  S-Tab previous  Enter accept",
+		m.completionIndex+1, len(m.completionCandidates))
+	lines = append(lines, panelLine{text: footer, kind: panelLineInfo})
+	return m.renderPanelBlock(title, lines, width, height, m.styles.List)
 }
 
 func (m Model) graphicPreviewOverlay() string {

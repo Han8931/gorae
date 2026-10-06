@@ -129,7 +129,7 @@ func (m *Model) handleNavigationPrefix(key string) bool {
 		// directories immediately; Tab returns focus to the Files pane.
 		m.focusedPane = focusTree
 		m.syncTreeCursorToCwd()
-		m.setStatus("Tree focused — j/k move, l/h expand, Enter opens, Tab to files")
+		m.setStatus("Tree focused — j/k move, l/h expand, Enter opens, <C-w> l to files")
 	}
 	return true
 }
@@ -831,33 +831,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Tab switches keyboard focus between the Files pane and the directory
-		// tree. The tree must be visible to receive focus.
-		if key == "tab" {
-			if m.treePaneHidden {
-				m.setStatus("Tree pane hidden (,n to show)")
-			} else if m.focusedPane == focusTree {
-				m.focusedPane = focusFiles
-				m.clearStatus()
-			} else {
-				m.focusedPane = focusTree
-				m.syncTreeCursorToCwd()
-				m.setStatus("Tree focused — j/k move, l/h expand, Enter opens, Tab to files")
+		// Tab cycles the Files pane through its views the way a tab bar reads —
+		// Library, Recent, Reading and the rest — same as ←/→. Pane focus moves
+		// with <C-w> h/l instead, since Tab switching the view only to leave the
+		// tree holding the cursor would act on a list the user is not driving.
+		if key == "tab" || key == "shift+tab" {
+			delta := 1
+			if key == "shift+tab" {
+				delta = -1
 			}
-			return m, nil
+			m.focusedPane = focusFiles
+			return m, m.cycleTab(delta)
 		}
 
 		// While the tree holds focus, it handles navigation keys. Anything it
 		// does not consume is swallowed unless it is pane-independent: the Files
 		// pane's cursor is not even highlighted while the tree has focus, so
 		// letting keys like D or R through would act on a row the user cannot
-		// see. A hint points at Tab rather than failing silently.
+		// see. A hint points at the way back rather than failing silently.
 		if m.focusedPane == focusTree && !m.treePaneHidden {
 			if cmd, handled := m.handleTreeKey(key); handled {
 				return m, cmd
 			}
 			if !keyIsPaneIndependent(key) {
-				m.setStatus("Tree pane focused — Tab to return to files")
+				m.setStatus("Tree pane focused — <C-w> l returns to the files")
 				return m, nil
 			}
 		}
@@ -3002,9 +2999,24 @@ var commandNames = []string{
 	"q", "quit",
 }
 
+// handleCommandAutocomplete completes the command line forwards (Tab);
+// handleCommandAutocompleteReverse walks the same candidates backwards
+// (Shift+Tab). Both run the shared body below.
 func (m *Model) handleCommandAutocomplete() bool {
+	return m.completeCommandLine(1)
+}
+
+func (m *Model) handleCommandAutocompleteReverse() bool {
+	return m.completeCommandLine(-1)
+}
+
+func (m *Model) completeCommandLine(direction int) bool {
 	if m.state != stateCommand {
 		return false
+	}
+	// An open cycle takes the key first, whatever kind of argument opened it.
+	if m.advanceCompletionCycle(direction) {
+		return true
 	}
 	value := m.input.Value()
 	runes := []rune(value)
@@ -3016,16 +3028,18 @@ func (m *Model) handleCommandAutocomplete() bool {
 	for trimmedLen > 0 && unicode.IsSpace(runes[trimmedLen-1]) {
 		trimmedLen--
 	}
-	if trimmedLen == 0 {
-		return false
-	}
 	trimmed := string(runes[:trimmedLen])
 	hasTrailingWhitespace := trimmedLen != len(runes)
+	if trimmedLen == 0 {
+		// Nothing typed yet. Offer the whole command list instead of ignoring
+		// the key, so Tab is also how you find out what the colon line takes.
+		return m.autocompleteCommandName("", direction)
+	}
 	if !strings.ContainsAny(trimmed, " \t") && !hasTrailingWhitespace {
-		return m.autocompleteCommandName(trimmed)
+		return m.autocompleteCommandName(trimmed, direction)
 	}
 	if firstCommandToken(trimmed) == "theme" {
-		return m.autocompleteTheme(trimmed, hasTrailingWhitespace)
+		return m.autocompleteThemeDirection(trimmed, hasTrailingWhitespace, direction)
 	}
 	lastSep := strings.LastIndexAny(trimmed, " \t")
 	if lastSep == -1 || lastSep == len(trimmed)-1 {
@@ -3045,13 +3059,10 @@ func (m *Model) handleCommandAutocomplete() bool {
 		values[i] = c.value
 	}
 	lcp := longestCommonPrefix(values)
-	if lcp == token {
-		lines := []string{"Completions:"}
-		for _, c := range completions {
-			lines = append(lines, "  "+c.value)
-		}
-		m.setCommandOutput(lines)
-		m.setPersistentStatus("Multiple completions (type more letters)")
+	if len(values) > 1 && lcp == token {
+		// As with command names: the common prefix is already typed, so walk the
+		// candidates rather than printing a list Tab cannot act on.
+		m.startCompletionCycle("Paths", trimmed[:lastSep+1], values, direction)
 		return true
 	}
 	appendSpace := false
@@ -3068,7 +3079,7 @@ func (m *Model) handleCommandAutocomplete() bool {
 	return true
 }
 
-func (m *Model) autocompleteCommandName(current string) bool {
+func (m *Model) autocompleteCommandName(current string, direction int) bool {
 	value := strings.TrimSpace(current)
 	prefix := ""
 	token := value
@@ -3078,40 +3089,29 @@ func (m *Model) autocompleteCommandName(current string) bool {
 	}
 	tokenLower := strings.ToLower(token)
 	matches := make([]string, 0, len(commandNames))
+	seen := make(map[string]bool, len(commandNames))
 	for _, name := range commandNames {
-		if strings.HasPrefix(name, tokenLower) {
-			matches = append(matches, name)
+		// commandNames carries aliases, so the same name can appear twice; a
+		// cycle that stops on the same candidate twice looks broken.
+		if seen[name] || !strings.HasPrefix(name, tokenLower) {
+			continue
 		}
-	}
-	if tokenLower == "" {
-		if len(commandNames) == 0 {
-			return false
-		}
-		lines := []string{"Commands:"}
-		seen := make(map[string]bool, len(commandNames))
-		for _, name := range commandNames {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			lines = append(lines, "  "+name)
-		}
-		m.setCommandOutput(lines)
-		m.setPersistentStatus("Multiple completions (type more letters)")
-		return true
+		seen[name] = true
+		matches = append(matches, name)
 	}
 	if len(matches) == 0 {
+		if tokenLower == "" {
+			return false
+		}
 		m.setStatus("No completions")
 		return true
 	}
+	// Nothing left to extend — every candidate shares the typed prefix — so walk
+	// them instead of printing a list and leaving the line untouched, which read
+	// as Tab doing nothing at all. An empty token cycles every command.
 	lcp := longestCommonPrefix(matches)
-	if lcp == tokenLower {
-		lines := []string{"Commands:"}
-		for _, name := range matches {
-			lines = append(lines, "  "+name)
-		}
-		m.setCommandOutput(lines)
-		m.setPersistentStatus("Multiple completions (type more letters)")
+	if len(matches) > 1 && (tokenLower == "" || lcp == tokenLower) {
+		m.startCompletionCycle("Commands", prefix, matches, direction)
 		return true
 	}
 	newValue := prefix + lcp
@@ -3141,17 +3141,9 @@ func themeCompletionCandidates() []string {
 	return theme.BuiltinNames()
 }
 
-// autocompleteTheme completes the single argument of the :theme command against
-// the known theme names and subcommands.
-func (m *Model) autocompleteTheme(trimmed string, trailingWhitespace bool) bool {
-	return m.autocompleteThemeDirection(trimmed, trailingWhitespace, 1)
-}
-
+// autocompleteThemeDirection completes the single argument of the :theme
+// command against the known theme names and subcommands.
 func (m *Model) autocompleteThemeDirection(trimmed string, trailingWhitespace bool, direction int) bool {
-	if m.advanceThemeCompletion(direction) {
-		return true
-	}
-
 	body := strings.TrimPrefix(trimmed, ":")
 	fields := strings.Fields(body)
 
@@ -3197,7 +3189,7 @@ func (m *Model) autocompleteThemeDirection(trimmed string, trailingWhitespace bo
 
 	lcp := longestCommonPrefix(matches)
 	if len(matches) > 1 && lcp == tokenLower {
-		m.startThemeCompletion(prefix, matches, direction)
+		m.startCompletionCycle("Themes", prefix, matches, direction)
 		return true
 	}
 
@@ -3210,75 +3202,59 @@ func (m *Model) autocompleteThemeDirection(trimmed string, trailingWhitespace bo
 	return true
 }
 
-func (m *Model) resetThemeCompletion() {
-	m.themeCompletionCandidates = nil
-	m.themeCompletionPrefix = ""
-	m.themeCompletionIndex = -1
+func (m *Model) resetCompletionCycle() {
+	m.completionCandidates = nil
+	m.completionPrefix = ""
+	m.completionIndex = -1
+	m.completionTitle = ""
 }
 
-func (m *Model) startThemeCompletion(prefix string, candidates []string, direction int) {
-	m.themeCompletionPrefix = prefix
-	m.themeCompletionCandidates = append([]string(nil), candidates...)
-	m.themeCompletionIndex = 0
+// startCompletionCycle opens a Tab cycle over candidates, which the panel lists
+// under title while Tab and Shift+Tab walk them. Starting at the end when the
+// cycle was opened by Shift+Tab means one backwards keypress reaches the last
+// candidate instead of the first.
+func (m *Model) startCompletionCycle(title, prefix string, candidates []string, direction int) {
+	m.completionTitle = title
+	m.completionPrefix = prefix
+	m.completionCandidates = append([]string(nil), candidates...)
+	m.completionIndex = 0
 	if direction < 0 {
-		m.themeCompletionIndex = len(candidates) - 1
+		m.completionIndex = len(candidates) - 1
 	}
-	m.renderThemeCompletion()
+	m.renderCompletionCycle()
 }
 
-func (m *Model) advanceThemeCompletion(direction int) bool {
-	if len(m.themeCompletionCandidates) == 0 || m.themeCompletionIndex < 0 {
+func (m *Model) advanceCompletionCycle(direction int) bool {
+	if len(m.completionCandidates) == 0 || m.completionIndex < 0 {
 		return false
 	}
-	want := m.themeCompletionPrefix + m.themeCompletionCandidates[m.themeCompletionIndex]
+	want := m.completionPrefix + m.completionCandidates[m.completionIndex]
 	if m.input.Value() != want {
-		m.resetThemeCompletion()
+		m.resetCompletionCycle()
 		return false
 	}
-	m.themeCompletionIndex += direction
-	if m.themeCompletionIndex < 0 {
-		m.themeCompletionIndex = len(m.themeCompletionCandidates) - 1
+	m.completionIndex += direction
+	if m.completionIndex < 0 {
+		m.completionIndex = len(m.completionCandidates) - 1
 	}
-	if m.themeCompletionIndex >= len(m.themeCompletionCandidates) {
-		m.themeCompletionIndex = 0
+	if m.completionIndex >= len(m.completionCandidates) {
+		m.completionIndex = 0
 	}
-	m.renderThemeCompletion()
+	m.renderCompletionCycle()
 	return true
 }
 
-func (m *Model) renderThemeCompletion() {
-	if len(m.themeCompletionCandidates) == 0 || m.themeCompletionIndex < 0 {
+func (m *Model) renderCompletionCycle() {
+	if len(m.completionCandidates) == 0 || m.completionIndex < 0 {
 		return
 	}
-	selected := m.themeCompletionCandidates[m.themeCompletionIndex]
-	m.input.SetValue(m.themeCompletionPrefix + selected)
+	selected := m.completionCandidates[m.completionIndex]
+	m.input.SetValue(m.completionPrefix + selected)
 	m.input.CursorEnd()
+	// The candidates are on screen in the completion panel; a stale command
+	// output underneath it would just compete for the same rows.
 	m.clearCommandOutput()
-	m.setPersistentStatus("Tab: next  Shift+Tab: previous  Enter: apply")
-}
-
-func (m *Model) handleThemeAutocompleteReverse() bool {
-	if m.state != stateCommand {
-		return false
-	}
-	value := m.input.Value()
-	runes := []rune(value)
-	if m.input.Position() != len(runes) {
-		return false
-	}
-	trimmedLen := len(runes)
-	for trimmedLen > 0 && unicode.IsSpace(runes[trimmedLen-1]) {
-		trimmedLen--
-	}
-	if trimmedLen == 0 {
-		return false
-	}
-	trimmed := string(runes[:trimmedLen])
-	trailingWhitespace := trimmedLen != len(runes)
-	if firstCommandToken(trimmed) != "theme" {
-		return false
-	}
-	return m.autocompleteThemeDirection(trimmed, trailingWhitespace, -1)
+	m.setPersistentStatus("Tab: next  Shift+Tab: previous  Enter: accept")
 }
 
 func (m *Model) commandPathCompletions(token string) []pathCompletion {

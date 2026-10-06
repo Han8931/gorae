@@ -158,7 +158,10 @@ func (m Model) renderTabStrip(innerWidth int) string {
 			if i == active {
 				b.WriteString(m.styles.ModeChip.Render(fmt.Sprintf(" %s %d ", tabs[i].label, len(m.entries))))
 			} else {
-				b.WriteString(m.styles.Muted.Render(tabs[i].label))
+				// Body rather than Muted: these are the names of the places the
+				// user can go, and the filled chip already marks which one is
+				// current without having to dim all the others into illegibility.
+				b.WriteString(fallbackStyle(m.styles.List.Body, m.styles.Muted).Render(tabs[i].label))
 			}
 		}
 		if hi < len(tabs)-1 {

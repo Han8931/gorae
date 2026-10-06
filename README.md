@@ -219,7 +219,7 @@ Vim-style navigation everywhere. Cheat sheet:
 | Index library | `:index` |
 | Help | `:help` |
 
-**Tabs:** the Files pane has tabs, switched with `Left` / `Right`:
+**Tabs:** the Files pane has tabs, switched with `Tab` / `Shift+Tab` or `Left` / `Right`:
 
 | Tab | Shows |
 |---|---|
@@ -274,6 +274,11 @@ Use `:theme <name>` to switch among bundled themes. After typing `:theme `,
 press `Tab` for the next theme, `Shift+Tab` for the previous theme, and `Enter`
 to apply the highlighted choice. `:theme list` shows every bundled theme, while
 `:theme reload` reloads a custom `theme.toml`.
+
+`Tab` completes anywhere on the `:` line, not just for themes. It fills in as
+much as is unambiguous; when several candidates remain it lists them and walks
+through them, `Shift+Tab` going back and `Enter` accepting the highlighted one.
+On an empty line it offers every command.
 
 The directory tree starts folded, giving its width to the file table and
 preview. Press `,n` in normal mode to toggle it for the current session, or show

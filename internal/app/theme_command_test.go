@@ -32,7 +32,7 @@ func TestFirstCommandToken(t *testing.T) {
 func TestAutocompleteThemeUniquePrefix(t *testing.T) {
 	// "tok" uniquely matches "tokyo-night".
 	m := newThemeTestModel(":theme tok")
-	if !m.autocompleteTheme(":theme tok", false) {
+	if !m.autocompleteThemeDirection(":theme tok", false, 1) {
 		t.Fatal("expected autocomplete to handle the token")
 	}
 	if got, want := m.input.Value(), ":theme tokyo-night "; got != want {
@@ -44,7 +44,7 @@ func TestAutocompleteThemeSharedPrefix(t *testing.T) {
 	// "catppuccin-" matches two themes; completion should extend to the common
 	// prefix without picking one.
 	m := newThemeTestModel(":theme catp")
-	if !m.autocompleteTheme(":theme catp", false) {
+	if !m.autocompleteThemeDirection(":theme catp", false, 1) {
 		t.Fatal("expected autocomplete to handle the token")
 	}
 	if got, want := m.input.Value(), ":theme catppuccin-"; got != want {
@@ -55,17 +55,19 @@ func TestAutocompleteThemeSharedPrefix(t *testing.T) {
 func TestAutocompleteThemeEmptyListsAll(t *testing.T) {
 	// ":theme " starts the selectable candidate list.
 	m := newThemeTestModel(":theme ")
-	if !m.autocompleteTheme(":theme", true) {
+	if !m.autocompleteThemeDirection(":theme", true, 1) {
 		t.Fatal("expected autocomplete to handle the empty token")
 	}
-	if len(m.themeCompletionCandidates) == 0 {
+	if len(m.completionCandidates) == 0 {
 		t.Fatal("expected selectable theme candidates")
 	}
 	first := themeCompletionCandidates()[0]
 	if got, want := m.input.Value(), ":theme "+first; got != want {
 		t.Fatalf("input = %q, want %q", got, want)
 	}
-	if !m.autocompleteTheme(m.input.Value(), false) {
+	// Repeated Tab goes through the shared command-line completion path, which
+	// is where an open cycle is advanced regardless of what opened it.
+	if handled, _ := m.commandPromptPreKey("tab"); !handled {
 		t.Fatal("expected repeated Tab to advance the selection")
 	}
 	second := themeCompletionCandidates()[1]
@@ -80,12 +82,12 @@ func TestThemeCompletionDoesNotIncreaseFrameHeight(t *testing.T) {
 	m.viewportHeight = 18
 	m.cwd = "/tmp"
 	before := strings.Count(m.View(), "\n")
-	m.autocompleteTheme(":theme", true)
+	m.autocompleteThemeDirection(":theme", true, 1)
 	after := strings.Count(m.View(), "\n")
 	if after != before {
 		t.Fatalf("theme chooser changed frame height from %d to %d lines", before, after)
 	}
-	chooser := strings.Join(m.renderThemeCompletionPanel(40, 18), "\n")
+	chooser := strings.Join(m.renderCompletionPanel(40, 18), "\n")
 	if strings.Contains(chooser, "▸") {
 		t.Fatal("theme chooser should use row highlighting without a wedge marker")
 	}
@@ -93,9 +95,9 @@ func TestThemeCompletionDoesNotIncreaseFrameHeight(t *testing.T) {
 
 func TestThemeCompletionResetsWhenTyping(t *testing.T) {
 	m := newThemeTestModel(":theme ")
-	m.autocompleteTheme(":theme", true)
+	m.autocompleteThemeDirection(":theme", true, 1)
 	m.commandPromptPreKey("x")
-	if len(m.themeCompletionCandidates) != 0 {
+	if len(m.completionCandidates) != 0 {
 		t.Fatal("expected typing to reset the theme completion cycle")
 	}
 }
@@ -120,7 +122,7 @@ func TestThemeCompletionShiftTabMovesBackward(t *testing.T) {
 func TestAutocompleteThemeStopsAfterArg(t *testing.T) {
 	// A completed argument means there is nothing left to complete.
 	m := newThemeTestModel(":theme dracula ")
-	if m.autocompleteTheme(":theme dracula", true) {
+	if m.autocompleteThemeDirection(":theme dracula", true, 1) {
 		t.Fatal("expected no further completion after a full argument")
 	}
 }

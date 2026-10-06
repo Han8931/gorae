@@ -137,23 +137,27 @@ type Model struct {
 	tagReturnDir    string
 	activeTagFilter string
 
-	selected                   map[string]bool
-	cut                        []string
-	status                     string
-	statusAt                   time.Time
-	sticky                     bool
-	commandOutput              []string
-	commandOutputOffset        int
-	commandOutputPinned        bool
-	helpLines                  []string
-	helpOffset                 int
-	awaitingHelpGotoTop        bool
-	commandHistory             []string
-	commandHistoryIndex        int
-	commandHistoryBuffer       string
-	themeCompletionCandidates  []string
-	themeCompletionPrefix      string
-	themeCompletionIndex       int
+	selected             map[string]bool
+	cut                  []string
+	status               string
+	statusAt             time.Time
+	sticky               bool
+	commandOutput        []string
+	commandOutputOffset  int
+	commandOutputPinned  bool
+	helpLines            []string
+	helpOffset           int
+	awaitingHelpGotoTop  bool
+	commandHistory       []string
+	commandHistoryIndex  int
+	commandHistoryBuffer string
+	// An in-progress Tab cycle on the command line: the candidates Tab walks
+	// through, the text they are appended to, and which one is showing. Used for
+	// command names, :theme arguments and path arguments alike.
+	completionCandidates       []string
+	completionPrefix           string
+	completionIndex            int
+	completionTitle            string
 	entryTitles                map[string]string
 	sortMode                   sortMode
 	awaitingSort               bool

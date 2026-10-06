@@ -76,9 +76,10 @@ cursor background and wins visually when it rests on a selected row.
 | `j` / `k` or `Up` / `Down` | Move down/up |
 | `l` or `Enter` | Enter a directory or open a document |
 | `h` or `Backspace` | Parent directory (from the top of a collection tab, back to Library) |
-| `Left` / `Right` | Switch Files tab: Library, Recent, Reading, To Read, Added, Unread, Read |
+| `Tab` / `Shift+Tab` or `Left` / `Right` | Switch Files tab: Library, Recent, Reading, To Read, Added, Unread, Read |
 | `g` / `G` | Top/bottom; `g` also begins a reading-state filter |
 | `,n` | Toggle the tree pane for this session |
+| `Ctrl+W` `h` / `l` | Move focus to the tree / the files |
 | `Space` | Toggle selection and advance |
 | `v` | Select/clear all PDF files |
 | `a` | Create a directory |

@@ -136,7 +136,12 @@ func (m Model) renderFileTableHeader(c fileColumns) string {
 	if c.kind > 0 {
 		cells = append(cells, fitCell("Type", c.kind))
 	}
-	return m.styles.Muted.Bold(true).Underline(true).Render(strings.Join(cells, " "))
+	// Styled as the pane's header rather than as muted body text: the labels sit
+	// at full contrast against the header's own background, and nothing is
+	// underlined — an underline under dim text shimmers as the list scrolls
+	// under it and made the row harder to read than the rows it labels.
+	header := fallbackStyle(m.styles.List.Header, m.styles.Accent.Bold(true))
+	return header.Render(strings.Join(cells, " "))
 }
 
 // fileTableRow renders one entry. With colored set, cells get their own

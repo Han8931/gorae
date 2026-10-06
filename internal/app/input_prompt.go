@@ -171,7 +171,7 @@ func (m *Model) submitRename(raw string) tea.Cmd {
 // must run before the key reaches the textinput.
 func (m *Model) commandPromptPreKey(key string) (bool, tea.Cmd) {
 	if key != "tab" && key != "shift+tab" {
-		m.resetThemeCompletion()
+		m.resetCompletionCycle()
 	}
 	switch key {
 	case "tab":
@@ -179,7 +179,7 @@ func (m *Model) commandPromptPreKey(key string) (bool, tea.Cmd) {
 			return true, nil
 		}
 	case "shift+tab":
-		if m.handleThemeAutocompleteReverse() {
+		if m.handleCommandAutocompleteReverse() {
 			return true, nil
 		}
 	case "up":
