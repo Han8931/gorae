@@ -69,9 +69,17 @@ depending on whether your working tree happened to be clean.
 release artefacts are built this way, so a binary built without it will not
 match the checksums recorded in `packaging/aur/gorae-bin/PKGBUILD`.
 
-With these flags the `linux/amd64` artefact is byte-identical to what
-`packaging/aur/gorae/PKGBUILD` builds from the release tarball, so `gorae` and
-`gorae-bin` install the same binary. Worth re-checking when the flags change:
+With these flags the `linux/amd64` artefact is byte-identical to what the
+`build()` in `packaging/aur/gorae/PKGBUILD` produces, so the source and binary
+AUR packages compile the same bytes.
+
+Neither package *installs* those bytes, though: makepkg strips the binary and
+splits out a `-debug` package, and it does this to `gorae-bin`'s downloaded
+artefact as well as to `gorae`'s own build. The upshot is that both AUR
+packages install an identical binary, which is not the one on the release page.
+Only a direct download gives you the artefact `SHA256SUMS` describes.
+
+Worth re-checking when the flags change:
 
 ```sh
 sha256sum dist/gorae-linux-amd64   # must equal gorae-bin's first sha256sum
