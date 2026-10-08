@@ -43,7 +43,8 @@ const (
 	stateNewDir
 	stateConfirmDelete
 	stateRename
-	stateMetaPreview
+	stateMetaPreview // the editing view ('e'): one row per metadata field
+	stateMetaField   // typing one of its text fields into the prompt line
 	stateCommand
 	stateSearchPrompt
 	stateArxivPrompt
@@ -209,9 +210,10 @@ type Model struct {
 	unmarkTargets []string
 
 	meta            *meta.Store   // <── sqlite store
-	metaEditingPath string        // path of file being edited
-	metaFieldIndex  int           // 0:title,1:author,2:year,...
+	metaEditingPath string        // path of the file open in the editing view
+	metaRowIndex    int           // focused row of the editing view (see metaRows)
 	metaDraft       meta.Metadata // draft being edited
+	metaNote        string        // note body of metaEditingPath, for the Note row
 
 	// AI chat (:gorae)
 	aiMessages        []ai.Message    // full conversation history
@@ -387,12 +389,6 @@ func setMetadataFieldValue(data *meta.Metadata, index int, value string) {
 	}
 }
 
-func (m *Model) loadMetaFieldIntoInput() {
-	value := metadataFieldValue(m.metaDraft, m.metaFieldIndex)
-	m.input.SetValue(value)
-	m.input.CursorEnd()
-}
-
 func canonicalPath(path string) string {
 	if path == "" {
 		return ""
@@ -548,25 +544,7 @@ func (m *Model) noteFilePath(path string) (string, error) {
 }
 
 func (m *Model) loadNoteFor(path string) {
-	if path == "" {
-		m.currentNote = ""
-		return
-	}
-	filePath, err := m.noteFilePath(path)
-	if err != nil {
-		m.currentNote = ""
-		return
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			m.currentNote = ""
-			return
-		}
-		m.currentNote = ""
-		return
-	}
-	m.currentNote = string(data)
+	m.currentNote = m.readNoteFor(path)
 }
 
 func (m *Model) refreshCurrentNote() {
@@ -614,7 +592,7 @@ func NewModel(cfg *config.Config, store *meta.Store) Model {
 	ti := textinput.New()
 	ti.Placeholder = ""
 	ti.Prompt = ""
-	ti.CharLimit = 200
+	ti.CharLimit = defaultInputCharLimit
 	ti.Cursor.Style = ti.Cursor.Style.Bold(true)
 	ti.Focus()
 

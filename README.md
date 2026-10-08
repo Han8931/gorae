@@ -213,7 +213,7 @@ Vim-style navigation everywhere. Cheat sheet:
 | Reading state (Unread → Reading → Read) | `r` |
 | Sort by name / title / year | `s n` / `s t` / `s y` |
 | Delete (confirm with `y`) | `D` |
-| Edit metadata | `ee` |
+| Edit metadata | `e`, then `Enter` on a field (`E` for your editor) |
 | Search | `/` |
 | AI chat | `:gorae` |
 | Index library | `:index` |

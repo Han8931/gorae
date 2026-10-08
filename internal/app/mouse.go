@@ -28,7 +28,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	// The editing view takes over the Files pane, so the wheel has to scroll it
 	// rather than move the file cursor hidden behind it.
-	if m.state == stateMetaPreview {
+	if m.state == stateMetaPreview || m.state == stateMetaField {
 		switch msg.Type {
 		case tea.MouseWheelUp:
 			m.scrollMetaPopup(-3)

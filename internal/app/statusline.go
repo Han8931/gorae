@@ -68,7 +68,19 @@ func (m Model) prefixPending(key string) bool {
 func (m Model) browserHints() []keyHint {
 	switch m.state {
 	case stateMetaPreview:
-		return []keyHint{{"j/k", "scroll"}, {"e", "edit metadata"}, {"n", "edit note"}, {"esc", "close"}}
+		hints := []keyHint{
+			{"j/k", "field"},
+			{"enter", "edit"},
+			{"r", "read state"},
+			{"f/t", "favorite/to-read"},
+			{"E", "editor"},
+		}
+		if !isMarkdown(m.metaEditingPath) {
+			hints = append(hints, keyHint{"n", "note"})
+		}
+		return append(hints, keyHint{"esc", "close"})
+	case stateMetaField:
+		return []keyHint{{"enter", "save"}, {"tab", "save + next"}, {"esc", "cancel"}}
 	case stateUnmarkPrompt:
 		return []keyHint{{"f", "favorite"}, {"t", "to-read"}, {"b", "both"}, {"esc", "cancel"}}
 	}
@@ -226,6 +238,8 @@ func (m Model) currentModeLabel() string {
 		return "Search"
 	case stateMetaPreview:
 		return "Meta"
+	case stateMetaField:
+		return "Meta Edit"
 	case stateNewDir:
 		return "New Dir"
 	case stateRename:

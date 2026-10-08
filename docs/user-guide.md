@@ -94,8 +94,22 @@ The tree starts folded, so the list and detail panes share its width. Set
 
 ## Metadata, notes, and flags
 
-- `e` opens metadata preview. Press `e` again to edit metadata in the
-  configured external editor.
+- `e` opens the editing view: one row per metadata field, in place of the file
+  list. Everything is saved the moment you change it, so `Esc` is always safe.
+
+  | Key | Action |
+  |---|---|
+  | `j` / `k` | Move between fields (long values unfold under the cursor) |
+  | `Enter` (or `e`) | Edit the selected field in the prompt line |
+  | `Tab` / `Shift+Tab` | While editing: save and move to the next/previous field |
+  | `Esc` | While editing: cancel the field · otherwise close the view |
+  | `r` / `f` / `t` | Cycle reading state · toggle Favorite · toggle To Read |
+  | `n` | Edit the note in your editor |
+  | `E` | Edit every field at once as JSON in your editor |
+  | `g` / `G`, `PgUp` / `PgDn` | First/last field, page through |
+
+  A `Year` has to contain a four-digit year, otherwise the year sort and BibTeX
+  export cannot use it.
 - `n` edits the current document's Markdown note.
 - `t` toggles To Read.
 - `u` opens the flag-removal prompt.

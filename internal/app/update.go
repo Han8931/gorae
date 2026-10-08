@@ -262,7 +262,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.ensureCursorVisible()
-		m.clampMetaPopupOffset()
+		if m.state == stateMetaPreview || m.state == stateMetaField {
+			m.ensureMetaRowVisible()
+		} else {
+			m.metaPopupOffset = 0
+		}
 		if m.state == stateSearchResults {
 			m.ensureSearchResultVisible()
 		}
@@ -600,52 +604,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// ===========================
-		//  METADATA PREVIEW MODE
+		//  METADATA EDITING VIEW
 		// ===========================
+		if m.state == stateMetaField {
+			return m.handleMetaFieldKey(msg, key)
+		}
 		if m.state == stateMetaPreview {
-			switch key {
-			case "e":
-				m.metaPopupOffset = 0
-				if cmd := m.launchMetadataEditor(); cmd != nil {
-					return m, cmd
-				}
-				return m, nil
-			case "n":
-				if isMarkdown(m.metaEditingPath) {
-					return m, nil
-				}
-				if cmd := m.launchNoteEditor(); cmd != nil {
-					return m, cmd
-				}
-				return m, nil
-			case "up", "k":
-				m.scrollMetaPopup(-1)
-				return m, nil
-			case "down", "j":
-				m.scrollMetaPopup(1)
-				return m, nil
-			case "pgup":
-				step := m.viewportHeight / 2
-				if step < 3 {
-					step = 3
-				}
-				m.scrollMetaPopup(-step)
-				return m, nil
-			case "pgdown":
-				step := m.viewportHeight / 2
-				if step < 3 {
-					step = 3
-				}
-				m.scrollMetaPopup(step)
-				return m, nil
-			case "esc", "q":
-				m.state = stateNormal
-				m.metaEditingPath = ""
-				m.metaPopupOffset = 0
-				m.setStatus("Metadata preview closed")
-				return m, nil
-			}
-			return m, nil
+			return m.handleMetaEditorKey(key)
 		}
 
 		// ===========================
@@ -1225,29 +1190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			canonical := canonicalPath(full)
-
-			m.state = stateMetaPreview
-			m.metaEditingPath = canonical
-
-			// load existing metadata if present
-			draft := meta.Metadata{Path: canonical}
-			if m.meta != nil {
-				ctx := context.Background()
-				existing, err := m.meta.Get(ctx, canonical)
-				if err != nil {
-					m.setStatus("Failed to load metadata: " + err.Error())
-				} else if existing != nil {
-					draft = *existing
-				}
-			}
-			draft.ReadingState = normalizeReadingStateValue(draft.ReadingState)
-			m.metaDraft = draft
-			m.metaFieldIndex = 0
-			m.metaPopupOffset = 0
-			m.input.SetValue("")
-			m.input.Blur()
-			m.setPersistentStatus("Metadata preview: 'e' edit in editor, 'n' edit note, Esc close")
+			m.openMetaEditor(full)
 			return m, nil
 
 		case ":":
@@ -1332,14 +1275,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func metaEditStatus(index int) string {
-	label := metaFieldLabel(index)
-	if index == metaFieldCount()-1 {
-		return fmt.Sprintf("Edit %s (Enter to save, Tab/Shift+Tab to move, Esc to cancel)", label)
-	}
-	return fmt.Sprintf("Edit %s (Enter/Tab to continue, Shift+Tab to go back, Esc to cancel)", label)
-}
-
 func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
 	if msg.tmpPath != "" {
 		defer os.Remove(msg.tmpPath)
@@ -1357,6 +1292,7 @@ func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
 			m.setStatus("Failed to reload metadata: " + err.Error())
 			return
 		}
+		m.ensureMetaRowVisible()
 		m.setPersistentStatus(status)
 		return
 	}
@@ -1439,6 +1375,12 @@ func (m *Model) handleNoteEditorFinished(msg noteEditFinishedMsg) {
 	target := canonicalPath(msg.targetPath)
 	if target != "" && target == m.currentMetaPath {
 		m.refreshCurrentNote()
+	}
+	// The editing view keeps its own copy for the Note row.
+	if target != "" && target == m.metaEditingPath {
+		m.metaNote = m.readNoteFor(target)
+		m.setPersistentStatus("Note saved")
+		return
 	}
 	m.setStatus("Note saved")
 }
@@ -1756,48 +1698,6 @@ func splitCommandLine(input string) ([]string, error) {
 	}
 	appendCurrent()
 	return parts, nil
-}
-
-func (m *Model) scrollMetaPopup(delta int) {
-	if delta == 0 {
-		return
-	}
-	if m.state != stateMetaPreview {
-		m.metaPopupOffset = 0
-		return
-	}
-	m.metaPopupOffset += delta
-	if m.metaPopupOffset < 0 {
-		m.metaPopupOffset = 0
-	}
-	m.clampMetaPopupOffset()
-}
-
-func (m *Model) clampMetaPopupOffset() {
-	if m.state != stateMetaPreview {
-		m.metaPopupOffset = 0
-		return
-	}
-	_, middleWidth, _ := m.panelWidths()
-	if middleWidth <= 0 || m.viewportHeight <= 0 {
-		m.metaPopupOffset = 0
-		return
-	}
-	lines := m.metaPopupContentLines(middleWidth)
-	if len(lines) == 0 {
-		m.metaPopupOffset = 0
-		return
-	}
-	maxOffset := len(lines) - m.paneHeight()
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if m.metaPopupOffset > maxOffset {
-		m.metaPopupOffset = maxOffset
-	}
-	if m.metaPopupOffset < 0 {
-		m.metaPopupOffset = 0
-	}
 }
 
 func (m *Model) moveMetadataPaths(oldPath, newPath string, isDir bool) error {
@@ -2283,7 +2183,8 @@ func buildHelpOutput() []string {
 		"  D ............ move selection to Trash (see :trash)",
 		"",
 		"Metadata & Notes",
-		"  e ............ metadata preview + edit in editor",
+		"  e ............ editing view (Enter edits a field, saved as you go)",
+		"  in the editing view: r/f/t state & flags, n note, E all fields in editor",
 		"  n ............ edit note (Markdown)",
 		"  f / t / r .... favorite / to-read / cycle reading state",
 		"  yy ............ copy BibTeX",

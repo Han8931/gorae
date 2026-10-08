@@ -15,18 +15,6 @@ import (
 	"github.com/Han8931/gorae/internal/meta"
 )
 
-// pad or truncate a string to exactly width columns.
-func padRight(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) > width {
-		return string(r[:width])
-	}
-	return s + strings.Repeat(" ", width-len(r))
-}
-
 // fit or pad lines to a given height.
 func fitLines(lines []string, height int) []string {
 	if height <= 0 {
@@ -546,164 +534,6 @@ func boolLabel(v bool) string {
 	return "No"
 }
 
-func (m Model) renderMetaPopupLines(width int) []string {
-	lines := m.metaPopupContentLines(width)
-	if len(lines) == 0 {
-		return nil
-	}
-	height := m.paneHeight()
-	if height <= 0 {
-		height = len(lines)
-	}
-	if height <= 0 {
-		return nil
-	}
-	maxOffset := len(lines) - height
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	offset := m.metaPopupOffset
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	end := offset + height
-	if end > len(lines) {
-		end = len(lines)
-	}
-	return lines[offset:end]
-}
-
-func (m Model) metaPopupContentLines(width int) []string {
-	if width <= 0 {
-		width = 40
-	}
-	fileName := filepath.Base(m.metaEditingPath)
-	if fileName == "" || fileName == "." {
-		fileName = m.metaEditingPath
-	}
-
-	popupLines := []string{
-		fmt.Sprintf("File : %s", fileName),
-		"",
-		"Fields:",
-	}
-
-	wrapWidth := width - 6
-	if wrapWidth < 10 {
-		wrapWidth = width
-	}
-
-	for i := 0; i < metaFieldCount(); i++ {
-		fieldLabel := metaFieldLabel(i)
-		value := strings.TrimSpace(metadataFieldValue(m.metaDraft, i))
-		if value == "" {
-			value = "(empty)"
-		}
-		prefix := "  "
-
-		if isParagraphMetaField(fieldLabel) {
-			popupLines = append(popupLines, fmt.Sprintf("%s%s:", prefix, fieldLabel))
-			wrapped := wrapTextToWidth(value, wrapWidth)
-			for _, line := range wrapped {
-				popupLines = append(popupLines, "    "+line)
-			}
-			continue
-		}
-
-		popupLines = append(popupLines, fmt.Sprintf("%s%s: %s", prefix, fieldLabel, value))
-	}
-
-	if !isMarkdown(m.metaEditingPath) {
-		popupLines = append(popupLines, "", "Note preview:")
-		note := strings.TrimSpace(m.currentNote)
-		if note == "" {
-			popupLines = append(popupLines, "    (none - press 'n' to edit)")
-		} else {
-			for _, line := range wrapTextToWidth(note, wrapWidth) {
-				popupLines = append(popupLines, "    "+line)
-			}
-		}
-	}
-
-	hintLines := []string{
-		"",
-		"Use ↑/↓ or PgUp/PgDn to scroll fields.",
-		"Press 'e' to edit fields in your editor.",
-	}
-	if !isMarkdown(m.metaEditingPath) {
-		hintLines = append(hintLines, "Press 'n' to edit the note in your editor.")
-	}
-	hintLines = append(hintLines, "Press 'Esc' or 'q' to close.")
-	popupLines = append(popupLines, hintLines...)
-
-	box := renderPopupBox("Metadata Editor", popupLines, width)
-	box = strings.TrimRight(box, "\n")
-	if box == "" {
-		return nil
-	}
-	lines := strings.Split(box, "\n")
-	for i, line := range lines {
-		lines[i] = m.styles.MetaOverlay.Render(line)
-	}
-	return lines
-}
-
-func renderPopupBox(title string, lines []string, totalWidth int) string {
-	if totalWidth <= 0 {
-		totalWidth = 80
-	}
-
-	maxLen := runeLen(title)
-	for _, line := range lines {
-		if l := runeLen(line); l > maxLen {
-			maxLen = l
-		}
-	}
-
-	boxWidth := maxLen
-	if boxWidth < 30 {
-		boxWidth = 30
-	}
-	if limit := totalWidth - 4; limit > 10 && boxWidth > limit {
-		boxWidth = limit
-	}
-	if boxWidth < 10 {
-		boxWidth = 10
-	}
-
-	boxLineWidth := boxWidth + 4
-	indent := 0
-	if totalWidth > boxLineWidth {
-		indent = (totalWidth - boxLineWidth) / 2
-	}
-	pad := strings.Repeat(" ", indent)
-
-	horizontal := "+" + strings.Repeat("-", boxWidth+2) + "+\n"
-
-	var b strings.Builder
-	b.WriteString(pad)
-	b.WriteString(horizontal)
-	b.WriteString(pad)
-	b.WriteString(fmt.Sprintf("| %s |\n", padRight(title, boxWidth)))
-	b.WriteString(pad)
-	b.WriteString("| " + strings.Repeat("-", boxWidth) + " |\n")
-	for _, line := range lines {
-		b.WriteString(pad)
-		b.WriteString(fmt.Sprintf("| %s |\n", padRight(line, boxWidth)))
-	}
-	b.WriteString(pad)
-	b.WriteString(horizontal)
-
-	return b.String()
-}
-
-func runeLen(s string) int {
-	return len([]rune(s))
-}
-
 func (m Model) View() string {
 	if m.state == stateSearchResults {
 		return m.renderSearchResultsView()
@@ -736,6 +566,12 @@ func (m Model) View() string {
 		promptLine = m.renderPromptLine("search", m.input.View())
 	case stateArxivPrompt:
 		promptLine = m.renderPromptLine("arxiv", m.input.View())
+	case stateMetaField:
+		label := "field"
+		if row, ok := m.currentMetaRow(); ok {
+			label = row.label
+		}
+		promptLine = m.renderPromptLine(label, m.input.View())
 	}
 
 	// If we don't know width yet (no WindowSizeMsg yet), fall back to single-panel list.
@@ -763,13 +599,10 @@ func (m Model) View() string {
 		listLines := m.renderListPanel(middleWidth, height)
 		prevLines := m.renderPreviewPanel(rightWidth, height)
 
-		if m.state == stateMetaPreview {
-			overlayLines = m.renderMetaPopupLines(middleWidth)
-			if len(overlayLines) > 0 {
-				for i := range overlayLines {
-					overlayLines[i] = padStyledLine(overlayLines[i], middleWidth)
-				}
-			}
+		// The editing view takes the Files pane's place so the detail pane stays
+		// visible beside it.
+		if m.state == stateMetaPreview || m.state == stateMetaField {
+			overlayLines = m.renderMetaEditorPanel(middleWidth, height)
 		}
 		if m.state == stateCommand && len(m.completionCandidates) > 0 {
 			overlayLines = m.renderCompletionPanel(middleWidth, height)
