@@ -13,7 +13,29 @@ From the repo root (the `gorae` checkout):
 mkdir -p dist
 ```
 
+## Build Everything
+
+`tools/build-binaries.sh` builds every target with the exact flags the published
+artefacts use and writes `dist/SHA256SUMS`. Prefer it over the per-platform
+commands below:
+
+```sh
+./tools/build-binaries.sh
+```
+
 ## Build Per Platform
+
+Set the release flags first. They are what makes the output reproducible, so a
+binary built without them will not match the checksums recorded in
+`packaging/aur/gorae-bin/PKGBUILD`:
+
+```sh
+export GOFLAGS="-trimpath -mod=readonly -buildvcs=false"
+```
+
+`-buildvcs=false` matters more than it looks: without it Go stamps the commit
+and a `vcs.modified=true` flag into the binary, so the checksum changes
+depending on whether your working tree happened to be clean.
 
 1. **Linux (amd64)**
    ```sh
@@ -46,6 +68,14 @@ mkdir -p dist
 `-ldflags="-s -w"` strips the symbol table and DWARF data; the published
 release artefacts are built this way, so a binary built without it will not
 match the checksums recorded in `packaging/aur/gorae-bin/PKGBUILD`.
+
+With these flags the `linux/amd64` artefact is byte-identical to what
+`packaging/aur/gorae/PKGBUILD` builds from the release tarball, so `gorae` and
+`gorae-bin` install the same binary. Worth re-checking when the flags change:
+
+```sh
+sha256sum dist/gorae-linux-amd64   # must equal gorae-bin's first sha256sum
+```
 
 ## Distribute
 
