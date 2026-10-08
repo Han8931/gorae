@@ -1344,48 +1344,91 @@ func (m *Model) handleMetadataEditorFinished(msg metadataEditFinishedMsg) {
 	if msg.tmpPath != "" {
 		defer os.Remove(msg.tmpPath)
 	}
-	m.state = stateNormal
-	m.metaEditingPath = ""
 	m.input.SetValue("")
-	m.metaPopupOffset = 0
-	m.metaPopupOffset = 0
 
-	if msg.err != nil {
-		m.setStatus("Metadata editor failed: " + msg.err.Error())
+	status := m.applyMetadataEdit(msg)
+
+	// Come back to the editing view on the same file so the result is visible
+	// and another field can be changed right away; only a lost target drops
+	// back to the file list.
+	if strings.TrimSpace(m.metaEditingPath) != "" {
+		m.state = stateMetaPreview
+		if err := m.reloadMetaDraft(); err != nil {
+			m.setStatus("Failed to reload metadata: " + err.Error())
+			return
+		}
+		m.setPersistentStatus(status)
 		return
 	}
+	m.state = stateNormal
+	m.metaPopupOffset = 0
+	m.setStatus(status)
+}
+
+// applyMetadataEdit writes back whatever the external editor produced and
+// returns the status line describing the outcome.
+func (m *Model) applyMetadataEdit(msg metadataEditFinishedMsg) string {
+	if msg.err != nil {
+		return "Metadata editor failed: " + msg.err.Error()
+	}
 	if strings.TrimSpace(msg.tmpPath) == "" {
-		m.setStatus("Metadata editor failed: no data returned")
-		return
+		return "Metadata editor failed: no data returned"
 	}
 	target := strings.TrimSpace(msg.targetPath)
 	if target == "" {
-		m.setStatus("Metadata editor failed: unknown target")
-		return
+		return "Metadata editor failed: unknown target"
 	}
 	data, err := os.ReadFile(msg.tmpPath)
 	if err != nil {
-		m.setStatus("Failed to read metadata edit: " + err.Error())
-		return
+		return "Failed to read metadata edit: " + err.Error()
 	}
 	md, err := parseMetadataEditorData(data, target)
 	if err != nil {
-		m.setStatus("Failed to parse metadata: " + err.Error())
-		return
+		return "Failed to parse metadata: " + err.Error()
 	}
 	if m.meta == nil {
-		m.setStatus("Metadata store not available")
-		return
+		return "Metadata store not available"
 	}
 	ctx := context.Background()
+	// The editor file carries only the text fields and the reading state, but
+	// Upsert writes every column — so carry the flags and timestamps over from
+	// the stored row instead of silently clearing them.
+	existing, err := m.loadMetadataRecord(ctx, target)
+	if err != nil {
+		return "Failed to load metadata: " + err.Error()
+	}
+	md.Favorite = existing.Favorite
+	md.ToRead = existing.ToRead
+	md.AddedAt = existing.AddedAt
+	md.LastOpenedAt = existing.LastOpenedAt
+
 	if err := m.meta.Upsert(ctx, &md); err != nil {
-		m.setStatus("Failed to save metadata: " + err.Error())
-		return
+		return "Failed to save metadata: " + err.Error()
 	}
 	m.metaDraft = md
 	m.currentMetaPath = ""
 	m.resortAndPreserveSelection()
-	m.setStatus("Metadata saved")
+	return "Metadata saved"
+}
+
+// reloadMetaDraft re-reads the edit target's stored metadata into the draft, so
+// the editing view reflects what was just saved.
+func (m *Model) reloadMetaDraft() error {
+	target := strings.TrimSpace(m.metaEditingPath)
+	if target == "" {
+		return nil
+	}
+	draft := meta.Metadata{Path: target, ReadingState: readingStateUnread}
+	if m.meta != nil {
+		existing, err := m.loadMetadataRecord(context.Background(), target)
+		if err != nil {
+			return err
+		}
+		draft = existing
+	}
+	draft.ReadingState = normalizeReadingStateValue(draft.ReadingState)
+	m.metaDraft = draft
+	return nil
 }
 
 func (m *Model) handleNoteEditorFinished(msg noteEditFinishedMsg) {
@@ -1431,8 +1474,8 @@ func (m *Model) launchMetadataEditor() tea.Cmd {
 	if fileName == "" {
 		fileName = target
 	}
-	m.state = stateNormal
-	m.metaEditingPath = ""
+	// metaEditingPath stays set: handleMetadataEditorFinished uses it to come
+	// back to this file's editing view once the editor exits.
 	m.input.SetValue("")
 	m.setPersistentStatus(fmt.Sprintf("Editing metadata for %s with %s (exit editor to return)", fileName, editor))
 
