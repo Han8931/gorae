@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/gorae_final_demo.gif" alt="App Demo" width="800">
+  <img src="assets/gorae_demo.gif" alt="App Demo" width="800">
 </p>
 
 ## What is Gorae?
