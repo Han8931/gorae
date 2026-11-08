@@ -101,7 +101,8 @@ func TestSearchHybridRetrievesFromNaturalLanguageQuestion(t *testing.T) {
 		"FlashAttention memory",
 		"Tell me about SRAM and HBM -- how do they differ?",
 	} {
-		got, err := store.SearchHybrid(ctx, q, nil, 3)
+		res, err := store.SearchHybrid(ctx, q, nil, 3)
+		got := res.Matches
 		if err != nil {
 			t.Errorf("SearchHybrid(%q): unexpected error %v", q, err)
 			continue
@@ -127,7 +128,8 @@ func TestSearchHybridMatchesPartialTermOverlap(t *testing.T) {
 	}
 
 	// "sparse" and "benchmarks" appear nowhere in the document.
-	got, err := store.SearchHybrid(ctx, "how does sparse retrieval do on benchmarks?", nil, 3)
+	res, err := store.SearchHybrid(ctx, "how does sparse retrieval do on benchmarks?", nil, 3)
+	got := res.Matches
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -145,7 +147,8 @@ func TestSearchHybridSkipsFTSWhenNoSearchableTerms(t *testing.T) {
 		t.Fatalf("index content: %v", err)
 	}
 
-	got, err := store.SearchHybrid(ctx, "why?", nil, 3)
+	res, err := store.SearchHybrid(ctx, "why?", nil, 3)
+	got := res.Matches
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}

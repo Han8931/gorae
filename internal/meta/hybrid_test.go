@@ -136,7 +136,8 @@ func TestSearchHybridFallsBackToFTS(t *testing.T) {
 		t.Fatalf("index content: %v", err)
 	}
 
-	got, err := store.SearchHybrid(ctx, "attention", nil, 3)
+	res, err := store.SearchHybrid(ctx, "attention", nil, 3)
+	got := res.Matches
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -161,7 +162,8 @@ func TestSearchHybridSurfacesVectorOnlyHits(t *testing.T) {
 		t.Fatalf("store embeddings: %v", err)
 	}
 
-	got, err := store.SearchHybrid(ctx, "bm25", []float32{1, 0, 0}, 5)
+	res, err := store.SearchHybrid(ctx, "bm25", []float32{1, 0, 0}, 5)
+	got := res.Matches
 	if err != nil {
 		t.Fatalf("hybrid search: %v", err)
 	}
@@ -177,10 +179,110 @@ func TestSearchHybridSurfacesVectorOnlyHits(t *testing.T) {
 	}
 }
 
+// Consensus is the auto-focus signal: both retrievers, ranking independently,
+// put the same document first.
+func TestSearchHybridConsensusWhenRetrieversAgree(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	const agreed = "/tmp/agreed.pdf"
+	const other = "/tmp/other.pdf"
+	if err := store.IndexContent(ctx, agreed, "attention and memory bandwidth", 100); err != nil {
+		t.Fatalf("index agreed: %v", err)
+	}
+	if err := store.IndexContent(ctx, other, "attention and parsing grammars", 100); err != nil {
+		t.Fatalf("index other: %v", err)
+	}
+	if err := store.StoreEmbeddings(ctx, agreed, []string{"memory"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+		t.Fatalf("embed agreed: %v", err)
+	}
+	if err := store.StoreEmbeddings(ctx, other, []string{"parsing"}, [][]float32{{0, 1, 0}}, 100); err != nil {
+		t.Fatalf("embed other: %v", err)
+	}
+
+	res, err := store.SearchHybrid(ctx, "memory bandwidth", []float32{1, 0, 0}, 5)
+	if err != nil {
+		t.Fatalf("hybrid search: %v", err)
+	}
+	if res.Consensus != agreed {
+		t.Errorf("Consensus = %q, want %q", res.Consensus, agreed)
+	}
+}
+
+// Disagreement must not auto-focus anything — that is the whole safeguard.
+func TestSearchHybridNoConsensusWhenRetrieversDisagree(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	const kwTop = "/tmp/keyword-top.pdf"
+	const vecTop = "/tmp/vector-top.pdf"
+	if err := store.IndexContent(ctx, kwTop, "memory bandwidth discussion", 100); err != nil {
+		t.Fatalf("index kwTop: %v", err)
+	}
+	if err := store.IndexContent(ctx, vecTop, "unrelated grammar parsing", 100); err != nil {
+		t.Fatalf("index vecTop: %v", err)
+	}
+	// Embeddings point the vector retriever at the *other* document.
+	if err := store.StoreEmbeddings(ctx, kwTop, []string{"kw"}, [][]float32{{0, 1, 0}}, 100); err != nil {
+		t.Fatalf("embed kwTop: %v", err)
+	}
+	if err := store.StoreEmbeddings(ctx, vecTop, []string{"vec"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+		t.Fatalf("embed vecTop: %v", err)
+	}
+
+	res, err := store.SearchHybrid(ctx, "memory bandwidth", []float32{1, 0, 0}, 5)
+	if err != nil {
+		t.Fatalf("hybrid search: %v", err)
+	}
+	if res.Consensus != "" {
+		t.Errorf("Consensus = %q, want empty when the retrievers disagree", res.Consensus)
+	}
+}
+
+// One retriever cannot agree with itself. With vector search off there is no
+// consensus signal at all, so auto-focus stays dormant.
+func TestSearchHybridNoConsensusFromOneRetriever(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	const path = "/tmp/solo.pdf"
+	if err := store.IndexContent(ctx, path, "memory bandwidth discussion", 100); err != nil {
+		t.Fatalf("index: %v", err)
+	}
+	if err := store.StoreEmbeddings(ctx, path, []string{"memory"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+		t.Fatalf("embed: %v", err)
+	}
+
+	// Keyword only — no query vector.
+	res, err := store.SearchHybrid(ctx, "memory bandwidth", nil, 5)
+	if err != nil {
+		t.Fatalf("keyword-only search: %v", err)
+	}
+	if len(res.Matches) == 0 {
+		t.Fatal("keyword-only search returned no matches")
+	}
+	if res.Consensus != "" {
+		t.Errorf("keyword only: Consensus = %q, want empty", res.Consensus)
+	}
+
+	// Vector only — the query's terms appear nowhere in the body.
+	res, err = store.SearchHybrid(ctx, "zygomorphic palimpsest", []float32{1, 0, 0}, 5)
+	if err != nil {
+		t.Fatalf("vector-only search: %v", err)
+	}
+	if len(res.Matches) == 0 {
+		t.Fatal("vector-only search returned no matches")
+	}
+	if res.Consensus != "" {
+		t.Errorf("vector only: Consensus = %q, want empty", res.Consensus)
+	}
+}
+
 func TestSearchHybridEmptyStore(t *testing.T) {
 	store := openTestStore(t)
 
-	got, err := store.SearchHybrid(context.Background(), "nothing here", []float32{1, 0, 0}, 3)
+	res, err := store.SearchHybrid(context.Background(), "nothing here", []float32{1, 0, 0}, 3)
+	got := res.Matches
 	if err != nil {
 		t.Fatalf("hybrid search on empty store: %v", err)
 	}

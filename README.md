@@ -99,6 +99,11 @@ Features:
   (`focus_budget_chars`): a paper that fits is sent whole, and a longer one contributes
   the passages bearing on your current question. Focusing a fourth paper no longer
   quadruples the cost of every message.
+- **Auto-focus** — with `vector_search` on, a paper that keyword *and* semantic retrieval
+  both rank first is pulled into focus on its own, so you can start talking about a paper
+  without `/load` first. It only fires when the two agree and only when nothing is focused
+  yet, so it never overrides an explicit `/load`; a one-line notice says what it picked,
+  and `/load` or `/unfocus` override it.
 - **Vim-style navigation mode** — `Esc` switches from typing to a message cursor: `j/k` between messages, `Space` to mark, `y` to yank one or many to the clipboard.
 - **Tool calling** — with `enable_tools: true`, the model can invoke in-app actions like `save_markdown` to write summaries straight to `notes_dir`.
 - **Reasoning display** — collapsible `<think>` blocks for DeepSeek-R1 / Qwen3 / QwQ.

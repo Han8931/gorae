@@ -74,6 +74,21 @@ func FuseRRF(topK int, lists ...[]FTSMatch) []FTSMatch {
 	return results
 }
 
+// HybridSearch is the outcome of a fused search.
+type HybridSearch struct {
+	Matches []FTSMatch
+
+	// Consensus is the path that keyword and semantic retrieval independently
+	// ranked first. It is "" unless both retrievers ran, both returned results,
+	// and their top hits agree.
+	//
+	// Agreement is a much stronger signal than either ranking alone: the two
+	// retrievers fail in unrelated ways — keyword search on paraphrase, vector
+	// search on exact terms and rare names — so one document winning both is
+	// unlikely to be a coincidence of either method.
+	Consensus string
+}
+
 // SearchHybrid runs keyword and vector retrieval together and fuses the two
 // rankings. queryVec may be nil, in which case this degrades to a plain FTS
 // search; either retriever returning nothing is not an error.
@@ -84,7 +99,7 @@ func FuseRRF(topK int, lists ...[]FTSMatch) []FTSMatch {
 //
 // Both retrievers are asked for more than topK candidates so that fusion has
 // room to promote documents the other one ranked highly.
-func (s *Store) SearchHybrid(ctx context.Context, query string, queryVec []float32, topK int) ([]FTSMatch, error) {
+func (s *Store) SearchHybrid(ctx context.Context, query string, queryVec []float32, topK int) (HybridSearch, error) {
 	if topK <= 0 {
 		topK = 3
 	}
@@ -106,13 +121,17 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryVec []float
 
 	if len(ftsResults) == 0 && len(vecResults) == 0 {
 		if ftsErr != nil {
-			return nil, ftsErr
+			return HybridSearch{}, ftsErr
 		}
 		if vecErr != nil {
-			return nil, vecErr
+			return HybridSearch{}, vecErr
 		}
-		return nil, nil
+		return HybridSearch{}, nil
 	}
 
-	return FuseRRF(topK, ftsResults, vecResults), nil
+	out := HybridSearch{Matches: FuseRRF(topK, ftsResults, vecResults)}
+	if len(ftsResults) > 0 && len(vecResults) > 0 && ftsResults[0].Path == vecResults[0].Path {
+		out.Consensus = ftsResults[0].Path
+	}
+	return out, nil
 }

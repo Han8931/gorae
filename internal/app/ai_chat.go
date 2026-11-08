@@ -1651,9 +1651,10 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 		var sources []string
 		var docContext string
+		var consensus string
 		plan := planRetrieval(ctx, retrievalQuery, cfg, client)
 		if plan.local || plan.web {
-			sources, docContext = goraeRetrieveContext(ctx, store, cfg, retrievalQuery, queryVec, plan)
+			sources, docContext, consensus = goraeRetrieveContext(ctx, store, cfg, retrievalQuery, queryVec, plan)
 		}
 
 		// Prepend every focused paper as primary context, under a shared budget.
@@ -1708,6 +1709,17 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 				sources = prependUnique([]string{path}, sources)
 				resolved = append(resolved, path)
 			}
+		}
+
+		// Auto-focus: when keyword and semantic retrieval independently rank the
+		// same paper first, treat it as what the user is asking about, so a
+		// conversation can start without an explicit /load. Deliberately narrow:
+		// it requires both retrievers to have run and agreed, and it never fires
+		// while papers are already focused, so it cannot override a /load or the
+		// resolver above. This turn is already grounded in that paper's retrieved
+		// passages; focus applies from the next message on.
+		if consensus != "" && len(focusedFiles) == 0 && len(resolved) == 0 {
+			resolved = append(resolved, consensus)
 		}
 
 		systemMsg := ai.Message{
@@ -2116,8 +2128,13 @@ func embedQuery(ctx context.Context, cfg *config.Config, client *ai.Client, quer
 	return vec
 }
 
-func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string, queryVec []float32, plan retrievalPlan) ([]string, string) {
+// goraeRetrieveContext gathers grounding text for one turn. It returns the
+// cited source paths, the assembled context block, and the path both
+// retrievers independently ranked first ("" when they disagreed or only one
+// ran) — see HybridSearch.Consensus.
+func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string, queryVec []float32, plan retrievalPlan) ([]string, string, string) {
 	var sources []string
+	var consensus string
 	var sb strings.Builder
 
 	// Local retrieval (FTS or vector).
@@ -2134,10 +2151,11 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 		//
 		// Retrieval is best-effort: a failure here just means the answer is
 		// ungrounded rather than fatal, so the error is intentionally dropped.
-		results, _ := store.SearchHybrid(ctx, query, queryVec, topK)
+		found, _ := store.SearchHybrid(ctx, query, queryVec, topK)
+		consensus = found.Consensus
 
 		seen := map[string]bool{}
-		for _, r := range results {
+		for _, r := range found.Matches {
 			if !seen[r.Path] {
 				seen[r.Path] = true
 				sources = append(sources, r.Path)
@@ -2169,9 +2187,9 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 	}
 
 	if sb.Len() == 0 {
-		return nil, ""
+		return nil, "", ""
 	}
-	return sources, strings.TrimRight(sb.String(), "\n")
+	return sources, strings.TrimRight(sb.String(), "\n"), consensus
 }
 
 func goraeSystemPrompt(cfg *config.Config, docContext string) string {
