@@ -1574,11 +1574,20 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
 
+		// A follow-up ("how does it compare?") names its subject nowhere, so it
+		// is rewritten into a standalone query before any retrieval decision.
+		// The rewrite feeds retrieval only — the model still sees userText.
+		// history ends with the message just submitted; exclude it.
+		retrievalQuery := userText
+		if needsCondensation(userText) && len(history) > 1 {
+			retrievalQuery = condenseQuery(ctx, history[:len(history)-1], userText, client)
+		}
+
 		var sources []string
 		var docContext string
-		plan := planRetrieval(ctx, userText, cfg, client)
+		plan := planRetrieval(ctx, retrievalQuery, cfg, client)
 		if plan.local || plan.web {
-			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, userText, plan)
+			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, retrievalQuery, plan)
 		}
 
 		// Prepend every focused paper as primary context, each capped so a few
@@ -1611,9 +1620,13 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 		// No-tools fallback: when tool calling is off, resolve papers the user
 		// referenced in natural language and inject them as whole-paper context.
 		// (When tools are on, the model does this itself via find_papers/open_paper.)
+		// The condensed query is used rather than the raw message so that a
+		// reference only resolvable from history still names a paper: "what about
+		// the second one?" carries no descriptor to search for, while its
+		// rewrite does.
 		var resolved []string
-		if len(tools) == 0 && store != nil && paperRefCues(userText) {
-			for _, desc := range extractPaperRefs(ctx, userText, client) {
+		if len(tools) == 0 && store != nil && paperRefCues(retrievalQuery) {
+			for _, desc := range extractPaperRefs(ctx, retrievalQuery, client) {
 				if isGenericPaperRef(desc) {
 					continue // "this paper" etc. refers to something already in context
 				}
@@ -1926,26 +1939,21 @@ type retrievalPlan struct {
 // strong rule signal was found. Uses a short 3-second timeout so a slow model
 // never blocks the main response for long.
 func planRetrieval(ctx context.Context, query string, cfg *config.Config, client *ai.Client) retrievalPlan {
+	// Purely conversational — skip all retrieval.
+	if isConversational(query) {
+		return retrievalPlan{}
+	}
+
+	// Nothing searchable in the message at all. Judged on content words rather
+	// than length: "FlashAttention memory usage" is three words and very much
+	// worth retrieving, while short follow-ups have already been expanded into
+	// standalone queries by this point.
 	words := strings.Fields(query)
-	if len(words) <= 3 {
+	if len(meta.ProseTerms(query)) == 0 {
 		return retrievalPlan{}
 	}
 
 	lower := strings.ToLower(strings.TrimRight(query, "!?."))
-
-	// Purely conversational — skip all retrieval.
-	conversational := []string{
-		"hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
-		"sure", "yes", "no", "nope", "yep", "got it", "i see",
-		"sounds good", "great", "nice", "cool", "perfect",
-		"bye", "goodbye", "see you", "good morning", "good evening",
-		"good afternoon", "how are you", "what's up", "whats up",
-	}
-	for _, phrase := range conversational {
-		if lower == phrase {
-			return retrievalPlan{}
-		}
-	}
 
 	webEnabled := cfg != nil && cfg.WebSearch != nil && cfg.WebSearch.Enabled
 
@@ -2114,15 +2122,24 @@ func goraeSystemPrompt(cfg *config.Config, docContext string) string {
 				"open_paper with the exact path for each paper you need before answering. To compare or relate "+
 				"papers, open each one. Papers shown as 'Paper in focus' below are already loaded — do not re-open them.")
 	}
+	// Style rules, not content rules: the retrieval machinery is the user's own
+	// tool, so narrating it back to them ("based on the provided excerpts…")
+	// reads like a search engine rather than a colleague who has read the work.
+	parts = append(parts,
+		"\nWrite like a colleague who knows this material: answer the question first, "+
+			"in plain prose, at whatever length the question deserves. Refer to papers by "+
+			"title or author the way a person would, and never mention excerpts, context, "+
+			"retrieval, or what you were or weren't given. Say plainly when something is "+
+			"outside what you can see, and keep the conversation's thread — a short "+
+			"follow-up refers to what you were just discussing.")
+
 	if docContext != "" {
 		parts = append(parts,
-			"\nRelevant excerpts are provided below. [Local] entries are from the user's personal library; [Web] entries are live web results.",
-			"Answer using these excerpts when relevant.",
-			"If the answer is not in the excerpts, answer from general knowledge and say so.\n",
+			"\nMaterial from the user's library and the web follows. [Local] entries are "+
+				"from their own library; [Web] entries are live results. Ground your answer "+
+				"in it where it is relevant, and draw on general knowledge where it is not.\n",
 			docContext,
 		)
-	} else {
-		parts = append(parts, "\nNo relevant documents were found for this query. Answer from general knowledge.")
 	}
 	return strings.Join(parts, "\n")
 }

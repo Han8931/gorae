@@ -78,6 +78,10 @@ func FuseRRF(topK int, lists ...[]FTSMatch) []FTSMatch {
 // rankings. queryVec may be nil, in which case this degrades to a plain FTS
 // search; either retriever returning nothing is not an error.
 //
+// query is natural-language prose, so it is converted with ProseQuery before
+// reaching FTS5 — passing a question through verbatim is a syntax error on the
+// first "?" or apostrophe.
+//
 // Both retrievers are asked for more than topK candidates so that fusion has
 // room to promote documents the other one ranked highly.
 func (s *Store) SearchHybrid(ctx context.Context, query string, queryVec []float32, topK int) ([]FTSMatch, error) {
@@ -88,7 +92,11 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryVec []float
 
 	// Retrieval is best-effort per retriever: if one backend fails the other
 	// still grounds the answer, so only a total failure is worth reporting.
-	ftsResults, ftsErr := s.SearchFTS(ctx, query, candidates)
+	var ftsResults []FTSMatch
+	var ftsErr error
+	if match := ProseQuery(query); match != "" {
+		ftsResults, ftsErr = s.SearchFTS(ctx, match, candidates)
+	}
 
 	var vecResults []FTSMatch
 	var vecErr error
