@@ -22,6 +22,21 @@ targets=(
 
 cd "$repo_root"
 
+# The compiler version is part of the output: the same source built with two Go
+# releases produces different bytes. Pinning the toolchain to the version in
+# go.mod — the one CI also uses, via setup-go's go-version-file — is what makes
+# the checksum in packaging/aur/gorae-bin/PKGBUILD reproducible by someone other
+# than whoever happened to cut the release. Override only deliberately.
+if [[ -z "${GOTOOLCHAIN:-}" ]]; then
+	go_version="$(awk '/^go /{print $2; exit}' "$repo_root/go.mod")"
+	if [[ -z "$go_version" ]]; then
+		echo "error: could not read the go directive from go.mod" >&2
+		exit 1
+	fi
+	export GOTOOLCHAIN="go${go_version}"
+fi
+echo "Toolchain: $GOTOOLCHAIN"
+
 # These flags are what makes a release artefact reproducible, so changing any of
 # them changes the checksums recorded in packaging/aur/gorae-bin/PKGBUILD:
 #   -s -w          strip the symbol table and DWARF data
@@ -31,7 +46,8 @@ cd "$repo_root"
 #                    vcs.modified=true and makes the output depend on whether
 #                    the working tree happened to be clean
 # They match the GOFLAGS in packaging/aur/gorae/PKGBUILD, so the source and
-# binary AUR packages build the same bytes for linux/amd64.
+# binary AUR packages build the same bytes for linux/amd64 — provided both are
+# built with the pinned toolchain above.
 export GOFLAGS="-trimpath -mod=readonly -buildvcs=false"
 
 for target in "${targets[@]}"; do

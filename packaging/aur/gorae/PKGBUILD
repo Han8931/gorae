@@ -1,6 +1,6 @@
 # Maintainer: Han <tabularasa8931@gmail.com>
 pkgname=gorae
-pkgver=2.6.0
+pkgver=2.7.0
 pkgrel=1
 pkgdesc="Terminal-first knowledge base for PDFs, EPUBs, and Markdown — with a built-in AI assistant"
 arch=('x86_64')

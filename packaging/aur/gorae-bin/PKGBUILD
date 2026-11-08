@@ -1,7 +1,7 @@
 # Maintainer: Han <tabularasa8931@gmail.com>
 pkgname=gorae-bin
 _pkgname=gorae
-pkgver=2.6.0
+pkgver=2.7.0
 pkgrel=1
 pkgdesc="Terminal-first knowledge base for PDFs, EPUBs, and Markdown — with a built-in AI assistant"
 arch=('x86_64')
@@ -17,7 +17,7 @@ optdepends=(
 )
 source=("$_pkgname-$pkgver::https://github.com/Han8931/gorae/releases/download/v$pkgver/gorae-linux-amd64"
         "LICENSE-$_pkgname-$pkgver::https://raw.githubusercontent.com/Han8931/gorae/v$pkgver/LICENSE")
-sha256sums=('cec9ad12b0c3218e4e3f32a9e28552c18e566c35331849a31b67b194e9238d83'
+sha256sums=('bd16e93708366c067fcd3b8a1ffa6b94b2e27cb4112a186a27c06b92de5338fd'
             'SKIP')
 noextract=("$_pkgname-$pkgver")
 

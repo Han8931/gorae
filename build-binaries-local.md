@@ -31,7 +31,15 @@ binary built without them will not match the checksums recorded in
 
 ```sh
 export GOFLAGS="-trimpath -mod=readonly -buildvcs=false"
+export GOTOOLCHAIN="go$(awk '/^go /{print $2; exit}' go.mod)"
 ```
+
+`GOTOOLCHAIN` matters as much as the flags: the compiler version is baked into
+the output, so the same source built with Go 1.25.1 and Go 1.27.1 yields
+different bytes and therefore a different checksum. Pinning it to the `go`
+directive in `go.mod` — what CI builds with too — is what makes the recorded
+checksum reproducible by anyone, rather than by whoever cut the release.
+`tools/build-binaries.sh` does this for you.
 
 `-buildvcs=false` matters more than it looks: without it Go stamps the commit
 and a `vcs.modified=true` flag into the binary, so the checksum changes
