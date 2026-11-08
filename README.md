@@ -95,6 +95,10 @@ Features:
   when it's off or unreachable.
 - **Sessions** — conversations are auto-saved; resume with `/sessions`, fork with `/new`.
 - **`/load <query>`** — a live fuzzy picker focuses one or more papers for follow-up questions.
+  Focused papers are re-sent with every message, so they share a context budget
+  (`focus_budget_chars`): a paper that fits is sent whole, and a longer one contributes
+  the passages bearing on your current question. Focusing a fourth paper no longer
+  quadruples the cost of every message.
 - **Vim-style navigation mode** — `Esc` switches from typing to a message cursor: `j/k` between messages, `Space` to mark, `y` to yank one or many to the clipboard.
 - **Tool calling** — with `enable_tools: true`, the model can invoke in-app actions like `save_markdown` to write summaries straight to `notes_dir`.
 - **Reasoning display** — collapsible `<think>` blocks for DeepSeek-R1 / Qwen3 / QwQ.
@@ -129,6 +133,8 @@ Features:
 | `enable_tools` | Allow tool calls (e.g. `save_markdown`). Default `false`. |
 | `vector_search` | Retrieve semantically as well as by keyword, fusing both rankings. Default `false`. |
 | `embedding_model` | Model used to embed chunks when `vector_search` is on. Default `nomic-embed-text`. |
+| `max_paper_chars` | Per-paper ceiling on focused-paper context. Default `8000`. |
+| `focus_budget_chars` | Combined ceiling for all focused papers per message. Default `12000`. |
 
 </details>
 

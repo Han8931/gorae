@@ -225,6 +225,7 @@ type Model struct {
 	aiThinkBuf        string   // thinking content (inside <think> blocks) for current turn
 	aiShowThinking    bool     // ctrl+t toggles visibility of thinking blocks
 	aiSources         []string // document paths cited in last answer
+	aiTurnContext     string   // grounding text for the turn in flight, replayed across tool hops
 	aiChatScroll      int
 	aiFollowBottom    bool // true => renderer pegs chat to the bottom regardless of aiChatScroll
 	aiClient          *ai.Client

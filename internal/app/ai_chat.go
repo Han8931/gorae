@@ -48,6 +48,10 @@ type aiTokenMsg struct {
 
 type aiSourcesMsg struct {
 	paths []string
+	// docContext is the grounding text assembled for this turn. It is kept so a
+	// tool-call round-trip can rebuild the same system prompt: the context lives
+	// only in that prompt, never in the message history.
+	docContext string
 }
 
 type aiCompactDoneMsg struct {
@@ -239,6 +243,7 @@ func (m *Model) enterGoraeChat() tea.Cmd {
 	m.aiStreamBuf = ""
 	m.aiMessages = nil
 	m.aiSources = nil
+	m.aiTurnContext = ""
 	// Ensure any active kitty/iTerm2 image is cleared when entering chat.
 	m.previewGraphic = ""
 	m.previewGraphicClear = true
@@ -340,6 +345,10 @@ func (m *Model) exitFindMode() {
 const (
 	maxFocusedPapers     = 5    // cap on how many papers are held in context at once
 	defaultMaxPaperChars = 8000 // per-paper injection cap when cfg.AI.MaxPaperChars is 0
+	// defaultFocusBudgetChars is the combined ceiling for the whole focus set
+	// per turn. Set above defaultMaxPaperChars so a single focused paper is
+	// unaffected and only multi-paper focus starts sharing.
+	defaultFocusBudgetChars = 12000
 )
 
 // addFocusedPaper adds a paper to the context set (most recent last), de-duping
@@ -372,6 +381,55 @@ func (m *Model) maxPaperChars() int {
 		return m.cfg.AI.MaxPaperChars
 	}
 	return defaultMaxPaperChars
+}
+
+// focusBudgetChars is the combined ceiling for all focused papers in one turn.
+func (m *Model) focusBudgetChars() int {
+	if m.cfg != nil && m.cfg.AI != nil && m.cfg.AI.FocusBudgetChars > 0 {
+		return m.cfg.AI.FocusBudgetChars
+	}
+	return defaultFocusBudgetChars
+}
+
+// buildFocusContext renders the focused papers as context blocks, sharing
+// budget between them.
+//
+// Focused papers are re-sent on every message — the system prompt is rebuilt
+// per request and never joins the transcript — so an unbudgeted focus set costs
+// its full size again on every turn, and focusing a fourth paper quietly
+// quadruples the per-message cost. Each paper gets an equal share of budget,
+// never more than perPaper; one that does not fit its share contributes the
+// passages bearing on this question rather than its opening pages.
+func buildFocusContext(
+	ctx context.Context,
+	store *meta.Store,
+	focusedFiles []string,
+	query string,
+	queryVec []float32,
+	perPaper int,
+	budget int,
+) ([]string, []string) {
+	if len(focusedFiles) == 0 {
+		return nil, nil
+	}
+	share := budget / len(focusedFiles)
+	if share > perPaper {
+		share = perPaper
+	}
+	if share <= 0 {
+		share = perPaper
+	}
+
+	var blocks, sources []string
+	for _, fp := range focusedFiles {
+		body, err := store.RelevantPassages(ctx, fp, query, queryVec, share)
+		if err != nil || strings.TrimSpace(body) == "" {
+			continue
+		}
+		blocks = append(blocks, fmt.Sprintf("[Paper in focus: %s]\n%s", titleForPath(store, ctx, fp), body))
+		sources = append(sources, fp)
+	}
+	return blocks, sources
 }
 
 // persistFocusedPapers records the focus set on the active session. Multiple
@@ -753,6 +811,7 @@ func (m *Model) updateGoraeChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case aiSourcesMsg:
 		m.aiSources = msg.paths
+		m.aiTurnContext = msg.docContext
 		return m, nil
 
 	case aiFocusResolvedMsg:
@@ -928,6 +987,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 	case "/clear":
 		m.aiMessages = nil
 		m.aiSources = nil
+		m.aiTurnContext = ""
 		m.aiChatScroll = 0
 		m.aiFollowBottom = true
 		m.aiMsgCursor = 0
@@ -944,6 +1004,7 @@ func (m *Model) handleGoraeSlashCommand(raw string) tea.Cmd {
 		m.aiSessionID = 0
 		m.aiMessages = nil
 		m.aiSources = nil
+		m.aiTurnContext = ""
 		m.aiFocusedFiles = nil
 		m.aiChatScroll = 0
 		m.aiFollowBottom = true
@@ -1571,6 +1632,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 	focusedFiles := append([]string(nil), m.aiFocusedFiles...)
 	maxChars := m.maxPaperChars()
+	focusBudget := m.focusBudgetChars()
 
 	return tea.Batch(goraeSpinnerTick(), func() tea.Msg {
 
@@ -1583,29 +1645,21 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 			retrievalQuery = condenseQuery(ctx, history[:len(history)-1], userText, client)
 		}
 
+		// Embedded once per turn and reused for library retrieval and for
+		// choosing which part of each focused paper to send.
+		queryVec := embedQuery(ctx, cfg, client, retrievalQuery)
+
 		var sources []string
 		var docContext string
 		plan := planRetrieval(ctx, retrievalQuery, cfg, client)
 		if plan.local || plan.web {
-			sources, docContext = goraeRetrieveContext(ctx, store, cfg, client, retrievalQuery, plan)
+			sources, docContext = goraeRetrieveContext(ctx, store, cfg, retrievalQuery, queryVec, plan)
 		}
 
-		// Prepend every focused paper as primary context, each capped so a few
-		// full papers don't blow the model's context window.
+		// Prepend every focused paper as primary context, under a shared budget.
 		if len(focusedFiles) > 0 && store != nil {
-			var blocks []string
-			var focusSources []string
-			for _, fp := range focusedFiles {
-				body, err := store.GetFileContent(ctx, fp)
-				if err != nil || strings.TrimSpace(body) == "" {
-					continue
-				}
-				if r := []rune(body); len(r) > maxChars {
-					body = string(r[:maxChars]) + "\n…[truncated]"
-				}
-				blocks = append(blocks, fmt.Sprintf("[Paper in focus: %s]\n%s", titleForPath(store, ctx, fp), body))
-				focusSources = append(focusSources, fp)
-			}
+			blocks, focusSources := buildFocusContext(
+				ctx, store, focusedFiles, retrievalQuery, queryVec, maxChars, focusBudget)
 			if len(blocks) > 0 {
 				joined := strings.Join(blocks, "\n\n")
 				if docContext != "" {
@@ -1666,7 +1720,7 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 		ch := client.StreamChat(ctx, msgs, tools)
 
-		cmds := []tea.Cmd{func() tea.Msg { return aiSourcesMsg{paths: sources} }}
+		cmds := []tea.Cmd{func() tea.Msg { return aiSourcesMsg{paths: sources, docContext: docContext} }}
 		if len(resolved) > 0 {
 			rp := resolved
 			cmds = append(cmds, func() tea.Msg { return aiFocusResolvedMsg{paths: rp} })
@@ -1678,7 +1732,8 @@ func (m *Model) submitGoraeMessage(userText string) tea.Cmd {
 
 // continueGoraeStream restarts streaming after a tool-call round-trip, with
 // the updated m.aiMessages (which now contains the assistant tool-call request
-// + tool replies). No RAG re-retrieval — the prior turn already gathered it.
+// + tool replies). Retrieval is not re-run; the grounding text gathered at the
+// start of the turn is replayed from m.aiTurnContext.
 func (m *Model) continueGoraeStream() tea.Cmd {
 	if m.aiClient == nil {
 		return nil
@@ -1692,7 +1747,11 @@ func (m *Model) continueGoraeStream() tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.aiCancelFunc = cancel
 
-	systemMsg := ai.Message{Role: ai.RoleSystem, Content: goraeSystemPrompt(cfg, "")}
+	// Rebuild the same system prompt the turn started with. The grounding text
+	// only ever lives in the system message, which is recreated per request and
+	// never joins the history — so passing "" here would strip every focused
+	// paper and every retrieved passage the moment the model called a tool.
+	systemMsg := ai.Message{Role: ai.RoleSystem, Content: goraeSystemPrompt(cfg, m.aiTurnContext)}
 	msgs := make([]ai.Message, 0, len(history)+1)
 	msgs = append(msgs, systemMsg)
 	msgs = append(msgs, history...)
@@ -2039,7 +2098,25 @@ func llmClassifyRetrieval(ctx context.Context, query string, client *ai.Client) 
 
 // ── RAG retrieval ─────────────────────────────────────────────────────────────
 
-func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, client *ai.Client, query string, plan retrievalPlan) ([]string, string) {
+// embedQuery returns an embedding for query, or nil when vector search is off
+// or the embedding endpoint is unreachable. Callers treat nil as "keyword only"
+// rather than an error, so one unreachable endpoint never blocks an answer.
+func embedQuery(ctx context.Context, cfg *config.Config, client *ai.Client, query string) []float32 {
+	if cfg == nil || cfg.AI == nil || !cfg.AI.VectorSearch || client == nil {
+		return nil
+	}
+	embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
+	if embModel == "" {
+		embModel = "nomic-embed-text"
+	}
+	vec, err := client.GetEmbedding(ctx, embModel, query)
+	if err != nil {
+		return nil
+	}
+	return vec
+}
+
+func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Config, query string, queryVec []float32, plan retrievalPlan) ([]string, string) {
 	var sources []string
 	var sb strings.Builder
 
@@ -2053,18 +2130,8 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 		// With vector search on, keyword and semantic hits are fused rather than
 		// tried in sequence: exact-term matches and paraphrase matches surface
 		// different documents, and a document both retrievers like is the
-		// strongest evidence available. An embedding failure leaves queryVec nil,
-		// which degrades to plain FTS.
-		var queryVec []float32
-		if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch && client != nil {
-			embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
-			if embModel == "" {
-				embModel = "nomic-embed-text"
-			}
-			if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
-				queryVec = vec
-			}
-		}
+		// strongest evidence available. A nil queryVec degrades to plain FTS.
+		//
 		// Retrieval is best-effort: a failure here just means the answer is
 		// ungrounded rather than fatal, so the error is intentionally dropped.
 		results, _ := store.SearchHybrid(ctx, query, queryVec, topK)

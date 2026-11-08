@@ -49,6 +49,13 @@ type AIConfig struct {
 	// MaxPaperChars caps how many characters of each focused paper are injected
 	// as context, protecting the model's context window. 0 uses the default.
 	MaxPaperChars int `json:"max_paper_chars,omitempty"`
+	// FocusBudgetChars caps the combined size of all focused papers per turn.
+	// Focused papers are re-sent with every message, so without a ceiling the
+	// cost of focusing a third or fourth paper grows without bound. Each paper
+	// receives an equal share, and a paper too large for its share contributes
+	// the passages most relevant to the question instead of its opening pages.
+	// 0 uses the default.
+	FocusBudgetChars int `json:"focus_budget_chars,omitempty"`
 }
 
 type Config struct {
