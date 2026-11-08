@@ -88,6 +88,11 @@ A built-in RAG chat assistant grounded in your indexed library. Responses stream
 Features:
 
 - **Library retrieval** — relevant indexed passages are included with each question.
+- **Semantic retrieval** — set `"vector_search": true` and `:index` also embeds each
+  chunk. Questions are then answered from a fusion of keyword and semantic hits, so
+  a paper that never uses your exact wording still surfaces. Needs an embedding model
+  (`ollama pull nomic-embed-text` for the local default); plain keyword search is used
+  when it's off or unreachable.
 - **Sessions** — conversations are auto-saved; resume with `/sessions`, fork with `/new`.
 - **`/load <query>`** — a live fuzzy picker focuses one or more papers for follow-up questions.
 - **Vim-style navigation mode** — `Esc` switches from typing to a message cursor: `j/k` between messages, `Space` to mark, `y` to yank one or many to the clipboard.
@@ -107,7 +112,9 @@ Features:
   "base_url": "",             // override endpoint
   "top_k": 3,                 // chunks injected per query
   "system_prompt": "",
-  "enable_tools": false       // let the model call in-app tools
+  "enable_tools": false,      // let the model call in-app tools
+  "vector_search": false,     // add semantic retrieval alongside keyword search
+  "embedding_model": "nomic-embed-text"
 }
 ```
 
@@ -120,6 +127,8 @@ Features:
 | `top_k` | Document chunks injected per query (default `3`) |
 | `system_prompt` | Extra instruction prepended before RAG context |
 | `enable_tools` | Allow tool calls (e.g. `save_markdown`). Default `false`. |
+| `vector_search` | Retrieve semantically as well as by keyword, fusing both rankings. Default `false`. |
+| `embedding_model` | Model used to embed chunks when `vector_search` is on. Default `nomic-embed-text`. |
 
 </details>
 

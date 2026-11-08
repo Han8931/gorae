@@ -115,6 +115,9 @@ func (s *Store) GetVecIndexState(ctx context.Context, path string) (*IndexState,
 // SearchSemantic finds the top-k most relevant chunks by cosine similarity.
 // It returns one result per unique path (the highest-scoring chunk).
 func (s *Store) SearchSemantic(ctx context.Context, queryVec []float32, topK int) ([]FTSMatch, error) {
+	if len(queryVec) == 0 {
+		return nil, nil
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT path, body, embedding FROM vec_embeddings`)
 	if err != nil {
 		return nil, err
@@ -135,8 +138,14 @@ func (s *Store) SearchSemantic(ctx context.Context, queryVec []float32, topK int
 			continue
 		}
 		vec := bytesToFloat32s(blob)
-		score := cosineSimilarity(queryVec, vec)
-		candidates = append(candidates, scored{path, body, score})
+		// Vectors of a different width than the query were written by a
+		// different embedding_model. Scoring them yields 0 for every row, which
+		// would otherwise fill the result set with arbitrarily-ordered chunks of
+		// zero relevance; skipping them lets the caller fall back to FTS.
+		if len(vec) != len(queryVec) {
+			continue
+		}
+		candidates = append(candidates, scored{path, body, cosineSimilarity(queryVec, vec)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

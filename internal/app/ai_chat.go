@@ -2042,22 +2042,24 @@ func goraeRetrieveContext(ctx context.Context, store *meta.Store, cfg *config.Co
 			topK = cfg.AI.TopK
 		}
 
-		var results []meta.FTSMatch
+		// With vector search on, keyword and semantic hits are fused rather than
+		// tried in sequence: exact-term matches and paraphrase matches surface
+		// different documents, and a document both retrievers like is the
+		// strongest evidence available. An embedding failure leaves queryVec nil,
+		// which degrades to plain FTS.
+		var queryVec []float32
 		if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch && client != nil {
 			embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
 			if embModel == "" {
 				embModel = "nomic-embed-text"
 			}
 			if vec, err := client.GetEmbedding(ctx, embModel, query); err == nil {
-				// On error, results stays empty and we fall back to FTS below.
-				results, _ = store.SearchSemantic(ctx, vec, topK)
+				queryVec = vec
 			}
 		}
-		if len(results) == 0 {
-			// Retrieval is best-effort: a failure here just means the answer is
-			// ungrounded rather than fatal, so the error is intentionally dropped.
-			results, _ = store.SearchFTS(ctx, query, topK)
-		}
+		// Retrieval is best-effort: a failure here just means the answer is
+		// ungrounded rather than fatal, so the error is intentionally dropped.
+		results, _ := store.SearchHybrid(ctx, query, queryVec, topK)
 
 		seen := map[string]bool{}
 		for _, r := range results {

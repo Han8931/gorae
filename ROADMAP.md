@@ -15,6 +15,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] **Tool calling** — model can invoke in-app actions like `save_markdown`
 - [x] **Mouse-wheel scrolling** in chat
 - [x] **Web search integration** — Brave / Tavily with rules + LLM routing
+- [x] **Semantic search** — `vector_search: true` embeds chunks at `:index` time; retrieval fuses keyword and semantic rankings (RRF)
 
 ### Knowledge base
 
@@ -33,7 +34,8 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 ### AI assistant
 
-- [ ] Semantic search in Gorae mode
+- [ ] Scale semantic search — `SearchSemantic` scores every stored chunk per query; needs an ANN index or a candidate prefilter for large libraries
+- [ ] Re-embed on `embedding_model` change — vectors of the old width are skipped, which silently drops to keyword-only until `:index` reruns
 - [ ] Daily digest — `:digest` command summarising recent additions + matching arXiv papers
 - [ ] Session renaming
 - [ ] Text extraction / OCR
