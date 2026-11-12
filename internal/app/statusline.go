@@ -261,6 +261,8 @@ func (m Model) currentModeLabel() string {
 		return "Gorae"
 	case stateSessionList:
 		return "Sessions"
+	case stateTrashList:
+		return "Trash"
 	default:
 		return "Normal"
 	}

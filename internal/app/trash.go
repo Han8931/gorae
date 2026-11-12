@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -113,6 +114,70 @@ func (m *Model) moveToTrash(path string) error {
 	}
 	_ = os.WriteFile(filepath.Join(infoDir, rec.Name+".json"), data, 0o644)
 	return nil
+}
+
+// trashEntry is one browsable row in the Trash: the stored item plus whatever
+// its sidecar record says about where it came from.
+type trashEntry struct {
+	Name         string // basename under trash/files, the handle ':trash restore' takes
+	OriginalPath string // where it was deleted from; "" when the sidecar is missing
+	IsDir        bool
+	DeletedAt    time.Time
+	// Restorable is false when no readable sidecar accompanies the item. The
+	// file itself is still in the Trash and can be recovered by hand, but
+	// restoreFromTrash has no destination to put it back to, so the browser
+	// must not offer an action that is certain to fail.
+	Restorable bool
+}
+
+// trashEntries lists the Trash newest-deletion-first, which is the order a user
+// looking for something they just deleted expects.
+//
+// The listing is driven by trash/files rather than trash/info: an item with no
+// readable sidecar still occupies space and still needs to be visible, it just
+// cannot be restored automatically. Entries whose deletion time is unknown sort
+// last, by name.
+func (m *Model) trashEntries() ([]trashEntry, error) {
+	base := m.trashDir()
+	if base == "" {
+		return nil, errors.New("trash unavailable (no meta dir configured)")
+	}
+	dirEntries, err := os.ReadDir(trashFilesDir(base))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	infoDir := trashInfoDir(base)
+	entries := make([]trashEntry, 0, len(dirEntries))
+	for _, e := range dirEntries {
+		entry := trashEntry{Name: e.Name(), IsDir: e.IsDir()}
+
+		var rec trashInfo
+		if data, err := os.ReadFile(filepath.Join(infoDir, e.Name()+".json")); err == nil {
+			if err := json.Unmarshal(data, &rec); err == nil && strings.TrimSpace(rec.OriginalPath) != "" {
+				entry.OriginalPath = rec.OriginalPath
+				entry.DeletedAt = rec.DeletedAt
+				entry.IsDir = rec.IsDir
+				entry.Restorable = true
+			}
+		}
+		entries = append(entries, entry)
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		ti, tj := entries[i].DeletedAt, entries[j].DeletedAt
+		if ti.IsZero() != tj.IsZero() {
+			return tj.IsZero() // known times first
+		}
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+	return entries, nil
 }
 
 // trashCount reports how many top-level items are currently in the Trash.
@@ -313,7 +378,7 @@ func copyFile(src, dst string, perm fs.FileMode) error {
 }
 
 // handleTrashCommand implements ":trash" and its subcommands. With no argument
-// it reports how many items the Trash holds; "empty" permanently clears it;
+// (or "list") it opens the Trash browser; "empty" permanently clears it;
 // "restore [name]" puts one item (or, with no name, everything) back where it
 // was deleted from, reinstating its metadata.
 func (m *Model) handleTrashCommand(args []string) tea.Cmd {
@@ -323,15 +388,11 @@ func (m *Model) handleTrashCommand(args []string) tea.Cmd {
 		return nil
 	}
 	if len(args) == 0 {
-		n := m.trashCount()
-		if n == 0 {
-			m.setStatus("Trash is empty")
-		} else {
-			m.setStatus(fmt.Sprintf("Trash holds %d item(s) — ':trash restore' to put back, ':trash empty' to clear", n))
-		}
-		return nil
+		return m.enterTrashList()
 	}
 	switch strings.ToLower(args[0]) {
+	case "list", "ls":
+		return m.enterTrashList()
 	case "empty":
 		n, err := m.emptyTrash()
 		if err != nil {
@@ -368,7 +429,7 @@ func (m *Model) handleTrashCommand(args []string) tea.Cmd {
 			m.setStatus(fmt.Sprintf("Restored %d item(s) from Trash", restored))
 		}
 	default:
-		m.setStatus(fmt.Sprintf("Unknown trash command: %s (try ':trash restore' or ':trash empty')", args[0]))
+		m.setStatus(fmt.Sprintf("Unknown trash command: %s (try ':trash', ':trash restore' or ':trash empty')", args[0]))
 	}
 	return nil
 }

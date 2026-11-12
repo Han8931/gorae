@@ -521,6 +521,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSessionList(msg)
 		}
 
+		if m.state == stateTrashList {
+			return m.updateTrashList(msg)
+		}
+
 		if m.state == stateHelp {
 			if handled, cmd := m.handleHelpKey(key); handled {
 				return m, cmd
@@ -2206,7 +2210,7 @@ func buildHelpOutput() []string {
 		"  :theme list ... list bundled themes; :theme reload re-reads theme.toml",
 		"",
 		"Other Commands",
-		"  :trash ....... show Trash item count (:trash restore to put back, :trash empty to clear)",
+		"  :trash ....... browse the Trash (Enter restores; :trash empty to clear)",
 		"  :pwd ......... show working directory",
 		"  :clear ....... hide this panel",
 		"  :q or Ctrl+C . quit",

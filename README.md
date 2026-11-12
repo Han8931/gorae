@@ -234,7 +234,8 @@ Vim-style navigation everywhere. Cheat sheet:
 | To-read queue | `t` |
 | Reading state (Unread → Reading → Read) | `r` |
 | Sort by name / title / year | `s n` / `s t` / `s y` |
-| Delete (confirm with `y`) | `D` |
+| Delete to Trash (confirm with `y`) | `D` |
+| Browse / restore the Trash | `:trash` |
 | Edit metadata | `e`, then `Enter` on a field (`E` for your editor) |
 | Search | `/` |
 | AI chat | `:gorae` |
@@ -259,6 +260,21 @@ Papers move between the Reading, Unread, and Read tabs as soon as `r` changes th
 with `▴`. On narrow panes, lower-priority columns drop out so the title stays
 readable. A hint bar above the status bar shows the keys for the current
 context, including what can follow a prefix key such as `g` or `s`.
+
+**Trash:** `D` moves a paper (or folder) to the Trash instead of deleting it,
+snapshotting its tags, notes, and reading state first. `:trash` opens a browser
+listing what's in there, newest deletion first, with where each item came from:
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move between items |
+| `Enter` / `r` | Restore the selected item to where it was deleted from |
+| `R` | Restore everything |
+| `Esc` / `q` | Close |
+
+Restoring reinstates the metadata snapshot, so tags reappear in the tree. If the
+original path is occupied again the item is restored beside it rather than
+overwriting anything. `:trash empty` permanently deletes the contents.
 
 **Search flags** (after `/`):
 

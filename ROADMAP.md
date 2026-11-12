@@ -26,6 +26,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] Auto DOI / arXiv metadata + BibTeX copy
 - [x] Delete confirmation
 - [x] Colorful circles next to tags in the tree pane
+- [x] **Trash** — `D` moves deletions to Trash with their metadata snapshotted; `:trash` browses it (newest first, showing where each item came from) and restores with `Enter`/`r`; `:trash empty` clears it
 
 ## In progress
 
@@ -49,7 +50,6 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [ ] To-do management
 - [ ] Vault warden for cloud support
 - [ ] Web server
-- [~] Trash — `D` moves deletions to Trash (metadata snapshotted); `:trash restore [name]` puts items back with their tags and notes; `:trash empty` clears it. Still to come: a way to browse the Trash (listing / tree node) so restorable names are discoverable.
 
 ### Fixes
 

@@ -550,6 +550,9 @@ func (m Model) View() string {
 	if m.state == stateSessionList {
 		return m.renderSessionList()
 	}
+	if m.state == stateTrashList {
+		return m.renderTrashList()
+	}
 	var b strings.Builder
 	var overlayLines []string
 

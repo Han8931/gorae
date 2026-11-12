@@ -53,6 +53,7 @@ const (
 	stateUnmarkPrompt
 	stateGorae
 	stateSessionList
+	stateTrashList
 	stateLaunch
 )
 
@@ -247,6 +248,10 @@ type Model struct {
 	aiSessionCursor   int                // cursor in the session list
 	aiCompacting      bool               // true while a /compact summarisation is in flight
 	aiToolHops        int                // tool-call iterations used by the current user turn (reset on submit)
+
+	// Trash browser (stateTrashList).
+	trashList   []trashEntry // items shown in the Trash browser
+	trashCursor int          // cursor in the Trash browser
 
 	// Modal (vim-style) navigation in the chat.
 	aiNormalMode bool         // false = insert mode (default), true = normal mode

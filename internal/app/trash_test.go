@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Han8931/gorae/internal/config"
 	"github.com/Han8931/gorae/internal/meta"
+	"github.com/Han8931/gorae/internal/theme"
 )
 
 // newTrashTestModel builds a Model with a real meta store and a meta dir under a
@@ -497,5 +500,328 @@ func TestOriginalPathResolvedThroughSymlinkedParent(t *testing.T) {
 	want := filepath.Join(canonicalPath(realLib), "paper.pdf")
 	if rec.OriginalPath != want {
 		t.Fatalf("original_path = %q, want %q", rec.OriginalPath, want)
+	}
+}
+
+// setTrashDeletedAt rewrites a sidecar's deletion time so ordering can be
+// asserted without sleeping between trash operations.
+func setTrashDeletedAt(t *testing.T, m *Model, name string, when time.Time) {
+	t.Helper()
+	infoPath := filepath.Join(m.trashDir(), "info", name+".json")
+	data, err := os.ReadFile(infoPath)
+	if err != nil {
+		t.Fatalf("read sidecar %s: %v", name, err)
+	}
+	var rec trashInfo
+	if err := json.Unmarshal(data, &rec); err != nil {
+		t.Fatalf("unmarshal sidecar %s: %v", name, err)
+	}
+	rec.DeletedAt = when
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal sidecar %s: %v", name, err)
+	}
+	if err := os.WriteFile(infoPath, out, 0o644); err != nil {
+		t.Fatalf("write sidecar %s: %v", name, err)
+	}
+}
+
+// The browser exists so a user can find what they just deleted, so the most
+// recent deletion has to come first regardless of name or readdir order.
+func TestTrashEntriesOrdersNewestFirst(t *testing.T) {
+	m, base := newTrashTestModel(t)
+
+	for _, name := range []string{"aaa.pdf", "bbb.pdf", "ccc.pdf"} {
+		src := filepath.Join(base, name)
+		if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		if err := m.moveToTrash(src); err != nil {
+			t.Fatalf("moveToTrash %s: %v", name, err)
+		}
+	}
+	now := time.Now()
+	setTrashDeletedAt(t, m, "aaa.pdf", now.Add(-2*time.Hour))
+	setTrashDeletedAt(t, m, "bbb.pdf", now)
+	setTrashDeletedAt(t, m, "ccc.pdf", now.Add(-time.Hour))
+
+	entries, err := m.trashEntries()
+	if err != nil {
+		t.Fatalf("trashEntries: %v", err)
+	}
+	got := make([]string, len(entries))
+	for i, e := range entries {
+		got[i] = e.Name
+	}
+	want := []string{"bbb.pdf", "ccc.pdf", "aaa.pdf"}
+	for i := range want {
+		if i >= len(got) || got[i] != want[i] {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+	for _, e := range entries {
+		if !e.Restorable {
+			t.Errorf("%s should be restorable; it has a sidecar", e.Name)
+		}
+		if e.OriginalPath == "" {
+			t.Errorf("%s has no original path", e.Name)
+		}
+	}
+}
+
+// An item whose sidecar is missing still occupies the Trash and must stay
+// visible — but it has no recorded origin, so the browser must not present it
+// as restorable.
+func TestTrashEntriesIncludesItemsWithoutSidecar(t *testing.T) {
+	m, base := newTrashTestModel(t)
+
+	src := filepath.Join(base, "recorded.pdf")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+	// An item that arrived without a usable sidecar.
+	orphan := filepath.Join(m.trashDir(), "files", "orphan.pdf")
+	if err := os.WriteFile(orphan, []byte("y"), 0o644); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+
+	entries, err := m.trashEntries()
+	if err != nil {
+		t.Fatalf("trashEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	byName := map[string]trashEntry{}
+	for _, e := range entries {
+		byName[e.Name] = e
+	}
+	if !byName["recorded.pdf"].Restorable {
+		t.Error("recorded.pdf should be restorable")
+	}
+	if byName["orphan.pdf"].Restorable {
+		t.Error("orphan.pdf has no sidecar and must not be marked restorable")
+	}
+	// Unknown deletion time sorts last.
+	if entries[len(entries)-1].Name != "orphan.pdf" {
+		t.Errorf("last entry = %s, want orphan.pdf sorted last", entries[len(entries)-1].Name)
+	}
+}
+
+// A sidecar that exists but is corrupt is no better than a missing one: there
+// is no trustworthy destination, so it must not be offered as restorable.
+func TestTrashEntriesTreatsCorruptSidecarAsUnrestorable(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	src := filepath.Join(base, "broken.pdf")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+	infoPath := filepath.Join(m.trashDir(), "info", "broken.pdf.json")
+	if err := os.WriteFile(infoPath, []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("corrupt sidecar: %v", err)
+	}
+
+	entries, err := m.trashEntries()
+	if err != nil {
+		t.Fatalf("trashEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Restorable {
+		t.Error("an unparseable sidecar must not be marked restorable")
+	}
+}
+
+func TestTrashEntriesEmptyTrash(t *testing.T) {
+	m, _ := newTrashTestModel(t)
+	entries, err := m.trashEntries()
+	if err != nil {
+		t.Fatalf("trashEntries on never-used trash: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("got %d entries, want none", len(entries))
+	}
+}
+
+// Opening the browser on an empty Trash would show a view with nothing to do,
+// so it reports on the status line and stays put.
+func TestEnterTrashListEmptyStaysInNormalState(t *testing.T) {
+	m, _ := newTrashTestModel(t)
+	m.state = stateNormal
+
+	m.enterTrashList()
+	if m.state != stateNormal {
+		t.Errorf("state = %v, want stateNormal for an empty Trash", m.state)
+	}
+}
+
+func TestEnterTrashListOpensBrowser(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	src := filepath.Join(base, "paper.pdf")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+
+	m.enterTrashList()
+	if m.state != stateTrashList {
+		t.Fatalf("state = %v, want stateTrashList", m.state)
+	}
+	if len(m.trashList) != 1 || m.trashList[0].Name != "paper.pdf" {
+		t.Fatalf("trashList = %+v, want one entry for paper.pdf", m.trashList)
+	}
+}
+
+// Restoring the selected row is the whole point of the browser: the file comes
+// back and the row goes away. With nothing left, the view closes itself.
+func TestTrashListRestoreSelectedClosesEmptiedBrowser(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	src := filepath.Join(base, "paper.pdf")
+	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+	m.enterTrashList()
+
+	m.updateTrashList(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if data, err := os.ReadFile(src); err != nil || string(data) != "payload" {
+		t.Fatalf("restored file = %q, err = %v", data, err)
+	}
+	if m.trashCount() != 0 {
+		t.Errorf("trashCount = %d, want 0 after restoring the only item", m.trashCount())
+	}
+	if m.state != stateNormal {
+		t.Errorf("state = %v, want stateNormal once the Trash is emptied", m.state)
+	}
+}
+
+// Restoring one of several items keeps the browser open on the remaining rows.
+func TestTrashListRestoreKeepsBrowserOpenWithItemsLeft(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	for _, name := range []string{"one.pdf", "two.pdf"} {
+		src := filepath.Join(base, name)
+		if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		if err := m.moveToTrash(src); err != nil {
+			t.Fatalf("moveToTrash %s: %v", name, err)
+		}
+	}
+	m.enterTrashList()
+	restoredName := m.trashList[m.trashCursor].Name
+
+	m.updateTrashList(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.state != stateTrashList {
+		t.Fatalf("state = %v, want the browser still open", m.state)
+	}
+	if len(m.trashList) != 1 {
+		t.Fatalf("trashList has %d entries, want 1 remaining", len(m.trashList))
+	}
+	if m.trashList[0].Name == restoredName {
+		t.Errorf("restored %s is still listed", restoredName)
+	}
+}
+
+// Pressing restore on an item with no recorded origin must report why rather
+// than attempt a restore that cannot succeed.
+func TestTrashListRestoreUnrestorableReports(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	if err := os.MkdirAll(filepath.Join(m.trashDir(), "files"), 0o755); err != nil {
+		t.Fatalf("mkdir trash files: %v", err)
+	}
+	orphan := filepath.Join(m.trashDir(), "files", "orphan.pdf")
+	if err := os.WriteFile(orphan, []byte("y"), 0o644); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+	m.enterTrashList()
+	if m.state != stateTrashList {
+		t.Fatalf("state = %v, want stateTrashList", m.state)
+	}
+
+	m.updateTrashList(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// The item stays put: nothing was moved out of the Trash.
+	if _, err := os.Stat(orphan); err != nil {
+		t.Errorf("orphan should still be in the Trash, stat err = %v", err)
+	}
+	if m.state != stateTrashList {
+		t.Errorf("state = %v, want the browser still open", m.state)
+	}
+}
+
+func TestTrashListEscCloses(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	src := filepath.Join(base, "paper.pdf")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+	m.enterTrashList()
+
+	m.updateTrashList(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.state != stateNormal {
+		t.Errorf("state = %v, want stateNormal after Esc", m.state)
+	}
+	// Esc closes the browser without restoring anything.
+	if m.trashCount() != 1 {
+		t.Errorf("trashCount = %d, want the item left in the Trash", m.trashCount())
+	}
+}
+
+// A smoke test over the real renderer: the browser must show each item's name,
+// where it came from, and a cursor, without panicking on a narrow terminal.
+func TestRenderTrashListShowsEntries(t *testing.T) {
+	m, base := newTrashTestModel(t)
+	m.root = base
+	m.width = 100
+	m.viewportHeight = 20
+	m.applyTheme(theme.Default())
+
+	lib := filepath.Join(base, "library")
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		t.Fatalf("mkdir library: %v", err)
+	}
+	src := filepath.Join(lib, "attention.pdf")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := m.moveToTrash(src); err != nil {
+		t.Fatalf("moveToTrash: %v", err)
+	}
+	m.enterTrashList()
+
+	out := m.renderTrashList()
+	for _, want := range []string{"TRASH", "attention.pdf", "library", "▶", "restore"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered browser is missing %q:\n%s", want, out)
+		}
+	}
+
+	// A cramped terminal must still render rather than panic on a negative width.
+	m.width = 24
+	m.viewportHeight = 6
+	if got := m.renderTrashList(); got == "" {
+		t.Error("narrow render produced no output")
 	}
 }
