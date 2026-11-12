@@ -17,6 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Han8931/gorae/internal/ai"
+	"github.com/Han8931/gorae/internal/arxiv"
 	"github.com/Han8931/gorae/internal/config"
 	"github.com/Han8931/gorae/internal/meta"
 	"github.com/Han8931/gorae/internal/theme"
@@ -54,6 +55,7 @@ const (
 	stateGorae
 	stateSessionList
 	stateTrashList
+	stateArxivResults
 	stateLaunch
 )
 
@@ -252,6 +254,14 @@ type Model struct {
 	// Trash browser (stateTrashList).
 	trashList   []trashEntry // items shown in the Trash browser
 	trashCursor int          // cursor in the Trash browser
+
+	// arXiv search results (stateArxivResults).
+	arxivResults   []arxiv.Metadata // hits on the current page
+	arxivCursor    int              // cursor within the page
+	arxivQuery     string           // query the page belongs to
+	arxivStart     int              // index of the page's first hit within the whole result set
+	arxivTotal     int              // total matches reported by arXiv, for paging
+	arxivSearching bool             // true while a query is in flight
 
 	// Modal (vim-style) navigation in the chat.
 	aiNormalMode bool         // false = insert mode (default), true = normal mode

@@ -24,6 +24,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] Hierarchical tags
 - [x] Bidirectional `[[wikilinks]]` with backlinks
 - [x] Auto DOI / arXiv metadata + BibTeX copy
+- [x] **arXiv search** — `:arxiv <query>` searches the arXiv API, browses hits with their abstracts, and imports one (PDF + metadata) with `Enter`; `n`/`p` page through results
 - [x] Delete confirmation
 - [x] Colorful circles next to tags in the tree pane
 - [x] **Trash** — `D` moves deletions to Trash with their metadata snapshotted; `:trash` browses it (newest first, showing where each item came from) and restores with `Enter`/`r`; `:trash empty` clears it
@@ -44,7 +45,6 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 ### Knowledge base & UX
 
-- [ ] arXiv search — `:arxiv <query>` to search the arXiv API from inside Gorae, browse results in a pane, and import a hit (PDF + metadata) into the library. `internal/arxiv` already fetches by ID, so this adds a query endpoint (`search_query`, paging) on top
 - [ ] Rethink the full paper list — organize it by tags or some other grouping
 - [ ] Open URL
 - [ ] To-do management

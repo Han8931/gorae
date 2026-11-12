@@ -73,7 +73,10 @@ type arxivBatch struct {
 
 const (
 	arxivRequestTimeout = 30 * time.Second
-	commandHistoryLimit = 200
+	// arxivDownloadTimeout covers fetching a paper rather than its metadata,
+	// which is a much larger transfer over a link we don't control.
+	arxivDownloadTimeout = 3 * time.Minute
+	commandHistoryLimit  = 200
 )
 
 var (
@@ -325,6 +328,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case arxivSearchResultMsg:
+		m.handleArxivSearchResult(msg)
+		return m, nil
+
+	case arxivImportDoneMsg:
+		if msg.err != nil {
+			m.setStatus("Import failed: " + msg.err.Error())
+			// A metadata failure still leaves a downloaded PDF, so the Files
+			// pane has to pick it up either way.
+			if msg.path != "" {
+				m.loadEntries()
+			}
+			return m, nil
+		}
+		// The imported paper lands in the current directory, so refresh the
+		// pane behind the results view rather than making the user reopen it.
+		m.loadEntries()
+		m.reloadTreeTags()
+		m.setStatus("Imported " + filepath.Base(msg.path) + " — run :index to make it searchable")
+		return m, nil
+
 	case arxivUpdateMsg:
 		if msg.err != nil {
 			m.setStatus("arXiv import failed: " + msg.err.Error())
@@ -523,6 +547,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.state == stateTrashList {
 			return m.updateTrashList(msg)
+		}
+
+		if m.state == stateArxivResults {
+			return m.updateArxivResults(msg)
 		}
 
 		if m.state == stateHelp {
@@ -2193,7 +2221,8 @@ func buildHelpOutput() []string {
 		"  f / t / r .... favorite / to-read / cycle reading state",
 		"  yy ............ copy BibTeX",
 		"  yt ........... copy Title / Author / Year",
-		"  :arxiv ....... fetch arXiv metadata (:arxiv -v for selected files)",
+		"  :arxiv <query> search arXiv and import a result (Enter)",
+		"  :arxiv <id> ... fetch arXiv metadata (:arxiv -v for selected files)",
 		"  :autofetch ... detect DOI/arXiv IDs in PDFs and import metadata",
 		"",
 		"Search & Lists",
@@ -2281,7 +2310,35 @@ func (m *Model) handleHelpKey(key string) (bool, tea.Cmd) {
 	}
 }
 
+// looksLikeArxivSearch reports whether ':arxiv <args>' should be read as a
+// search rather than as an ID to attach to files.
+//
+// The two forms are told apart by the first argument: ':arxiv' has always
+// required an arXiv ID there, so anything that is not one (and not an option)
+// cannot be a valid invocation of the metadata form and is unambiguously a
+// query. This is what lets ':arxiv attention is all you need' work without a
+// subcommand while ':arxiv 1706.03762 paper.pdf' keeps its meaning.
+func looksLikeArxivSearch(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	first := strings.TrimSpace(args[0])
+	if first == "" || strings.HasPrefix(first, "-") {
+		return false
+	}
+	return extractArxivIDFromString(first) == ""
+}
+
 func (m *Model) handleArxivCommand(args []string) tea.Cmd {
+	// Search is handled before the store check: browsing arXiv is useful even
+	// without a metadata store, and only importing needs one.
+	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "search") {
+		return m.startArxivSearch(strings.Join(args[1:], " "), 0)
+	}
+	if looksLikeArxivSearch(args) {
+		return m.startArxivSearch(strings.Join(args, " "), 0)
+	}
+
 	if m.meta == nil {
 		m.setStatus("Metadata store not available")
 		return nil

@@ -263,6 +263,8 @@ func (m Model) currentModeLabel() string {
 		return "Sessions"
 	case stateTrashList:
 		return "Trash"
+	case stateArxivResults:
+		return "arXiv"
 	default:
 		return "Normal"
 	}

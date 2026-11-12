@@ -68,7 +68,7 @@ library, or want fast search and notes without running a larger desktop app.
 | **Search** | Fast FTS5 metadata and full-text search, including every matching passage and PDF page |
 | **Preview** | Metadata, text, and first-page PDF previews in supported terminals |
 | **Organize** | Markdown notes, hierarchical tags, `[[wikilinks]]`, backlinks, and BibTeX copy |
-| **Import** | DOI and arXiv detection with metadata retrieval from Crossref and arXiv |
+| **Import** | Search arXiv and import papers without leaving Gorae, plus DOI and arXiv detection with metadata retrieval from Crossref and arXiv |
 | **AI (optional)** | Grounded chat, focused papers, summaries, sessions, skills, and streaming responses |
 | **Customize** | Accessible bundled themes, custom colors and glyphs, and a foldable tree pane |
 
@@ -260,6 +260,24 @@ Papers move between the Reading, Unread, and Read tabs as soon as `r` changes th
 with `▴`. On narrow panes, lower-priority columns drop out so the title stays
 readable. A hint bar above the status bar shows the keys for the current
 context, including what can follow a prefix key such as `g` or `s`.
+
+**arXiv search:** `:arxiv <query>` searches arXiv from inside Gorae and lists
+the hits newest first, with the selected paper's abstract below the list:
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move between hits |
+| `Enter` | Import — downloads the PDF into the current directory and records its metadata |
+| `n` / `p` | Next / previous page of results |
+| `Esc` / `q` | Close |
+
+Plain words are matched as a phrase across titles, abstracts, and authors, so
+typing a paper's title finds that paper; if the wording matches nothing, the
+search widens to the individual terms. arXiv's own syntax works too
+(`:arxiv au:"Vaswani" AND ti:attention`). An imported paper arrives with its
+title, authors, year, DOI, abstract, and arXiv URL already filled in — run
+`:index` afterwards to make its text searchable. `:arxiv <id>` still attaches
+metadata to files already in your library, as before.
 
 **Trash:** `D` moves a paper (or folder) to the Trash instead of deleting it,
 snapshotting its tags, notes, and reading state first. `:trash` opens a browser

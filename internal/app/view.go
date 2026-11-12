@@ -553,6 +553,9 @@ func (m Model) View() string {
 	if m.state == stateTrashList {
 		return m.renderTrashList()
 	}
+	if m.state == stateArxivResults {
+		return m.renderArxivResults()
+	}
 	var b strings.Builder
 	var overlayLines []string
 
