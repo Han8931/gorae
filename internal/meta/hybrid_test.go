@@ -158,7 +158,7 @@ func TestSearchHybridSurfacesVectorOnlyHits(t *testing.T) {
 	if err := store.IndexContent(ctx, kwPath, "sparse retrieval with bm25", 100); err != nil {
 		t.Fatalf("index content: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, vecPath, []string{"dense passage retrieval"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, vecPath, []string{"dense passage retrieval"}, [][]float32{{1, 0, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("store embeddings: %v", err)
 	}
 
@@ -193,10 +193,10 @@ func TestSearchHybridConsensusWhenRetrieversAgree(t *testing.T) {
 	if err := store.IndexContent(ctx, other, "attention and parsing grammars", 100); err != nil {
 		t.Fatalf("index other: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, agreed, []string{"memory"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, agreed, []string{"memory"}, [][]float32{{1, 0, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("embed agreed: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, other, []string{"parsing"}, [][]float32{{0, 1, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, other, []string{"parsing"}, [][]float32{{0, 1, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("embed other: %v", err)
 	}
 
@@ -223,10 +223,10 @@ func TestSearchHybridNoConsensusWhenRetrieversDisagree(t *testing.T) {
 		t.Fatalf("index vecTop: %v", err)
 	}
 	// Embeddings point the vector retriever at the *other* document.
-	if err := store.StoreEmbeddings(ctx, kwTop, []string{"kw"}, [][]float32{{0, 1, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, kwTop, []string{"kw"}, [][]float32{{0, 1, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("embed kwTop: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, vecTop, []string{"vec"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, vecTop, []string{"vec"}, [][]float32{{1, 0, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("embed vecTop: %v", err)
 	}
 
@@ -249,7 +249,7 @@ func TestSearchHybridNoConsensusFromOneRetriever(t *testing.T) {
 	if err := store.IndexContent(ctx, path, "memory bandwidth discussion", 100); err != nil {
 		t.Fatalf("index: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, path, []string{"memory"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, []string{"memory"}, [][]float32{{1, 0, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("embed: %v", err)
 	}
 

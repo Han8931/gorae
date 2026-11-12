@@ -15,10 +15,15 @@ import (
 )
 
 type indexCompleteMsg struct {
-	indexed  int
-	skipped  int
-	failed   int
-	warnings []string
+	indexed int
+	skipped int
+	failed  int
+	// reembedded counts files whose text was unchanged but whose vectors were
+	// rebuilt anyway because a different embedding model produced them. These
+	// are also counted in indexed; reporting them separately explains why an
+	// :index run that should have been a no-op did work.
+	reembedded int
+	warnings   []string
 }
 
 // extractDocumentText extracts plain text from a PDF, EPUB, or Markdown file.
@@ -39,6 +44,30 @@ func extractDocumentText(path string) (string, error) {
 	}
 }
 
+// vectorsUpToDate reports whether the vectors already stored for a path can be
+// reused. Vectors are stale when the file changed *or* when a different
+// embedding model produced them: widths differ between models, and chunks of
+// the wrong width are unscoreable at query time, so leaving them in place
+// silently degrades retrieval to keyword-only.
+//
+// A nil state means never embedded. A blank recorded model means the vectors
+// predate provenance tracking and their origin is unknown, which never matches
+// a configured model and so rebuilds once.
+func vectorsUpToDate(state *meta.VecIndexState, fileSize int64, embModel string) bool {
+	if state == nil {
+		return false
+	}
+	return state.FileSize == fileSize && state.EmbeddingModel == embModel
+}
+
+// vectorsStaleFromModelChange reports whether the only reason a path needs
+// re-embedding is its model: the document itself is untouched. This is purely
+// for reporting — re-embedding is driven by vectorsUpToDate — so that an
+// :index run which rebuilds an unchanged library can say why.
+func vectorsStaleFromModelChange(state *meta.VecIndexState, fileSize int64, embModel string) bool {
+	return state != nil && state.FileSize == fileSize && state.EmbeddingModel != embModel
+}
+
 // indexAllCmd walks root and indexes all documents whose content has changed.
 func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.Config) tea.Cmd {
 	return func() tea.Msg {
@@ -51,6 +80,7 @@ func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.
 		indexed := 0
 		skipped := 0
 		failed := 0
+		reembedded := 0
 
 		// Set up embedding client if vector search is enabled.
 		var embClient *ai.Client
@@ -58,10 +88,7 @@ func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.
 		if cfg != nil && cfg.AI != nil && cfg.AI.VectorSearch {
 			if c, err2 := ai.NewClient(cfg.AI); err2 == nil {
 				embClient = c
-				embModel = strings.TrimSpace(cfg.AI.EmbeddingModel)
-				if embModel == "" {
-					embModel = "nomic-embed-text"
-				}
+				embModel = cfg.AI.ResolvedEmbeddingModel()
 			} else {
 				warnings = append(warnings, "[WARN] vector search enabled but AI client failed: "+err2.Error())
 			}
@@ -84,7 +111,7 @@ func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.
 			ftsUpToDate := ftsState != nil && ftsState.FileSize == info.Size()
 
 			vecState, _ := store.GetVecIndexState(ctx, canonical)
-			vecUpToDate := embClient == nil || (vecState != nil && vecState.FileSize == info.Size())
+			vecUpToDate := embClient == nil || vectorsUpToDate(vecState, info.Size(), embModel)
 
 			if ftsUpToDate && vecUpToDate {
 				skipped++
@@ -124,8 +151,10 @@ func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.
 					vecs = append(vecs, vec)
 				}
 				if !embFailed {
-					if err2 := store.StoreEmbeddings(ctx, canonical, chunks, vecs, info.Size()); err2 != nil {
+					if err2 := store.StoreEmbeddings(ctx, canonical, chunks, vecs, info.Size(), embModel); err2 != nil {
 						warnings = append(warnings, fmt.Sprintf("[WARN] store embeddings %s: %v", filepath.Base(path), err2))
+					} else if vectorsStaleFromModelChange(vecState, info.Size(), embModel) {
+						reembedded++
 					}
 				}
 			}
@@ -134,10 +163,11 @@ func indexAllCmd(root string, store *meta.Store, skipDirs []string, cfg *config.
 		}
 
 		return indexCompleteMsg{
-			indexed:  indexed,
-			skipped:  skipped,
-			failed:   failed,
-			warnings: warnings,
+			indexed:    indexed,
+			skipped:    skipped,
+			failed:     failed,
+			reembedded: reembedded,
+			warnings:   warnings,
 		}
 	}
 }

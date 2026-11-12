@@ -65,7 +65,7 @@ func TestRelevantPassagesRanksByEmbedding(t *testing.T) {
 	}
 	chunks := []string{"chunk zero about scaling", "chunk one about memory", "chunk two about parsing"}
 	vecs := [][]float32{{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}
-	if err := store.StoreEmbeddings(ctx, path, chunks, vecs, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, chunks, vecs, 100, testEmbModel); err != nil {
 		t.Fatalf("store embeddings: %v", err)
 	}
 
@@ -91,7 +91,7 @@ func TestRelevantPassagesIgnoresMismatchedEmbeddings(t *testing.T) {
 		t.Fatalf("index: %v", err)
 	}
 	// Three-wide stored vectors, five-wide query vector.
-	if err := store.StoreEmbeddings(ctx, path, []string{"unrelated stored chunk"}, [][]float32{{1, 0, 0}}, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, []string{"unrelated stored chunk"}, [][]float32{{1, 0, 0}}, 100, testEmbModel); err != nil {
 		t.Fatalf("store embeddings: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestRelevantPassagesOrdersAndMarksGaps(t *testing.T) {
 	// Chunks 0 and 2 are the relevant ones; chunk 1 sits between them.
 	chunks := []string{"alpha relevant text", "beta unrelated text", "gamma relevant text"}
 	vecs := [][]float32{{1, 0}, {0, 1}, {1, 0}}
-	if err := store.StoreEmbeddings(ctx, path, chunks, vecs, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, chunks, vecs, 100, testEmbModel); err != nil {
 		t.Fatalf("store embeddings: %v", err)
 	}
 

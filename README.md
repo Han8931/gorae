@@ -92,7 +92,9 @@ Features:
   chunk. Questions are then answered from a fusion of keyword and semantic hits, so
   a paper that never uses your exact wording still surfaces. Needs an embedding model
   (`ollama pull nomic-embed-text` for the local default); plain keyword search is used
-  when it's off or unreachable.
+  when it's off or unreachable. Changing `embedding_model` later is safe: `:index`
+  records which model produced each file's vectors and rebuilds the ones that no longer
+  match, reporting them as `re-embedded` instead of leaving unusable vectors behind.
 - **Sessions** — conversations are auto-saved; resume with `/sessions`, fork with `/new`.
 - **`/load <query>`** — a live fuzzy picker focuses one or more papers for follow-up questions.
   Focused papers are re-sent with every message, so they share a context budget
@@ -137,7 +139,7 @@ Features:
 | `system_prompt` | Extra instruction prepended before RAG context |
 | `enable_tools` | Allow tool calls (e.g. `save_markdown`). Default `false`. |
 | `vector_search` | Retrieve semantically as well as by keyword, fusing both rankings. Default `false`. |
-| `embedding_model` | Model used to embed chunks when `vector_search` is on. Default `nomic-embed-text`. |
+| `embedding_model` | Model used to embed chunks when `vector_search` is on. Default `nomic-embed-text`. Changing it makes stored vectors stale; the next `:index` rebuilds them. |
 | `max_paper_chars` | Per-paper ceiling on focused-paper context. Default `8000`. |
 | `focus_budget_chars` | Combined ceiling for all focused papers per message. Default `12000`. |
 

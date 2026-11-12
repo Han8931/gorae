@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestSearchSemanticIgnoresMismatchedDimensions(t *testing.T) {
 	threeDim := "/tmp/three.pdf"
 	chunks := []string{"body of the three-dimensional document"}
 	vecs := [][]float32{{1, 0, 0}}
-	if err := store.StoreEmbeddings(ctx, threeDim, chunks, vecs, 100); err != nil {
+	if err := store.StoreEmbeddings(ctx, threeDim, chunks, vecs, 100, testEmbModel); err != nil {
 		t.Fatalf("store embeddings: %v", err)
 	}
 
@@ -87,10 +88,10 @@ func TestSearchSemanticRanksByCosineSimilarity(t *testing.T) {
 	ctx := context.Background()
 
 	// near points almost along the query axis; far points away from it.
-	if err := store.StoreEmbeddings(ctx, "/tmp/near.pdf", []string{"near"}, [][]float32{{0.9, 0.1, 0}}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, "/tmp/near.pdf", []string{"near"}, [][]float32{{0.9, 0.1, 0}}, 10, testEmbModel); err != nil {
 		t.Fatalf("store near: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, "/tmp/far.pdf", []string{"far"}, [][]float32{{0, 0.2, 0.9}}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, "/tmp/far.pdf", []string{"far"}, [][]float32{{0, 0.2, 0.9}}, 10, testEmbModel); err != nil {
 		t.Fatalf("store far: %v", err)
 	}
 
@@ -112,10 +113,10 @@ func TestSearchSemanticIsScaleInvariant(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()
 
-	if err := store.StoreEmbeddings(ctx, "/tmp/aligned.pdf", []string{"aligned"}, [][]float32{{0.01, 0, 0}}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, "/tmp/aligned.pdf", []string{"aligned"}, [][]float32{{0.01, 0, 0}}, 10, testEmbModel); err != nil {
 		t.Fatalf("store aligned: %v", err)
 	}
-	if err := store.StoreEmbeddings(ctx, "/tmp/large.pdf", []string{"large"}, [][]float32{{50, 50, 0}}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, "/tmp/large.pdf", []string{"large"}, [][]float32{{50, 50, 0}}, 10, testEmbModel); err != nil {
 		t.Fatalf("store large: %v", err)
 	}
 
@@ -137,7 +138,7 @@ func TestStoreEmbeddingsRoundTripsVectorValues(t *testing.T) {
 	// An exactly-representable unit vector: if the round trip were lossy or
 	// mis-packed, similarity against itself would drift off 1.0.
 	vec := []float32{0.5, -0.5, 0.5, -0.5}
-	if err := store.StoreEmbeddings(ctx, "/tmp/rt.pdf", []string{"round trip"}, [][]float32{vec}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, "/tmp/rt.pdf", []string{"round trip"}, [][]float32{vec}, 10, testEmbModel); err != nil {
 		t.Fatalf("store: %v", err)
 	}
 
@@ -160,11 +161,11 @@ func TestStoreEmbeddingsReplacesPriorChunks(t *testing.T) {
 	path := "/tmp/replace.pdf"
 
 	first := []string{"old one", "old two", "old three"}
-	if err := store.StoreEmbeddings(ctx, path, first, [][]float32{{1, 0}, {0, 1}, {1, 1}}, 10); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, first, [][]float32{{1, 0}, {0, 1}, {1, 1}}, 10, testEmbModel); err != nil {
 		t.Fatalf("store first: %v", err)
 	}
 	second := []string{"new only"}
-	if err := store.StoreEmbeddings(ctx, path, second, [][]float32{{1, 0}}, 20); err != nil {
+	if err := store.StoreEmbeddings(ctx, path, second, [][]float32{{1, 0}}, 20, testEmbModel); err != nil {
 		t.Fatalf("store second: %v", err)
 	}
 
@@ -205,6 +206,69 @@ func TestGetVecIndexStateUnindexed(t *testing.T) {
 	}
 }
 
+// The recorded model is what lets :index notice that embedding_model changed
+// while the file on disk did not — the one case where identical file size
+// still means the stored vectors are unusable.
+func TestGetVecIndexStateReportsEmbeddingModel(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	path := "/tmp/provenance.pdf"
+
+	if err := store.StoreEmbeddings(ctx, path, []string{"body"}, [][]float32{{1, 0}}, 42, "nomic-embed-text"); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	state, err := store.GetVecIndexState(ctx, path)
+	if err != nil {
+		t.Fatalf("index state: %v", err)
+	}
+	if state == nil {
+		t.Fatal("index state is nil after storing embeddings")
+	}
+	if state.EmbeddingModel != "nomic-embed-text" {
+		t.Errorf("embedding model = %q, want %q", state.EmbeddingModel, "nomic-embed-text")
+	}
+
+	// Re-embedding under a different model overwrites the provenance, so the
+	// staleness check stops firing once the vectors have been rebuilt.
+	if err := store.StoreEmbeddings(ctx, path, []string{"body"}, [][]float32{{1, 0, 0, 0}}, 42, "mxbai-embed-large"); err != nil {
+		t.Fatalf("re-store: %v", err)
+	}
+	state, err = store.GetVecIndexState(ctx, path)
+	if err != nil {
+		t.Fatalf("index state after re-store: %v", err)
+	}
+	if state.EmbeddingModel != "mxbai-embed-large" {
+		t.Errorf("embedding model = %q, want the new %q", state.EmbeddingModel, "mxbai-embed-large")
+	}
+}
+
+// A DB written before vec_index_state carried a model reports "", which must
+// not compare equal to any configured model: vectors of unknown provenance are
+// exactly the ones that need rebuilding.
+func TestGetVecIndexStateLegacyRowsHaveNoModel(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	path := "/tmp/legacy.pdf"
+
+	if err := store.StoreEmbeddings(ctx, path, []string{"body"}, [][]float32{{1, 0}}, 42, ""); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	state, err := store.GetVecIndexState(ctx, path)
+	if err != nil {
+		t.Fatalf("index state: %v", err)
+	}
+	if state == nil {
+		t.Fatal("index state is nil after storing embeddings")
+	}
+	if state.EmbeddingModel != "" {
+		t.Errorf("embedding model = %q, want empty", state.EmbeddingModel)
+	}
+}
+
+// testEmbModel stands in for a configured embedding_model in tests whose
+// subject is retrieval rather than vector provenance.
+const testEmbModel = "test-embed"
+
 func openTestStore(t *testing.T) *meta.Store {
 	t.Helper()
 	store, err := meta.Open(filepath.Join(t.TempDir(), "meta.db"))
@@ -213,4 +277,52 @@ func openTestStore(t *testing.T) *meta.Store {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store
+}
+
+// Opening a database written before vec_index_state had an embedding_model
+// column must add it rather than fail: CREATE TABLE IF NOT EXISTS leaves the
+// legacy three-column table in place, so only the ALTER brings it forward.
+func TestOpenMigratesLegacyVecIndexState(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	// Build the pre-migration schema directly, bypassing Store so the old
+	// shape is what is actually on disk.
+	legacy, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath))
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	if _, err := legacy.Exec(`
+CREATE TABLE vec_index_state (
+    path       TEXT PRIMARY KEY,
+    file_size  INTEGER NOT NULL DEFAULT 0,
+    indexed_at INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO vec_index_state(path, file_size, indexed_at) VALUES('/tmp/old.pdf', 77, 1700000000);
+`); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	store, err := meta.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store on legacy db: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	state, err := store.GetVecIndexState(context.Background(), "/tmp/old.pdf")
+	if err != nil {
+		t.Fatalf("index state: %v", err)
+	}
+	if state == nil {
+		t.Fatal("legacy row disappeared across migration")
+	}
+	if state.FileSize != 77 {
+		t.Errorf("file size = %d, want the preserved 77", state.FileSize)
+	}
+	// Unknown provenance: the row must not claim to match any live model.
+	if state.EmbeddingModel != "" {
+		t.Errorf("embedding model = %q, want empty for a migrated row", state.EmbeddingModel)
+	}
 }

@@ -16,6 +16,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 - [x] **Mouse-wheel scrolling** in chat
 - [x] **Web search integration** — Brave / Tavily with rules + LLM routing
 - [x] **Semantic search** — `vector_search: true` embeds chunks at `:index` time; retrieval fuses keyword and semantic rankings (RRF)
+- [x] **Re-embed on `embedding_model` change** — `vec_index_state` records which model produced each file's vectors, so `:index` rebuilds the ones a model switch invalidated instead of silently falling back to keyword-only
 
 ### Knowledge base
 
@@ -35,7 +36,6 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 ### AI assistant
 
 - [ ] Scale semantic search — `SearchSemantic` scores every stored chunk per query; needs an ANN index or a candidate prefilter for large libraries
-- [ ] Re-embed on `embedding_model` change — vectors of the old width are skipped, which silently drops to keyword-only until `:index` reruns
 - [ ] Daily digest — `:digest` command summarising recent additions + matching arXiv papers
 - [ ] Session renaming
 - [ ] Text extraction / OCR
@@ -43,6 +43,7 @@ A snapshot of what's shipped, what's in flight, and what's next. PRs welcome —
 
 ### Knowledge base & UX
 
+- [ ] arXiv search — `:arxiv <query>` to search the arXiv API from inside Gorae, browse results in a pane, and import a hit (PDF + metadata) into the library. `internal/arxiv` already fetches by ID, so this adds a query endpoint (`search_query`, paging) on top
 - [ ] Rethink the full paper list — organize it by tags or some other grouping
 - [ ] Open URL
 - [ ] To-do management

@@ -46,3 +46,36 @@ func TestMissingTreeSettingUpgradesToFolded(t *testing.T) {
 		t.Fatal("upgraded config should start with the tree pane folded")
 	}
 }
+
+// Indexing records this name alongside every stored vector and querying
+// embeds against it, so the two must resolve a blank config identically — a
+// mismatch would make freshly-built vectors look stale forever.
+func TestResolvedEmbeddingModel(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *AIConfig
+		want string
+	}{
+		{"explicit model", &AIConfig{EmbeddingModel: "mxbai-embed-large"}, "mxbai-embed-large"},
+		{"blank falls back to default", &AIConfig{EmbeddingModel: ""}, DefaultEmbeddingModel},
+		{"whitespace is not a model", &AIConfig{EmbeddingModel: "  "}, DefaultEmbeddingModel},
+		{"surrounding whitespace trimmed", &AIConfig{EmbeddingModel: " nomic-embed-text\n"}, "nomic-embed-text"},
+		{"nil config", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.ResolvedEmbeddingModel(); got != tt.want {
+				t.Errorf("ResolvedEmbeddingModel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The default config must be self-consistent: its embedding_model is the same
+// string a blank config resolves to, so writing out defaults and relying on
+// the fallback cannot disagree.
+func TestDefaultAIConfigUsesDefaultEmbeddingModel(t *testing.T) {
+	if got := DefaultAIConfig().EmbeddingModel; got != DefaultEmbeddingModel {
+		t.Errorf("default embedding_model = %q, want %q", got, DefaultEmbeddingModel)
+	}
+}

@@ -2117,11 +2117,7 @@ func embedQuery(ctx context.Context, cfg *config.Config, client *ai.Client, quer
 	if cfg == nil || cfg.AI == nil || !cfg.AI.VectorSearch || client == nil {
 		return nil
 	}
-	embModel := strings.TrimSpace(cfg.AI.EmbeddingModel)
-	if embModel == "" {
-		embModel = "nomic-embed-text"
-	}
-	vec, err := client.GetEmbedding(ctx, embModel, query)
+	vec, err := client.GetEmbedding(ctx, cfg.AI.ResolvedEmbeddingModel(), query)
 	if err != nil {
 		return nil
 	}

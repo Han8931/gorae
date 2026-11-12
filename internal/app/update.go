@@ -464,6 +464,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.skipped > 0 {
 			parts = append(parts, fmt.Sprintf("%d unchanged", msg.skipped))
 		}
+		if msg.reembedded > 0 {
+			parts = append(parts, fmt.Sprintf("%d re-embedded (embedding model changed)", msg.reembedded))
+		}
 		if msg.failed > 0 {
 			parts = append(parts, fmt.Sprintf("%d failed", msg.failed))
 		}
@@ -2073,10 +2076,7 @@ func (m *Model) displayConfigSummary() {
 		} else if len(systemPrompt) > 60 {
 			systemPrompt = systemPrompt[:57] + "…"
 		}
-		embModel := strings.TrimSpace(ai.EmbeddingModel)
-		if embModel == "" {
-			embModel = "nomic-embed-text"
-		}
+		embModel := ai.ResolvedEmbeddingModel()
 		lines = append(lines,
 			fmt.Sprintf("  provider        : %s", provider),
 			fmt.Sprintf("  model           : %s", model),

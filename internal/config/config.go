@@ -221,9 +221,28 @@ func DefaultAIConfig() *AIConfig {
 		TopK:           3,
 		SystemPrompt:   "",
 		VectorSearch:   false,
-		EmbeddingModel: "nomic-embed-text",
+		EmbeddingModel: DefaultEmbeddingModel,
 		EnableTools:    false,
 	}
+}
+
+// DefaultEmbeddingModel is used whenever vector search is on but
+// embedding_model is blank.
+const DefaultEmbeddingModel = "nomic-embed-text"
+
+// ResolvedEmbeddingModel returns the embedding model actually used for
+// requests. The resolved name — not the raw field — is what gets recorded
+// alongside stored vectors, so indexing and querying must agree on it
+// exactly; leaving a blank config to be defaulted independently at each call
+// site is how they drift apart.
+func (a *AIConfig) ResolvedEmbeddingModel() string {
+	if a == nil {
+		return ""
+	}
+	if m := strings.TrimSpace(a.EmbeddingModel); m != "" {
+		return m
+	}
+	return DefaultEmbeddingModel
 }
 
 // stripJSONComments removes // line comments and /* block comments */ so the

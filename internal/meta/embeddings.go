@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Store) initEmbeddings() error {
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS vec_embeddings (
     path      TEXT    NOT NULL,
     chunk_idx INTEGER NOT NULL,
@@ -21,12 +21,19 @@ CREATE TABLE IF NOT EXISTS vec_embeddings (
 );
 
 CREATE TABLE IF NOT EXISTS vec_index_state (
-    path       TEXT PRIMARY KEY,
-    file_size  INTEGER NOT NULL DEFAULT 0,
-    indexed_at INTEGER NOT NULL DEFAULT 0
+    path            TEXT PRIMARY KEY,
+    file_size       INTEGER NOT NULL DEFAULT 0,
+    indexed_at      INTEGER NOT NULL DEFAULT 0,
+    embedding_model TEXT    NOT NULL DEFAULT ''
 );
-`)
-	return err
+`); err != nil {
+		return err
+	}
+	// Migration: record which model produced each path's vectors, for DBs
+	// created before this column existed. Those rows keep the '' default,
+	// which never matches a configured model and so re-embeds once.
+	s.db.Exec(`ALTER TABLE vec_index_state ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 // ChunkText splits text into overlapping word-based chunks suitable for embedding.
@@ -59,8 +66,20 @@ func ChunkText(text string, chunkWords, overlapWords int) []string {
 	return chunks
 }
 
-// StoreEmbeddings persists all chunks and their vectors for a path.
-func (s *Store) StoreEmbeddings(ctx context.Context, path string, chunks []string, vecs [][]float32, fileSize int64) error {
+// VecIndexState is the last known vector-index state for one path. It carries
+// the embedding model on top of the FTS IndexState fields: file size alone
+// cannot tell a caller whether stored vectors are still usable, because
+// switching embedding_model invalidates every vector while leaving the file
+// untouched.
+type VecIndexState struct {
+	FileSize       int64
+	IndexedAt      time.Time
+	EmbeddingModel string
+}
+
+// StoreEmbeddings persists all chunks and their vectors for a path, recording
+// embModel as their provenance so a later model change can be detected.
+func (s *Store) StoreEmbeddings(ctx context.Context, path string, chunks []string, vecs [][]float32, fileSize int64, embModel string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -85,9 +104,12 @@ func (s *Store) StoreEmbeddings(ctx context.Context, path string, chunks []strin
 
 	now := time.Now().Unix()
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO vec_index_state(path, file_size, indexed_at) VALUES(?,?,?)
-ON CONFLICT(path) DO UPDATE SET file_size=excluded.file_size, indexed_at=excluded.indexed_at
-`, path, fileSize, now); err != nil {
+INSERT INTO vec_index_state(path, file_size, indexed_at, embedding_model) VALUES(?,?,?,?)
+ON CONFLICT(path) DO UPDATE SET
+    file_size=excluded.file_size,
+    indexed_at=excluded.indexed_at,
+    embedding_model=excluded.embedding_model
+`, path, fileSize, now, embModel); err != nil {
 		return err
 	}
 
@@ -95,20 +117,22 @@ ON CONFLICT(path) DO UPDATE SET file_size=excluded.file_size, indexed_at=exclude
 }
 
 // GetVecIndexState returns the last known vector index state, or nil if not indexed.
-func (s *Store) GetVecIndexState(ctx context.Context, path string) (*IndexState, error) {
+func (s *Store) GetVecIndexState(ctx context.Context, path string) (*VecIndexState, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT file_size, indexed_at FROM vec_index_state WHERE path = ?`, path)
+		`SELECT file_size, indexed_at, embedding_model FROM vec_index_state WHERE path = ?`, path)
 	var fileSize, indexedAt int64
-	err := row.Scan(&fileSize, &indexedAt)
+	var embModel string
+	err := row.Scan(&fileSize, &indexedAt, &embModel)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &IndexState{
-		FileSize:  fileSize,
-		IndexedAt: time.Unix(indexedAt, 0).UTC(),
+	return &VecIndexState{
+		FileSize:       fileSize,
+		IndexedAt:      time.Unix(indexedAt, 0).UTC(),
+		EmbeddingModel: embModel,
 	}, nil
 }
 
